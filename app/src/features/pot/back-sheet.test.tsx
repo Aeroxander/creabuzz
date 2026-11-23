@@ -121,6 +121,15 @@ describe("the Back sheet shows what is put into the call", () => {
     await waitFor(() => expect(screen.queryByTestId("back-sheet")).toBeNull());
   });
 
+  it("says the contracts are unaudited before the press, on every money sheet", async () => {
+    // The line lives in the one sheet every money press goes through (`PotSheet`), so it cannot be left off one of them.
+    setup();
+    await openSheet();
+    expect(screen.getByTestId("sheet-unaudited").textContent).toBe(
+      "The contracts behind these screens are new and have not been audited.",
+    );
+  });
+
   it("with a dollar that cannot pay and call, it is approve then join, and says so", async () => {
     setup({ payAndCall: false });
     await openSheet("25.50");

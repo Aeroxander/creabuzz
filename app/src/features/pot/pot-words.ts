@@ -23,6 +23,12 @@ export const TAKE_OUT_BANNER =
 /** On every money screen of the test network. */
 export const PLAY_MONEY_WORDS =
   "This is a test network. The dollars are play money, not real money.";
+/**
+ * On every money sheet, whatever the network (the launchpad's own rule R4: the app says the contracts are unaudited).
+ * It is said before the press, not after, and it does not replace the terms.
+ */
+export const UNAUDITED_WORDS =
+  "The contracts behind these screens are new and have not been audited.";
 
 const SHARE = 1_000_000_000_000_000_000n;
 const DOLLAR = 1_000_000n;

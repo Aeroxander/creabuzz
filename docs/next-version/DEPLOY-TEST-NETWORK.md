@@ -54,15 +54,17 @@ forge script script/DeployPot.s.sol --rpc-url sepolia --broadcast --account <you
   and `contracts/pot/broadcast/DeployPot.s.sol/11155111/run-latest.json` (git-ignored). Keep both.
 - Check the result as `DEPLOYMENTS.md` says: read `Launcher.platform()` and `Launcher.settingsHash()` and compare them with what
   you meant. `scripts/pot-chain-loop.sh` does the whole walk on a local chain and is the reference for the calls.
-- The block the Launcher was deployed at is the lowest `blockNumber` in the broadcast file (hex; `cast to-dec <it>`). You need it
-  in step 4.
+- The block to start the reader at is the earliest deploy block in the broadcast file (hex; `cast to-dec <it>`); the batch's
+  first transaction is usually the play dollar's, and starting the reader a little before the Launcher is safe (it skips what
+  is not one of its own). You need it in step 4.
 
 ### 2b. Step 4's two switches (both off by default)
 
-The same script has two switches added in step 4. **Leave both alone and nothing about a deployment changes**: no holder pause, no
-claim contract, every earlier test and screen exactly as before. A switch can be turned on only by the deployer, once, inside the first hour after the
-deployment and before the first project is launched (a project is born with the pause or without it for good), so set what you want
-in the deploy script's own run; after that hour it cannot be turned on for that deployment.
+The same script has two switches and the earlier backers' claim, added in step 4. **Leave all of them alone and nothing about a
+deployment changes**: no holder pause, no claim contract, every earlier test and screen exactly as before. A switch can be turned
+on only by the deployer, once, inside the first hour after the deployment and before the first project is launched (a project is
+born with the pause or without it for good), so set what you want in the deploy script's own run; after that hour it cannot be
+turned on for that deployment.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -76,6 +78,19 @@ is not the zero address with the first switch on; `cast call <Launcher> "earlier
 `scripts/pot-full-loop.sh pot-pause.spec` and `scripts/pot-full-loop.sh pot-earlier.spec` run each on a local chain end to end, the
 second with an invented list made by `scripts/pot-earlier-list.mjs`.
 
+**What the script prints, and where to publish it.** The run writes each code hash into `deployments/pot-<chain id>.json`
+(`holderPauseCodehash` and `earlierCodehash`, each only when its switch was on). Check each one against your own build before you
+publish it, in `contracts/pot`:
+
+```bash
+forge inspect HolderPause deployedBytecode | cast keccak     # must print holderPauseCodehash
+forge inspect EarlierGrants deployedBytecode | cast keccak   # must print earlierCodehash
+```
+
+A hash that does not match is a stopped launch: the deployed code is not the code you built. Then publish the hashes with your
+terms (step 10), on the page your terms live on, in the same words the script prints them: a person can then compare the code
+their project runs on with what you published. Keep `deployments/pot-<chain id>.json` (it is git-ignored) with your own records.
+
 ## 3. Make the server's secrets, once
 
 Follow `deploy/compose/README.md`, "First start", steps 1 to 3 (the host name in each setting) and step 2 (the secrets). They
@@ -86,6 +101,18 @@ must not change later. The three keys of this guide, and where each comes from:
 | The server's signing key | `BUZZ_RELAY_PRIVATE_KEY` | `openssl rand -hex 32`, once. It signs everything the server publishes, including the numbers on every project page. Lose it and the server is a different server. |
 | The operator's key | `RELAY_OWNER_PUBKEY` (the public half only) | Made with the built image, so after step 8 has built it and before step 12 starts the server: `docker run --rm --entrypoint buzz-admin <image> generate-key` (First start, step 6). The secret half stays on your own computer, in a password manager, never on the server. It signs in as the owner and starts seasons (`buzz launchpad seasons start`, with the key in the command's environment only). |
 | The helper key | `BUZZ_CHAIN_HELPER_KEY` | A new key made for this, never one that holds anything else (step 5). |
+
+### 3b. If a key leaks
+
+None of these can be repaired quietly; each is a short public runbook, and all four end with telling the people using the
+server what happened.
+
+| The key | What it can do in the wrong hands | What you do |
+|---|---|---|
+| The server's signing key (`BUZZ_RELAY_PRIVATE_KEY`) | Sign anything the server signs, including project numbers. | Stop the server. Make a new key (`openssl rand -hex 32`), set it, restart. The server is from then on a different signer: say so, and treat every number the old key signed as untrusted. |
+| The operator's key (the secret half of `RELAY_OWNER_PUBKEY`) | Sign in as the owner, start seasons. | Make a new key, set `RELAY_OWNER_PUBKEY` to its public half, restart. The old key's rights end with the setting. |
+| The helper key (`BUZZ_CHAIN_HELPER_KEY`) | Spend the helper's ether on calls anyone may make (nothing else). | Set a new key, restart, send the new one a little ether, and sweep what is left from the old one. |
+| The backups' key (`BUZZ_BACKUP_AGE_RECIPIENT`'s secret half) | Read every backup ever made to that key. | Make a new pair, set the new public key. Backups already made must be treated as readable by whoever holds the leaked key: move anything of value they hold and say so. |
 
 ## 4. Tell the server which chain to read
 
@@ -107,8 +134,9 @@ The server refuses to start on a half-set group (a chain setting without the nod
 
 The helper sends five calls anyone may make on a project: collect the platform's fee, settle money that has arrived, apply a
 proposed allowance rate once its wait has ended, close a team grant's notice once its time has come (`Vester.execute`), and
-burn a grant after a wind-down (`Vester.burnAfterWindDown`). It never checks in, takes out, draws, claims or winds a project
-down for anyone: winding down a quiet project is a person's press (a test lists every call it must never be able to send).
+burn a grant after a wind-down (`Vester.burnAfterWindDown`). It never checks in, takes out, draws, claims
+or winds a project down for anyone: winding down a quiet project is a person's press (a test lists every call it must never
+be able to send).
 
 Each call is simulated against the chain first and sent only if it will succeed. The last three are held to tighter limits so
 that a stranger who opens projects cannot make the helper spend its gas: 3 failed attempts end a job, at most 3 of them are
@@ -118,7 +146,10 @@ spend caps, so the fee and the settle keep their room. A failure is recorded in 
 
 1. Make a new key (`cast wallet new`), put its secret in `.env` as `BUZZ_CHAIN_HELPER_KEY`, and send its address a little Sepolia
    ether (0.05 lasts a long time; its daily spend is capped by `BUZZ_CHAIN_HELPER_DAILY_SPEND_WEI`, default 0.01 ether, and
-   `BUZZ_CHAIN_HELPER_DAILY_GAS`).
+   `BUZZ_CHAIN_HELPER_DAILY_GAS`). **Watch its balance and top it up**: when the key is dry the fee collection and the settles
+   stop without anyone being told. `cast balance <the helper's address> --rpc-url <your node>` says what is left; the server
+   records every failed call in `chain_helper_jobs.last_error` and counts them in `buzz_chain_helper_failed_total`, so a run of
+   failures that is not a bad job is usually an empty key.
 2. The key is read from the server's environment and from nowhere else; it is never logged. Do not reuse a key that holds
    anything. Left out, the helper is off and fees are collected only when somebody calls `collectFees` by hand.
 
@@ -183,7 +214,8 @@ there are no alerts and the app shows none.
 
 People see both at sign-up, with the box "I am 18 years of age or older" (`BUZZ_AGE_ATTESTATION_REQUIRED`, on by default; leave it
 on unless counsel says otherwise). They must be **your** finished text, reviewed by your own counsel, before anyone outside your
-team is invited. `docs/policies/` has drafts to start from; they are drafts, not advice. Put your copies in
+team is invited. Say in them that **the money contracts are new and have not been audited**, beside the code hashes you published
+from step 2b: the app's money sheets say the same sentence on their own, but the terms are where a person is asked to accept it. `docs/policies/` has drafts to start from; they are drafts, not advice. Put your copies in
 `deploy/compose/policies/` and set `BUZZ_TERMS_FILE` and `BUZZ_PRIVACY_FILE` to their paths. The app shows the text word for word;
 nothing in it is hidden or reworded.
 
@@ -240,6 +272,25 @@ backup key (step 9) and the first backup (step 10).
 | Anything the server reads (`BUZZ_CHAIN_*`, `BUZZ_INVESTING`, the helper, the sponsor, push, the policies) | `./run.sh restart`. No rebuild. |
 | A new deploy of the contracts | A new Launcher means a new network for the app: step 8 again (a new build), step 4 for the server, and the old projects stay on the old Launcher. |
 | The code | `./run.sh upgrade` (it backs up first, then builds and restarts). |
+
+**Going back after a bad change.** `./run.sh upgrade` and `./run.sh backup` leave you a backup to go back to; a bad upgrade is
+undone by restoring it: `AGE_IDENTITY_FILE=<the key file> ./run.sh restore backups/<the newest>.tar.age --yes` stops the server,
+restores and starts it again (do this on the machine the backup was made on, or follow `deploy/compose/README.md`'s restore on a
+new one). A wrong contract deploy is not undone: the contracts have no owner and no upgrade. Say so before invitations go out —
+the only move is a new deploy (step 2), the app and the server pointed at it (the table's second-to-last row), and every project
+of the old one staying where it is. Nothing here rolls a chain back, and nothing here should ever need to.
+
+## 15. Watching the server
+
+The one-time checks of step 13 say the server started well; they say nothing about the day after. Keep three things watched:
+
+1. **It is up.** `deploy/compose/README.md`'s "Uptime check" and "Logs" sections say what to point at this server and what to
+   look for in `./run.sh logs relay`. `/health` answering `ok` is the smallest check that counts.
+2. **The helper is fed and working.** Step 5: its balance, `chain_helper_jobs.last_error` and the `buzz_chain_helper_failed_total`
+   counter. A run of failures is either a bad job or an empty key, and both stop the fee collection and the settles.
+3. **The chain reader is keeping up.** `./run.sh logs relay` with no "refused a range" lines, and the numbers on a project page
+   being as fresh as the record promises (the page says "Numbers as of" when they are older). The metrics endpoint
+   (`BUZZ_METRICS_PORT`, 9102 by default) is there for whatever you already watch with.
 
 ## What was proven here, and what was not
 

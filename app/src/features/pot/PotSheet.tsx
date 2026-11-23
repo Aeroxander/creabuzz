@@ -17,7 +17,11 @@ import { type PotAction, potProblem } from "../money/pot-copy";
 import { type MoneySendInput, useMoneySend } from "../money/use-money";
 import { type MoneyWallet, senderKind } from "../money/wallet";
 import type { PendingSend } from "../money/pending-sends";
-import { PLAY_MONEY_WORDS, TAKE_OUT_BANNER } from "./pot-words";
+import {
+  PLAY_MONEY_WORDS,
+  TAKE_OUT_BANNER,
+  UNAUDITED_WORDS,
+} from "./pot-words";
 
 export interface PotSheetProps {
   open: boolean;
@@ -163,6 +167,9 @@ export function PotSheet(props: PotSheetProps) {
       >
         {props.children}
       </fieldset>
+      <p className="text-sm text-muted" data-testid="sheet-unaudited">
+        {UNAUDITED_WORDS}
+      </p>
       {mustSayPlayMoney(props.playMoney) ? (
         <p className="text-sm text-muted" data-testid="sheet-play-money">
           {PLAY_MONEY_WORDS}
