@@ -364,7 +364,8 @@ page lists it with "Posts and votes are public.", three of five agree and the re
 `scripts/pot-full-loop.sh pot-replace.spec` runs the **replace vote** in the same world: two backers park, one opens a vote with a
 list of five, both vote, the record derives the result with nobody pressing anything, a holder takes out during the wait, anyone
 carries the result out and the new Council runs the project (19 checks). `--serve` leaves the world running for a person to try on
-a phone. The same presses from a passkey account in `scripts/phone-loop.sh` are **not built this round**; the vote's screens are covered by the app's own tests and by `app/tests/e2e/pot-council.spec.ts`
+a phone. The same presses from a passkey account are proven by `scripts/phone-loop.sh` (`passkey-council.test.ts`: park, open a vote,
+cast and move a vote, propose to the Council the account sits on); the vote's screens are covered by the app's own tests and by `app/tests/e2e/pot-council.spec.ts`
 (7 checks at 390 x 840 and 360 x 640 with axe), plus the contracts' own suites.
 
 **Not tried by anyone:** the whole of this part on a real phone.

@@ -383,8 +383,8 @@ The card's *mid-vote* states (voting, planned change in the browser) are not ass
 the chain's clock to read a phase weeks ahead, and a page reloaded on that clock cannot re-authenticate to the relay (the auth
 event is dated in the future and refused), while a page left open keeps its old record. They are covered by the app's unit tests
 and by the mock-server Playwright journey (`app/tests/e2e/pot-council.spec.ts`, 7 checks, which patches the record's phase), and
-the contract and reader phases by the record itself here. The alert push for a moved result and the passkey path
-(`scripts/phone-loop.sh`) remain open in the loop.
+the contract and reader phases by the record itself here. The alert **push** for a moved result on a real push service remains open (it is covered by the reader's derived result,
+the in-app alert tests and the mock journey); the passkey path now covers the Council presses.
 
 ### The wider verification run at this commit
 
@@ -404,8 +404,8 @@ separate, required step):
   `scripts/pot-full-loop.sh` runs, and all of them pass — see the table above); the mock-server `pot-council.spec.ts` is 7/7.
 - **`web/` (the older web client) and the shared core package:** `web/` `pnpm check` exits 0 (biome, kinds, templates, knip) and
   `web/` tests **3,502 passed, 0 failed**; `packages/creaton-core` **1,292 passed**.
-- **Loops and scripts:** `pot-chain-loop.sh` 24 checks; `pot-app-loop.sh` **17 tests in 11 files**; `phone-loop.sh` **52 claims
-  proven** (passkey accounts against the real contracts); `m8-agent-week.sh` **49 checks**.
+- **Loops and scripts:** `pot-chain-loop.sh` 24 checks; `pot-app-loop.sh` **17 tests in 11 files**; `phone-loop.sh` **59 claims
+  proven** (passkey accounts against the real contracts, now including the Council path); `m8-agent-week.sh` **49 checks**.
 - **Two integration issues this wider run found and fixed:** the older web client matches the server's AGENT_LIMIT sentence by
   text, and the server's sentence gained "or stand for a seat" for candidacies (web's matcher and its test updated); and knip
   reported eight app exports that nothing outside their module uses (now internal, so `web/`'s check passes).

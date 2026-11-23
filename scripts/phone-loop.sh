@@ -8,7 +8,9 @@
 # Claims by file: passkey-sender (the sender and the stand-in bundler and sponsor), passkey-back (a real Back from a passkey account),
 # passkey-team (the founder's and the team's presses on the real contracts: launch, check in, draw, plan, accept and pay, grant
 # Team Shares, hand over and take the seat, each one operation and one prompt), passkey-address (the account address worked out
-# on the phone equals the real factory's, and a node that lies about it is refused), passkey-pause (step 4: the passkey account
+# on the phone equals the real factory's, and a node that lies about it is refused), passkey-council (the Council round: a passkey
+# account parks, opens a replace vote, casts and moves its vote, and proposes to the Council it sits on, each one operation and one
+# prompt), passkey-pause (step 4: the passkey account
 # claims its row of an invented earlier-backers list, parks Shares, takes some back, takes out Shares that are parked in ONE
 # operation of two calls, and the team's draw is refused in the app's words only while the line stands), sender-contract (wallet
 # and passkey senders meet one set of expectations).
@@ -54,7 +56,7 @@ export PHONE_LOOP_REPORT="$STATE/pass.txt"
 : >"$PHONE_LOOP_REPORT"
 cd "$ROOT/app"
 status=0
-M7_ANVIL_RPC="$RPC" pnpm exec vitest run --config vitest.anvil.config.ts tests/anvil/passkey-sender.test.ts tests/anvil/passkey-back.test.ts tests/anvil/passkey-team.test.ts tests/anvil/passkey-address.test.ts tests/anvil/passkey-pause.test.ts tests/anvil/sender-contract.test.ts "$@" || status=$?
+M7_ANVIL_RPC="$RPC" pnpm exec vitest run --config vitest.anvil.config.ts tests/anvil/passkey-sender.test.ts tests/anvil/passkey-back.test.ts tests/anvil/passkey-team.test.ts tests/anvil/passkey-address.test.ts tests/anvil/passkey-council.test.ts tests/anvil/passkey-pause.test.ts tests/anvil/sender-contract.test.ts "$@" || status=$?
 echo
 cat "$PHONE_LOOP_REPORT"
 echo "phone-loop: $(grep -c '^PASS' "$PHONE_LOOP_REPORT") claims proven"
