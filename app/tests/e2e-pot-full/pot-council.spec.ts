@@ -8,6 +8,7 @@ import * as pot from "../../../packages/creaton-core/src/pot/pot-calls.ts";
 import { councilSeats } from "../../../packages/creaton-core/src/pot/pot-reads.ts";
 import { walletOf } from "../anvil/pot-chain";
 import { call, passTime, rpc, word } from "../anvil/rpc";
+import { dollarsText } from "../../src/features/money/numbers";
 import { CHECK_IN_NO_RECORD } from "../../src/features/money/runner";
 import { topicOf } from "../../../packages/creaton-core/src/launchpad/work.ts";
 import { backFor, giveDollars } from "../e2e/helpers/live-chain";
@@ -276,16 +277,23 @@ test("a founder hands the seat to a Council, the app shows it, a seat proposes, 
     );
 
     // ── the box fills, and the seat presses Draw from the box: the runner's presses are the seat's too ──────────────
-    await passTime(2 * 86_400);
+    await passTime(4 * 86_400);
     const boxFilled = await waitForRecord(
       project.key,
       "the allowance box holds money",
-      (n) => BigInt(n.allowance.box) > 250_000n,
+      (n) => BigInt(n.allowance.box) > 150_000n,
       180,
     );
+    const box = BigInt(boxFilled.content.allowance.box);
     ok(
-      `two days later the allowance box holds ${dollarsAsPageSays(BigInt(boxFilled.content.allowance.box))} play dollars`,
+      `four days later the allowance box holds ${dollarsAsPageSays(box)} play dollars`,
     );
+    // Draw a little under half of what the box holds, in whole cents: the same number is typed in the app and agreed
+    // to on the chain below, so the app and the seats never disagree about the amount.
+    const amount = (box / 2n / 10_000n) * 10_000n;
+    const typed = `${amount / 1_000_000n}.${((amount % 1_000_000n) / 10_000n)
+      .toString()
+      .padStart(2, "0")}`;
     const drawNonce = await word(council, encodeCall(COUNCIL_ABI, "nonce", []));
     await seatA.goto(`${link}?tab=money`);
     await expect(seatA.getByTestId("allowance-draw")).toBeEnabled({
@@ -294,10 +302,11 @@ test("a founder hands the seat to a Council, the app shows it, a seat proposes, 
     await seatA.getByTestId("allowance-draw").click();
     await expect(seatA.getByTestId("draw-sheet")).toBeVisible();
     await seatA.getByTestId("draw-to").fill(members[3] as string);
-    await seatA.getByTestId("draw-amount").fill("0.25");
-    await expect(seatA.getByTestId("runner-ask")).toContainText(
-      "This asks the other seats to agree",
-    );
+    await seatA.getByTestId("draw-amount").fill(typed);
+    // The ask line is inside the sheet (the check-in block's own line is on the page behind it).
+    await expect(
+      seatA.getByTestId("draw-sheet").getByTestId("runner-ask"),
+    ).toContainText("This asks the other seats to agree");
     await seatA.getByTestId("sheet-confirm").click();
     await expect(seatA.getByTestId("toast")).toContainText(
       "Asked. It runs when enough seats agree.",
@@ -313,7 +322,7 @@ test("a founder hands the seat to a Council, the app shows it, a seat proposes, 
     await seatA.reload();
     await expect(
       seatA.getByTestId("council-waiting-row").first(),
-    ).toContainText("Draw 0.25 dollars from the allowance", {
+    ).toContainText(`Draw ${dollarsText(amount)} dollars from the allowance`, {
       timeout: 120_000,
     });
     ok(
@@ -323,7 +332,7 @@ test("a founder hands the seat to a Council, the app shows it, a seat proposes, 
     const draw = pot.drawCall({
       treasury: project.treasury,
       to: (members[3] as string).toLowerCase(),
-      amount: 250_000n,
+      amount,
     });
     for (const seat of [members[1], members[2]] as string[]) {
       await walletOf(seat).sendCalls(

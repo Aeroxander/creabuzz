@@ -101,6 +101,8 @@ for arg in "$@"; do
   [[ "$arg" == *pot-push* ]] && WORLD_PUSH=1
   [[ "$arg" == *pot-pause* ]] && WORLD_KIND=pause
   [[ "$arg" == *pot-earlier* ]] && WORLD_KIND=earlier
+  [[ "$arg" == *pot-council* ]] && WORLD_KIND=council
+  [[ "$arg" == *pot-replace* ]] && WORLD_KIND=replace
 done
 [[ -n "${HOLD_PUSH:-}" ]] && WORLD_PUSH=1
 
