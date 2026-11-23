@@ -206,6 +206,7 @@ export function ProjectTop({
   investing,
   founderName,
   founderPicture,
+  nameOf,
 }: {
   project: Project;
   /** The project's numbers; null while they are read, when there are none, or when investing is off. */
@@ -215,6 +216,8 @@ export function ProjectTop({
   investing: boolean;
   founderName: string;
   founderPicture: string | null;
+  /** A name for an account, as the rest of the app names them. */
+  nameOf?: (account: string) => string;
 }) {
   const [shareOpen, setShareOpen] = useState(false);
   const [establishedOpen, setEstablishedOpen] = useState(false);
@@ -279,6 +282,7 @@ export function ProjectTop({
               <ChunkBoundary>
                 <Suspense fallback={<Card className="h-40 animate-pulse" />}>
                   <BackSection
+                    nameOf={nameOf}
                     now={now}
                     numbers={numbers}
                     projectName={project.name}

@@ -16,7 +16,11 @@ import type { ProjectNumbers } from "../money/numbers";
 import { withStepKeys } from "../money/numbers-step9";
 import { potProblem } from "../money/pot-copy";
 import { phaseAt } from "../council/use-vote";
-import { plannedChangeLine, seatsResultLine } from "../council/vote-words";
+import {
+  namedAccount,
+  plannedChangeLine,
+  seatsResultLine,
+} from "../council/vote-words";
 import { type BackRead, readBack } from "./back-read";
 import { plannedBackLine } from "./back-tasks";
 import {
@@ -48,17 +52,22 @@ import {
 export function backPlannedChange(
   numbers: ProjectNumbers,
   now: number,
+  /**
+   * A name for an account, as the rest of the app names them; without one an account reads as its short address. The
+   * same sentence names the same runner the same way wherever it is shown.
+   */
+  nameOf?: (account: string) => string,
 ): string | null {
   const vote = withStepKeys(numbers).vote ?? null;
   const phase = vote?.open ? phaseAt(vote, now) : null;
   if (!vote?.open || (phase !== "waiting" && phase !== "counting")) return null;
-  const nameOf = (account: string) =>
-    `${account.slice(0, 6)}…${account.slice(-4)}`;
+  const named = (account: string) =>
+    namedAccount(nameOf ?? ((a) => a), account);
   if (vote.open.kind === "seats")
-    return seatsResultLine({ vote: vote.open, nameOf });
+    return seatsResultLine({ vote: vote.open, nameOf: named });
   return plannedChangeLine({
     vote: vote.open,
-    nameOf,
+    nameOf: named,
     runnerKind:
       numbers.runner.kind ?? (numbers.runner.isPair ? "pair" : "single"),
   });
@@ -101,6 +110,7 @@ export function BackSheet({
   ready,
   now,
   onClose,
+  nameOf,
 }: {
   numbers: ProjectNumbers;
   projectName: string;
@@ -109,13 +119,15 @@ export function BackSheet({
   ready: Ready;
   now: number;
   onClose: () => void;
+  /** A name for an account, as the rest of the app names them. */
+  nameOf?: (account: string) => string;
 }) {
   const { treasury, shares } = numbers.contracts;
   const open = amount !== null;
   // From the record's rows, which the page already holds: never a read of the sheet's own.
   const planned = plannedBackLine(numbers);
   // A vote that moved who runs the project, while the change waits: said here, before anyone puts money in (section 6.1).
-  const moved = backPlannedChange(numbers, now);
+  const moved = backPlannedChange(numbers, now, nameOf);
   // The last step of a Back that landed: the account is linked to this wallet, so the project's room opens for it.
   const linkAfterBack = useLinkAfterBack(ready.wallet);
   // The link makes the wallet public, so it is a choice in plain sight, made before the Back and never silently afterwards. The

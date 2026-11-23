@@ -278,6 +278,20 @@ export function seatsResultLine(input: {
 }
 
 /** A candidate's short text, shown whole; when its signed record is not the one the chain stored, the row says "No text". */
+/**
+ * One account as the screens name it: the name when one is known, with the short address beside it (the account is what
+ * the network sees), and the short address alone when no name is known. The vote card and the Back sheet name the same
+ * runner the same way, so the shape lives here once.
+ */
+export function namedAccount(
+  nameOf: (account: string) => string,
+  account: string,
+): string {
+  const shown = nameOf(account);
+  const short = `${account.slice(0, 6)}…${account.slice(-4)}`;
+  return shown === short || shown === account ? short : `${shown} (${short})`;
+}
+
 export const NO_TEXT = "No text";
 /** Shown while a candidate's own words are being looked for: "No text" waits for the read to finish. */
 export const TEXT_LOOKING = "Looking for the words they signed…";

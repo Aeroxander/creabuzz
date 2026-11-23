@@ -37,6 +37,7 @@ import {
   countLine,
   endedLine,
   lastLine,
+  namedAccount,
   NO_TEXT,
   TEXT_FAILED,
   TEXT_LOOKING,
@@ -64,9 +65,6 @@ const StandSheet = lazy(() =>
 
 /** How long a result that changes nothing keeps its card (section 6.2), in seconds. */
 const ENDED_SHOWN_SECS = 3 * 86_400;
-
-const shortAddress = (address: string) =>
-  `${address.slice(0, 6)}…${address.slice(-4)}`;
 
 /** A candidate's signed text, as its own record carries it. */
 export interface Candidacy {
@@ -266,11 +264,7 @@ export function VoteCard({
     live.data && live.data.id === open.id ? live.data.option : null;
   const runnerKind =
     numbers.runner.kind ?? (numbers.runner.isPair ? "pair" : "single");
-  const nameOfAccount = (account: string) => {
-    const shown = nameOf(account);
-    const short = shortAddress(account);
-    return shown === short || shown === account ? short : `${shown} (${short})`;
-  };
+  const nameOfAccount = (account: string) => namedAccount(nameOf, account);
 
   const cast = (option: VoteOptionNumbers) => {
     setProblem(null);

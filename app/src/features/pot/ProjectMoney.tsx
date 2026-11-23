@@ -31,7 +31,7 @@ import { VoteCard } from "../council/VoteCard";
 import { PauseCard } from "../pause/PauseCard";
 import { AllowanceSection } from "./AllowanceSection";
 import { ChainOnlyShares } from "./ChainOnlyShares";
-import type { GrantMember } from "./GrantSheet";
+import { addressNameOf, membersOf } from "./member-names";
 import { MoneyFacts, StaleMoney } from "./MoneyFacts";
 import { SeatSection } from "../seat/SeatSection";
 import { PairWaiting } from "./PairWaiting";
@@ -77,19 +77,10 @@ export function ProjectMoney({
 }) {
   const investing = investingOn();
   const wallets = useTeamWallets(investing ? [...team] : []).data;
-  // The team a grant can go to, each with the wallet they proved is theirs (none: they cannot be granted to yet).
-  const members: GrantMember[] = team.map((pubkey) => {
-    const wallet = wallets?.[pubkey];
-    return {
-      pubkey,
-      name: nameOf(profiles, pubkey),
-      address: wallet?.state === "linked" ? wallet.address : null,
-    };
-  });
-  // A name for an account's address, for the sentences a second signer reads.
-  const nameOfAddress = (address: string) =>
-    members.find((m) => m.address === address.toLowerCase())?.name ??
-    `${address.slice(0, 6)}…${address.slice(-4)}`;
+  // The team a grant can go to, each with the wallet they proved is theirs (none: they cannot be granted to yet), and
+  // the name for an account's address that every screen here uses (`pot/member-names.ts`).
+  const members = membersOf(team, wallets, profiles);
+  const nameOfAddress = addressNameOf(members);
   const wallet = usePotWallet(
     numbers && !numbers.removed ? numbers.chainId : undefined,
   );

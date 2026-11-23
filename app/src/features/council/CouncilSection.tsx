@@ -7,7 +7,8 @@
  * Nothing new shows on a project with no Council. A record that says it runs on a Council but whose Council cannot be
  * read says so and offers no press (6.6). The words are `council-words.ts`, so no sentence and no number is typed here.
  */
-import { useId } from "react";
+import { useId, useState } from "react";
+import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import type { ProjectNumbers } from "../money/numbers";
 import type { CouncilNumbers } from "../money/numbers-types";
@@ -20,7 +21,10 @@ import {
   proposeAskLine,
   seatLine,
 } from "./council-words";
-import { useCouncil } from "./use-council";
+import { recordFitsBuild, type Ready, usePotWallet } from "../pot/use-pot";
+import { GIVE_UP_SEAT } from "./council-words";
+import { ResignSheet } from "./ResignSheet";
+import { useCouncil, seatOf } from "./use-council";
 import { WaitingActions } from "./WaitingActions";
 
 /** The five seats, by number: a seat's number is its identity, so it is the key of its row. */
@@ -43,6 +47,13 @@ interface Props {
 export function CouncilSection({ numbers, address, nameOf, now }: Props) {
   const titleId = useId();
   const view = useCouncil({ numbers, address, now });
+  const pot = usePotWallet(numbers.chainId);
+  // A seat's own account is looked at only when the wallet already shows one on this network: nobody is asked to connect
+  // to read the Council.
+  const ready: Ready | null =
+    pot.address && pot.onChain === true && recordFitsBuild(numbers)
+      ? { address: pot.address, read: pot.read, wallet: pot.wallet }
+      : null;
   if (!view || view.state.kind === "none") return null;
   const me = address ? address.toLowerCase() : null;
   /** A seat's name; the short address is drawn beside it, once, for every held seat. */
@@ -76,6 +87,7 @@ export function CouncilSection({ numbers, address, nameOf, now }: Props) {
           needed={view.needed ?? view.council.needed}
           now={now}
           numbers={view.numbers}
+          ready={ready}
           voteOpen={Boolean(
             view.numbers.vote?.open &&
               view.numbers.vote.open.kind === "seats" &&
@@ -96,6 +108,7 @@ function CouncilBody({
   needed,
   now,
   numbers,
+  ready,
   voteOpen,
 }: {
   address: string | null;
@@ -106,11 +119,12 @@ function CouncilBody({
   needed: number;
   now: number;
   numbers: ProjectNumbers;
+  ready: Ready | null;
   voteOpen: boolean;
 }) {
-  const isSeat = Boolean(
-    me && council.seats.some((seat) => seat.account === me),
-  );
+  const [resigning, setResigning] = useState(false);
+  const held = me ? seatOf(council, me) : null;
+  const isSeat = held !== null;
   return (
     <>
       <p className="text-sm" data-testid="council-summary">
@@ -160,6 +174,28 @@ function CouncilBody({
           <p className="text-sm text-muted" data-testid="council-propose-line">
             {proposeAskLine(needed, council.seats.length)}
           </p>
+          {/* A seat is given up from the seat's own account (the contract's `resign`): the press is here, in plain sight. */}
+          {ready ? (
+            <div>
+              <Button
+                data-testid="resign-open"
+                onClick={() => setResigning(true)}
+                variant="secondary"
+              >
+                {GIVE_UP_SEAT}
+              </Button>
+            </div>
+          ) : null}
+          {ready && held ? (
+            <ResignSheet
+              council={council}
+              numbers={numbers}
+              onClose={() => setResigning(false)}
+              open={resigning}
+              ready={ready}
+              seatIndex={held.index}
+            />
+          ) : null}
         </>
       ) : null}
       <p className="text-sm text-muted" data-testid="council-last-line">

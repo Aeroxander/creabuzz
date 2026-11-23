@@ -293,6 +293,7 @@ export function agreedLine(k: number, needed: number): string {
 }
 
 export const AGREE = "Agree";
+export const GIVE_UP_SEAT = "Give up your seat";
 export const TAKE_BACK_AGREEMENT = "Take back my agreement";
 /** An action that ran out says what to do next. */
 export const RAN_OUT = "This ran out; propose it again if it is still needed.";
@@ -300,6 +301,15 @@ export const RAN_OUT = "This ran out; propose it again if it is still needed.";
 /** What a seat holder's press becomes: a proposal the other seats must agree to. */
 export function proposeAskLine(needed: number, seats: number): string {
   return `This asks the other seats to agree. It runs when ${needed} of ${countWord(seats)} have agreed.`;
+}
+
+/** Giving up a seat, said before the press (the contract's own `resign`): what happens and what does not. */
+export function resignWords(needed: number, seats: number): string[] {
+  return [
+    "Your seat comes up first at the next vote, which fills it again.",
+    `Every call waiting for the seats' agreement now stops. Anything still needed has to be proposed again (${needed} of ${countWord(seats)} must agree to it).`,
+    "Nothing else changes: the project keeps running with the seats that are left, and taking out stays open.",
+  ];
 }
 
 /** The section's last line (counsel reads it): a Council's powers, and that taking out stays open. */

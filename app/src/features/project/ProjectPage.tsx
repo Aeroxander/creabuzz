@@ -4,6 +4,8 @@ import { BackHeader } from "../../app/BackHeader";
 import { useAccount } from "../../lib/account";
 import { useFollowProject, useFollows } from "../../lib/follows";
 import { nameOf, pictureOf, useProfiles } from "../../lib/profiles";
+import { useTeamWallets } from "../team/use-wallets";
+import { addressNameOf, membersOf } from "../pot/member-names";
 import { legacyScreensOn } from "../../lib/legacy";
 import { investingOn } from "../../lib/server";
 import { useRequireAccount } from "../../lib/use-require-account";
@@ -154,6 +156,10 @@ function ProjectView({
   const legacy = legacyScreensOn();
   const roomNews = useRoomNews(project, investing, activity.data);
   const team = [project.author, ...accepted.map((m) => m.pubkey)];
+  // An account named the way the Money tab names it (the wallet each member proved is theirs), so the same runner reads
+  // the same on the Back sheet and on the vote's sentences.
+  const wallets = useTeamWallets(investing ? team : []).data;
+  const nameOfAddress = addressNameOf(membersOf(team, wallets, profiles));
   return (
     <main
       className="screen mx-auto flex max-w-lg flex-col gap-4"
@@ -168,6 +174,7 @@ function ProjectView({
         founderName={founderName}
         founderPicture={pictureOf(profiles, project.author)}
         investing={investing}
+        nameOf={nameOfAddress}
         now={now}
         numbers={numbers}
         project={project}

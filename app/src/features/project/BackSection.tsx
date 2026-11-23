@@ -10,10 +10,13 @@ export function BackSection({
   numbers,
   now,
   projectName,
+  nameOf,
 }: {
   numbers: ProjectNumbers;
   now: number;
   projectName: string;
+  /** A name for an account, as the rest of the app names them. */
+  nameOf?: (account: string) => string;
 }) {
   if (freshnessOf(numbers, now).level === "stale")
     return (
@@ -24,5 +27,12 @@ export function BackSection({
         </p>
       </Card>
     );
-  return <BackCard now={now} numbers={numbers} projectName={projectName} />;
+  return (
+    <BackCard
+      nameOf={nameOf}
+      now={now}
+      numbers={numbers}
+      projectName={projectName}
+    />
+  );
 }

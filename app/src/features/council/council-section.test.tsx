@@ -3,14 +3,27 @@
 // that runs alone or as a Pair, nothing at all. A record that says it runs on a Council but whose Council cannot be read
 // says so and offers no press. Every sentence is compared with the words module's own, so none is retyped here.
 import { applyServerSettings } from "@creaton/core/client/server-settings.ts";
-import { cleanup, screen } from "@testing-library/react";
+import { decodeCall } from "@creaton/core/pot/abi-codec.ts";
+import { COUNCIL_ABI } from "@creaton/core/pot/abis.generated.ts";
+import {
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ACCOUNTS,
   councilPlain,
   councilRecord,
 } from "../../../tests/helpers/council-v2-parse";
-import { SERVER, wrap } from "../../../tests/helpers/money-harness";
+import {
+  installWallet,
+  sent,
+  SERVER,
+  wrap,
+} from "../../../tests/helpers/money-harness";
 import {
   councilLastLine,
   councilSummary,
@@ -52,6 +65,34 @@ afterEach(() => {
 });
 
 describe("the Council section", () => {
+  it("a seat holder can give up their seat: what it does is said first, and it is sent from their own account", async () => {
+    installWallet({ account: ACCOUNTS[1] as string });
+    show(councilRecord("voting"), ACCOUNTS[1] as string);
+    fireEvent.click(await screen.findByTestId("resign-open"));
+    const sheet = await screen.findByTestId("resign-sheet");
+    expect(sheet.textContent).toContain(
+      "Your seat comes up first at the next vote, which fills it again.",
+    );
+    expect(sheet.textContent).toContain(
+      "Every call waiting for the seats' agreement now stops.",
+    );
+    expect(sheet.textContent).toContain(
+      "Nothing else changes: the project keeps running with the seats that are left, and taking out stays open.",
+    );
+    fireEvent.click(within(sheet).getByTestId("sheet-confirm"));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]?.from).toBe(ACCOUNTS[1] as string);
+    expect(sent[0]?.to).toBe(
+      councilRecord("voting").council?.contract.toLowerCase(),
+    );
+    expect(decodeCall(COUNCIL_ABI, sent[0]?.data ?? "")?.name).toBe("resign");
+  });
+
+  it("an account that holds no seat is offered no way to give one up", () => {
+    show(councilRecord("voting"), "0x000000000000000000000000000000000000dead");
+    expect(screen.queryByTestId("resign-open")).toBeNull();
+  });
+
   it("says what the Council is, its five seats with short addresses, when two come up, and the last line", () => {
     const numbers = councilRecord("voting");
     const council = numbers.council;

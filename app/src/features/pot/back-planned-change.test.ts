@@ -30,6 +30,21 @@ describe("the Back sheet's planned change", () => {
     );
   });
 
+  it("names an account the way the vote card does when a name is known", () => {
+    // The same runner reads the same on the Back sheet and on the vote's sentences: a name, with the short address
+    // beside it (the account is what the network sees).
+    const names: Record<string, string> = {
+      [(ACCOUNTS[0] as string).toLowerCase()]: "Ada",
+    };
+    const line =
+      backPlannedChange(
+        councilRecord("seated"),
+        NOW,
+        (account) => names[account.toLowerCase()] ?? short(account),
+      ) ?? "";
+    expect(line).toContain("Ada (0x7099…79c8)");
+  });
+
   it("says nothing while the vote runs, and nothing about a result that changed nothing", () => {
     expect(backPlannedChange(councilRecord("voting"), NOW)).toBeNull();
     expect(backPlannedChange(councilRecord("kept"), NOW)).toBeNull();
