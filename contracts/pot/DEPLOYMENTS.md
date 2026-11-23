@@ -150,8 +150,8 @@ On a real network, with a real dollar token and the platform's own addresses:
 QUOTE=<token> PLATFORM=<fee receiver> ADMIN=<settings admin> forge script script/DeployPot.s.sol --rpc-url <rpc> --broadcast --ledger
 ```
 
-After a deploy, read `deployments/pot-<chainid>.json` for the addresses (`holderPause` is the zero address, and
-`holderPauseCodehash` the zero hash, when the switch was off; `earlierGrants` and `earlierKey` are zero when no claim contract was bound). To check the result: call `Launcher.settingsHash()` and
+After a deploy, read `deployments/pot-<chainid>.json` for the addresses (`holderPause` is the zero address and `holderPauseCodehash` the empty code's own hash (`0xc5d2…a470`) when the switch was
+off, never the zero hash; `earlierGrants` and `earlierKey` are zero when no claim contract was bound). To check the result: call `Launcher.settingsHash()` and
 `Launcher.platform()` and compare them with what you meant; launch a throwaway project and take a play dollar through the
 faucet. `scripts/pot-chain-loop.sh` (repo root) does all of that against a local chain and is the reference for the calls.
 
