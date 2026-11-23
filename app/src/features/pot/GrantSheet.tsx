@@ -156,8 +156,8 @@ export function GrantSheet({
           If there is none, they are worth nothing.
         </li>
         <li>
-          The person can give up what has not unlocked; you cannot take it back
-          without a public notice first.
+          The person can give up what they have not built up yet; you cannot
+          take it back without a public notice first.
         </li>
       </ul>
       {member?.address && amount !== null && !problem ? (

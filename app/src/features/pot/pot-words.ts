@@ -73,6 +73,20 @@ export function rateWords(ppm: number): string {
   return `${whole}.${decimals}%`;
 }
 
+/**
+ * Outside money still arriving, why taking out now does not pay it, and how long it keeps arriving
+ * (JOIN-LEAVE-DESIGN 2.5 and the Take out sheet): "4 dollars of outside money is still arriving, and keeps arriving
+ * for another 4 days. It is not paid out now: taking out now leaves it for the people who stay." `leftSecs` is what the
+ * record's arrival clock says is left; null when there is no clock, and the sentence then says nothing about time.
+ */
+export function arrivingWords(raw: bigint, leftSecs: number | null): string {
+  const left =
+    leftSecs === null
+      ? ""
+      : `, and keeps arriving for another ${durationWords(Math.max(0, leftSecs))}`;
+  return `${smallDollarsText(raw)} dollars of outside money is still arriving${left}. It is not paid out now: taking out now leaves it for the people who stay.`;
+}
+
 /** "about 3 days", "about 1 day", "less than a day": a span of seconds for people. */
 export function spanWords(seconds: number): string {
   const days = Math.round(seconds / 86_400);

@@ -14,14 +14,17 @@ import { unitCount } from "./unit-words";
 
 /** What the money line says about what a take-out would give: the figure of the same name on the Take out sheet. */
 export function takeOutNowLine(numbers: ProjectNumbers): string {
-  return `Taking out now would give ${smallDollarsText(numbers.value.leaveValue)} for each Share.`;
+  return `Taking out now would give ${smallDollarsText(numbers.value.leaveValue)} dollars for each Share.`;
 }
 
-/** How many people back it. */
+/**
+ * How many accounts back it. An account is what is counted (one person can hold several, and on a test network they are
+ * free), so no sentence here says "people".
+ */
 export function peopleLine(holderCount: number): string {
   if (holderCount === 0) return "Nobody backs it yet.";
-  if (holderCount === 1) return "1 person backs it.";
-  return `${holderCount.toLocaleString("en-GB")} people back it.`;
+  if (holderCount === 1) return "1 account backs it.";
+  return `${holderCount.toLocaleString("en-GB")} accounts back it.`;
 }
 
 /** A length of time for a sentence: days on a real network, minutes or hours on a test one. */
@@ -31,11 +34,11 @@ export function windowWords(secs: number): string {
 
 /** "1 person" / "12 people". */
 export function peopleCount(n: number): string {
-  return `${n.toLocaleString("en-GB")} ${n === 1 ? "person" : "people"}`;
+  return `${n.toLocaleString("en-GB")} ${n === 1 ? "account" : "accounts"}`;
 }
 
 /**
- * Money that stayed, said to the nearest 100 dollars (as the feed says its amounts) so that the money of one person who kept
+ * Money that stayed, said to the nearest 100 dollars (as the feed says its amounts) so that the money of one account that kept
  * it is never said to the cent: "about 4,800 dollars", or "under 100 dollars" for less than half of that.
  */
 export function keptMoney(raw: bigint): string {
@@ -46,7 +49,7 @@ export function keptMoney(raw: bigint): string {
 }
 
 /**
- * How long money has stayed (`held.rank`): the money that has been in for the whole window, by how many people; or that
+ * How long money has stayed (`held.rank`): the money that has been in for the whole window, by how many accounts; or that
  * nobody has kept money in it that long; or that the project is too young to say. Null when the record does not say.
  */
 export function keptLine(numbers: ProjectNumbers): string | null {
@@ -104,7 +107,8 @@ export const ESTABLISHED_SHEET_TITLE = "What “Established” means";
 export const ESTABLISHED_HINT =
   "Established is a hint. It is not a promise, and it changes nothing about your money.";
 /** The "Established" line in Details for a record from a server that does not say. */
-export const ESTABLISHED_UNTOLD = "This server has not told us yet.";
+export const ESTABLISHED_UNTOLD =
+  "This server has not said yet whether this project counts as Established. It changes nothing about your money.";
 export const ESTABLISHED_UNKNOWN =
   "This could not be worked out just now. It changes nothing about your money.";
 
@@ -149,16 +153,16 @@ export function establishedRows(
     e.accounts === null
       ? {
           met: null,
-          text: `At least ${e.rule.minAccounts} people back it: not known yet.`,
+          text: `At least ${e.rule.minAccounts} accounts back it: not known yet.`,
         }
       : e.accounts >= e.rule.minAccounts
         ? {
             met: true,
-            text: `At least ${e.rule.minAccounts} people back it: ${e.accounts} do now.`,
+            text: `At least ${e.rule.minAccounts} accounts back it: ${e.accounts} do now.`,
           }
         : {
             met: false,
-            text: `Not yet: at least ${e.rule.minAccounts} people need to back it, and ${e.accounts} do now.`,
+            text: `Not yet: at least ${e.rule.minAccounts} accounts need to back it, and ${e.accounts} do now.`,
           };
   // A Council is "Several accounts", never "two people": the record's own runner kind when the milestone 9 keys were read,
   // and otherwise the two answers a record signed before that key carries (only a Council is run by more than one account
@@ -174,8 +178,8 @@ export function establishedRows(
       ? { met: true, text: "Several accounts run it." }
       : { met: false, text: "Not yet: several accounts need to run it." }
     : e.twoSigners
-      ? { met: true, text: "Two people run it." }
-      : { met: false, text: "One person runs it. Not yet: it needs two." };
+      ? { met: true, text: "Two accounts run it." }
+      : { met: false, text: "One account runs it. Not yet: it needs two." };
   return [stayed, people, run];
 }
 

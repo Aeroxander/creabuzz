@@ -181,7 +181,7 @@ export function MyGrants({
                     size="sm"
                     variant="secondary"
                   >
-                    Give up what has not unlocked
+                    Give up what has not built up yet
                   </Button>
                 ) : null}
                 {g.state === 1 && g.burnAt <= now ? (
@@ -210,7 +210,7 @@ export function MyGrants({
         chainId={numbers.chainId}
         confirmLabel={
           step?.kind === "exit"
-            ? "Give up what has not unlocked"
+            ? "Give up what has not built up yet"
             : step?.kind === "burn"
               ? "Finish giving up"
               : "Claim"
@@ -232,7 +232,7 @@ export function MyGrants({
         testId="grant-step-sheet"
         title={
           step?.kind === "exit"
-            ? "Give up what has not unlocked?"
+            ? "Give up what has not built up yet?"
             : step?.kind === "burn"
               ? "Finish giving up"
               : "Claim your Team Shares"

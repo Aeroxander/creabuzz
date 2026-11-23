@@ -322,7 +322,7 @@ export function councilProposalWords(
   return {
     kind: "other",
     words:
-      "A call this app cannot describe. Look at it in a block explorer before agreeing.",
+      "This app cannot say what this call does. Ask the person who put it forward what it does and what it changes.",
     names: null,
   };
 }

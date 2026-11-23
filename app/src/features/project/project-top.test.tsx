@@ -111,7 +111,7 @@ describe("the money, the banner and Back in the order a stranger reads them", ()
     const n = parsedExample();
     const money = await screen.findByTestId("top-money");
     expect(screen.getByTestId("top-money-pot").textContent).toBe(
-      smallDollarsText(n.money.pot),
+      `${smallDollarsText(n.money.pot)} dollars`,
     );
     expect(money.textContent).toContain(
       "This can go up or down. It is not a return.",
@@ -240,7 +240,7 @@ describe("what is drawn when a key is absent, null, wrong or old", () => {
     expect(screen.queryByTestId("top-kept")).toBeNull();
     expect(screen.queryByTestId("established-chip")).toBeNull();
     expect(screen.getByTestId("established-untold-line").textContent).toBe(
-      "This server has not told us yet.",
+      "This server has not said yet whether this project counts as Established. It changes nothing about your money.",
     );
     // The money is read all the same.
     expect(screen.getByTestId("top-money-pot")).not.toBeNull();

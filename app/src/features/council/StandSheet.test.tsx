@@ -138,6 +138,24 @@ describe("the sheet's words", () => {
     expect(screen.getByText("Put forward this list")).toBeTruthy();
   });
 
+  it("says why the press cannot run while the words are empty, and stops saying it once they are written", async () => {
+    show("person");
+    await screen.findByTestId("stand-text");
+    expect(
+      screen.getByTestId("stand-confirm").getAttribute("disabled"),
+    ).not.toBeNull();
+    expect(screen.getByTestId("stand-needs-words").textContent).toBe(
+      "Write your words above to stand.",
+    );
+    fireEvent.change(screen.getByTestId("stand-text"), {
+      target: { value: "I would keep the marketplace open on Fridays." },
+    });
+    expect(screen.queryByTestId("stand-needs-words")).toBeNull();
+    expect(
+      screen.getByTestId("stand-confirm").getAttribute("disabled"),
+    ).toBeNull();
+  });
+
   it("says what opening a vote starts, in the rule's own numbers", async () => {
     show("open");
     await screen.findByTestId("stand-text");

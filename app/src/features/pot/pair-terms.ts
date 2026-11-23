@@ -275,7 +275,7 @@ export function describePotCall(
             };
           return {
             kind: "hand-over",
-            words: `Offer the seat that runs the project to ${who(next)}${args[1] === true ? ". The founder leaves and gives up what has not unlocked of their own Team Shares" : ""}.`,
+            words: `Offer the seat that runs the project to ${who(next)}${args[1] === true ? ". The founder leaves and gives up the part of their own Team Shares they have not built up" : ""}.`,
             names: [next],
           };
         }

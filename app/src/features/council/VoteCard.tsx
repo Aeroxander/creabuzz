@@ -38,6 +38,8 @@ import {
   endedLine,
   lastLine,
   NO_TEXT,
+  TEXT_FAILED,
+  TEXT_LOOKING,
   onlyBackersLine,
   optionPercent,
   optionWords,
@@ -122,8 +124,12 @@ function candidaciesOf(
 function textFor(
   option: VoteOptionNumbers,
   texts: Map<string, Candidacy> | undefined,
+  status: "looking" | "failed" | "ready",
 ): string {
   if (!option.recordHash) return "";
+  // The words are said as they are known: what is still being looked for and what could not be read never read "No text".
+  if (status === "looking") return TEXT_LOOKING;
+  if (status === "failed") return TEXT_FAILED;
   const signed = texts?.get(option.recordHash.toLowerCase()) ?? null;
   const matches =
     signed !== null &&
@@ -287,7 +293,11 @@ export function VoteCard({
 
   const titleId = `vote-title-${open.id}`;
   const rows = open.options.map((option) => {
-    const signed = textFor(option, shownTexts);
+    const signed = textFor(
+      option,
+      shownTexts,
+      texts.isSuccess ? "ready" : texts.isLoading ? "looking" : "failed",
+    );
     const words = optionWords({ option, kind, council, nameOf: nameOfAccount });
     const prop = proposerLine(option, nameOfAccount);
     const me = address?.toLowerCase() ?? null;

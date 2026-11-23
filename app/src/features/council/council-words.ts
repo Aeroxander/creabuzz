@@ -240,8 +240,12 @@ export const REFUSAL_FALLBACK =
 
 export const COUNCIL_HEADING = "The Council";
 
-/** "The Council could not be read right now." (section 6.6): the section says it and presses nothing. */
-export const COUNCIL_UNREADABLE = "The Council could not be read right now.";
+/**
+ * "The Council could not be read right now." (section 6.6): the section says it and presses nothing. It says what to do
+ * next, like every other stopped read.
+ */
+export const COUNCIL_UNREADABLE =
+  "The Council could not be read right now, so nothing is shown about it. Nothing changed. Reload the page in a moment to look again.";
 
 /** "Five accounts run this project together. {needed} of them must agree to every action." */
 export function councilSummary(council: CouncilNumbers): string {

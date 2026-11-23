@@ -98,10 +98,10 @@ describe("the project's money", () => {
   it("says what the project holds, what one Share gives, the allowance, the Team's part and where it stands, in plain words", async () => {
     show(numbers);
     expect((await screen.findByTestId("money-pot")).textContent).toBe(
-      dollarsText(numbers.money.pot),
+      `${dollarsText(numbers.money.pot)} dollars`,
     );
     expect(screen.getByTestId("money-share-value").textContent).toBe(
-      smallDollarsText(numbers.value.leaveValue),
+      `${smallDollarsText(numbers.value.leaveValue)} dollars`,
     );
     expect(screen.getByTestId("play-money").textContent).toMatch(
       /play money, not real money/,

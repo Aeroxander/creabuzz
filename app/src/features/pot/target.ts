@@ -24,6 +24,11 @@ export interface MoneyTarget {
    * the Treasury itself says (`pauseGateOf`). A hint makes a failed read of the pause a stop instead of a "none".
    */
   pauseHint?: string | null;
+  /**
+   * When the money still arriving stops arriving (the record's `money.arrivalEnd`), or null when there is none. A take-out
+   * sheet says how long it keeps arriving, so the number goes where the take-out is read from.
+   */
+  arrivalEnd?: number | null;
 }
 
 export function targetOf(numbers: ProjectNumbers): MoneyTarget {
@@ -38,5 +43,6 @@ export function targetOf(numbers: ProjectNumbers): MoneyTarget {
     dollar: recordFitsBuild(numbers) ? numbers.contracts.dollar : null,
     playMoney: mustSayPlayMoney(numbers.playMoney),
     pauseHint: numbers.contracts.pause ?? null,
+    arrivalEnd: numbers.money.arrivalEnd,
   };
 }

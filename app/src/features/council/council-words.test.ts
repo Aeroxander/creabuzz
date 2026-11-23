@@ -217,7 +217,7 @@ describe("the Council section (6.4)", () => {
       "A Council is five accounts. It can do what a founder could do, with the same limits, and nothing more. Taking out stays open.",
     );
     expect(words.COUNCIL_UNREADABLE).toBe(
-      "The Council could not be read right now.",
+      "The Council could not be read right now, so nothing is shown about it. Nothing changed. Reload the page in a moment to look again.",
     );
   });
 });

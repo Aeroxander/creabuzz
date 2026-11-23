@@ -158,7 +158,7 @@ describe("hand over the seat", () => {
     expect(
       screen.getByTestId("offer-leaves").parentElement?.textContent,
     ).toMatch(
-      /I give up the part of my own Team Shares that has not unlocked yet\. What I have already built up stays mine\./,
+      /I give up the part of my own Team Shares I have not built up yet\. What I have already built up stays mine\./,
     );
     fireEvent.click(screen.getByTestId("offer-leaves"));
     fireEvent.click(screen.getByTestId("sheet-confirm"));

@@ -5,6 +5,7 @@ import { numbersFor, S } from "../../../tests/helpers/pot-harness";
 import { allowancePerDay, dollarsText } from "../money/numbers";
 import {
   allowanceWords,
+  arrivingWords,
   boxNow,
   doorShutWords,
   exactDollarsText,
@@ -185,5 +186,25 @@ describe("plain words", () => {
       /\brevert/i,
     ])
       expect(all).not.toMatch(word);
+  });
+});
+
+describe("money still arriving", () => {
+  it("says what it is, that it is not paid out now, and how long it keeps arriving", () => {
+    expect(arrivingWords(4_000_000n, 4 * 86_400)).toBe(
+      "4 dollars of outside money is still arriving, and keeps arriving for another 4 days. It is not paid out now: taking out now leaves it for the people who stay.",
+    );
+  });
+
+  it("says nothing about time when the record has no clock for it", () => {
+    expect(arrivingWords(4_000_000n, null)).toBe(
+      "4 dollars of outside money is still arriving. It is not paid out now: taking out now leaves it for the people who stay.",
+    );
+  });
+
+  it("a test network's short clock reads in its own units", () => {
+    expect(arrivingWords(4_000_000n, 8 * 60)).toBe(
+      "4 dollars of outside money is still arriving, and keeps arriving for another 8 minutes. It is not paid out now: taking out now leaves it for the people who stay.",
+    );
   });
 });

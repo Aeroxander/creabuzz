@@ -1,9 +1,10 @@
 /**
  * The Back sheet: what a person reads before the one press. It opens on an amount, reads the chain at that moment (the
  * quote, the fee, the door, what the account holds) and shows exactly what will be put into the call: what you pay, the
- * fee to the platform, the Shares you get and what taking out right now would give. The guard on the Shares comes from that
+ * fee to Creaton, the Shares you get and what taking out right now would give. The guard on the Shares comes from that
  * same quote. A shut door, an amount that buys nothing, or too few play dollars say what to do instead of offering the press.
  */
+import { APP_NAME } from "@creaton/core/brand.ts";
 import { QUOTE_TOLERANCE_BPS } from "@creaton/core/pot/pot-plans.ts";
 import { balanceOf } from "@creaton/core/pot/pot-reads.ts";
 import { useQuery } from "@tanstack/react-query";
@@ -188,7 +189,7 @@ export function BackSheet({
             value={`${exactDollarsText(amount)} dollars`}
           />
           <Line
-            label="Fee to the platform, part of that"
+            label={`Fee to ${APP_NAME}, part of that`}
             testId="back-fee"
             value={`${exactDollarsText(good.fee)} dollars (${percentWords(feeBps)})`}
           />

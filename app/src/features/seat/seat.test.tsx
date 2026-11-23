@@ -265,7 +265,7 @@ describe("the person the seat is offered to", () => {
     );
     expect(terms).toMatch(/Helpers the earlier runner set up stop working/);
     expect(terms).toMatch(
-      /The founder is leaving: they give up the part of their own Team Shares that has not unlocked yet/,
+      /The founder is leaving: they give up the part of their own Team Shares they have not built up yet/,
     );
     expect(within(sheet).getByTestId("take-seat-ends").textContent).toMatch(
       /^The offer lasts about 56 minutes, until /,

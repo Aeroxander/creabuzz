@@ -177,7 +177,7 @@ export function Holding({
         {paidIn > 0n ? (
           <div className="flex items-baseline justify-between gap-3 py-1.5">
             <dt className="text-sm text-muted">
-              You paid in, from this browser
+              What you put in, from this browser
             </dt>
             <dd className="num text-right" data-testid="holding-paid-in">
               {smallDollarsText(paidIn)} dollars

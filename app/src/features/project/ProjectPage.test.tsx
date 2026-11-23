@@ -82,7 +82,9 @@ describe("the project page on record version 2", () => {
     await page();
     const pot = await screen.findByTestId("money-pot");
     // The example's own pot, read from the parsed record and never typed here.
-    expect(pot.textContent).toBe(dollarsText(parsedExample().money.pot));
+    expect(pot.textContent).toBe(
+      `${dollarsText(parsedExample().money.pot)} dollars`,
+    );
     expect(screen.getByTestId("play-money").textContent).toMatch(
       /play money, not real money/,
     );

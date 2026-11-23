@@ -46,7 +46,7 @@ export function handOverWords(name: string, address: string): string[] {
 
 /** What leaving the project as founder means when the seat is handed over. */
 export const FOUNDER_LEAVES_WORDS =
-  "I am leaving the project: when they take the seat, I give up the part of my own Team Shares that has not unlocked yet. What I have already built up stays mine.";
+  "I am leaving the project: when they take the seat, I give up the part of my own Team Shares I have not built up yet. What I have already built up stays mine.";
 
 /** Asking one person to run it together: what happens, before the press. */
 export function pairOfferWords(name: string, address: string): string[] {
@@ -67,7 +67,7 @@ export function offeredToYouWords(
     "Taking it makes you the one who draws the allowance, changes the rules, grants Team Shares and can wind the project down. Helpers the earlier runner set up stop working.",
     ...(founderLeaves
       ? [
-          "The founder is leaving: they give up the part of their own Team Shares that has not unlocked yet when you take it.",
+          "The founder is leaving: they give up the part of their own Team Shares they have not built up yet when you take it.",
         ]
       : []),
   ];

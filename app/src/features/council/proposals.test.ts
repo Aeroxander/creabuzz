@@ -199,7 +199,7 @@ describe("a proposed Council call is named in plain words", () => {
   it("a call it cannot read is named as unknown, never guessed", () => {
     const unknown = proposals.councilProposalWords("0xdeadbeef", nameOf);
     expect(unknown.kind).toBe("other");
-    expect(unknown.words).toContain("A call this app cannot describe.");
+    expect(unknown.words).toContain("This app cannot say what this call does.");
     // A known selector with unreadable arguments is unknown too.
     const broken = proposals.councilProposalWords(
       `${encodeCall(TREASURY_ABI, "draw", [YOU, 1n]).slice(0, 10)}00`,

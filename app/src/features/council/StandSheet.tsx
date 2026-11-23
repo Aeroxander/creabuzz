@@ -391,6 +391,12 @@ function StandForm({
           {problem}
         </p>
       ) : null}
+      {/* A press that cannot run says why: a dead press with no reason is the one thing this sheet must not do. */}
+      {!canPress && !textReady ? (
+        <p className="text-sm text-muted" data-testid="stand-needs-words">
+          Write your words above to stand.
+        </p>
+      ) : null}
       <Button
         block
         data-testid="stand-confirm"

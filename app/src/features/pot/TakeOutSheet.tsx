@@ -25,6 +25,7 @@ import {
   smallDollarsText,
   takeOutTaskWords,
   WHERE_TO_CLAIM,
+  arrivingWords,
 } from "./pot-words";
 import {
   PORTION_WORDS,
@@ -232,9 +233,12 @@ export function TakeOutSheet({
         ) : null}
         {good.arrivingLeftBehind > 0n ? (
           <p className="text-sm" data-testid="takeout-arriving">
-            {smallDollarsText(good.arrivingLeftBehind)} dollars of outside money
-            is still arriving. It is not paid out now: taking out now leaves it
-            for the people who stay.
+            {arrivingWords(
+              good.arrivingLeftBehind,
+              target.arrivalEnd === null || target.arrivalEnd === undefined
+                ? null
+                : target.arrivalEnd - Math.floor(Date.now() / 1000),
+            )}
           </p>
         ) : null}
         {good.note > 0n ? (

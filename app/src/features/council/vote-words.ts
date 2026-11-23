@@ -141,14 +141,14 @@ export function countLine(vote: VoteOpenNumbers, rule: VoteRule): string {
     vote.cast < vote.floor && cast >= floor ? `Less than ${floor}` : `${cast}`;
   const wins =
     vote.kind === "replace"
-      ? "a list wins with more than half of those"
-      : "a person wins with more votes than keeping them";
+      ? "a list wins with more than half of the votes cast"
+      : "a person wins when more Shares are for them than for keeping the seat as it is";
   return `${voted}% of Shares have voted. The vote counts when at least ${floor}% do, and ${wins}.`;
 }
 
 /** How a seat election ends when nobody wins it: the two seats' own rule. */
 export function seatsStayLine(): string {
-  return "Seats stay as they are if too few Shares vote, or if nobody gets more votes than keeping them.";
+  return "Seats stay as they are if too few Shares vote, or if no one gets more Shares than keeping each seat as it is.";
 }
 
 /** The stale sentence of section 6.6: said instead of a state line, never alongside it. */
@@ -279,6 +279,11 @@ export function seatsResultLine(input: {
 
 /** A candidate's short text, shown whole; when its signed record is not the one the chain stored, the row says "No text". */
 export const NO_TEXT = "No text";
+/** Shown while a candidate's own words are being looked for: "No text" waits for the read to finish. */
+export const TEXT_LOOKING = "Looking for the words they signed…";
+/** Shown when their words could not be read right now: what happened, and what to do next. */
+export const TEXT_FAILED =
+  "Their words could not be read right now. Reload the page in a moment to look again.";
 
 export function candidacyText(
   recordHash: string | null,

@@ -118,7 +118,7 @@ describe("the Council section", () => {
     });
     show(numbers);
     expect(screen.getByTestId("council-unreadable").textContent).toBe(
-      "The Council could not be read right now.",
+      "The Council could not be read right now, so nothing is shown about it. Nothing changed. Reload the page in a moment to look again.",
     );
     expect(screen.queryByTestId("council-seats")).toBeNull();
     expect(screen.queryAllByRole("button")).toHaveLength(0);

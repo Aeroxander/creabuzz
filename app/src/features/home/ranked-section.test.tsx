@@ -125,7 +125,7 @@ describe("Money that stayed", () => {
       "listitem",
     )[0];
     expect(row.textContent).toMatch(
-      /About 1,200 dollars kept 30 days or more by 1 person\./,
+      /About 1,200 dollars kept 30 days or more by 1 account\./,
     );
     expect(row.textContent).not.toMatch(/1,234/);
   });
@@ -151,7 +151,7 @@ describe("Money that stayed", () => {
     expect(names(list)).toEqual(["A", "B", "C"]);
     const first = within(list).getAllByRole("listitem")[0];
     expect(first.textContent).toContain(
-      `${keptMoney(BigInt(times(3))).replace(/^./, (c) => c.toUpperCase())} kept 30 days or more by ${rank.accounts} people.`,
+      `${keptMoney(BigInt(times(3))).replace(/^./, (c) => c.toUpperCase())} kept 30 days or more by ${rank.accounts} accounts.`,
     );
   });
 

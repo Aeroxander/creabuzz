@@ -20,6 +20,7 @@ import {
 } from "../../../tests/helpers/council-v2-parse";
 import {
   installWallet,
+  readBehavior,
   serve,
   wrap,
 } from "../../../tests/helpers/money-harness";
@@ -166,8 +167,10 @@ describe("the replace card while the names are put forward", () => {
 });
 
 describe("the voting card", () => {
-  it("has a row per choice with the plain percent, the count line from the rule and one distinct press each", () => {
+  it("has a row per choice with the plain percent, the count line from the rule and one distinct press each", async () => {
     show(councilRecord("voting"));
+    // The read for the candidate's own words finishes first: only then does a row with none say "No text".
+    await screen.findByText("No text");
     const rows = screen.getAllByTestId(/^vote-row-/);
     expect(rows).toHaveLength(2);
     expect(rows[0]?.textContent).toContain("Keep things as they are");
@@ -182,7 +185,7 @@ describe("the voting card", () => {
     );
     // The count line: the cast part, the floor from the rule, and how a list wins.
     expect(screen.getByTestId("vote-count").textContent).toBe(
-      "40% of Shares have voted. The vote counts when at least 33% do, and a list wins with more than half of those.",
+      "40% of Shares have voted. The vote counts when at least 33% do, and a list wins with more than half of the votes cast.",
     );
     // One press per row, each with its own name.
     const presses = screen.getAllByTestId(/^vote-press-/);
@@ -221,8 +224,29 @@ describe("the voting card", () => {
       }),
     ]);
     show(councilRecord("voting"));
+    await screen.findByText("No text");
     expect(screen.getByTestId("vote-row-1").textContent).toContain("No text");
     expect(screen.queryByText("A text the chain did not store.")).toBeNull();
+  });
+
+  it("says what is happening to a candidate's words, and what to do when they could not be read", async () => {
+    // A row never reads "No text" while the words are still being looked for, and never when the read stopped: each
+    // says what it knows and what to do next.
+    readBehavior.hang = true;
+    show(councilRecord("voting"));
+    expect(
+      await screen.findByText("Looking for the words they signed…"),
+    ).toBeTruthy();
+    cleanup();
+    readBehavior.hang = false;
+    readBehavior.fail = true;
+    show(councilRecord("voting"));
+    expect(
+      await screen.findByText(
+        "Their words could not be read right now. Reload the page in a moment to look again.",
+      ),
+    ).toBeTruthy();
+    readBehavior.fail = false;
   });
 
   it("marks the person's own choice from the chain's answer for them", async () => {
@@ -330,7 +354,7 @@ describe("the seat election card", () => {
     expect(rows[1]?.textContent).toContain(short(ACCOUNTS[0] as string));
     expect(rows[1]?.textContent).toContain("50%");
     expect(screen.getByTestId("vote-stay").textContent).toBe(
-      "Seats stay as they are if too few Shares vote, or if nobody gets more votes than keeping them.",
+      "Seats stay as they are if too few Shares vote, or if no one gets more Shares than keeping each seat as it is.",
     );
     expect(screen.getAllByTestId(/^vote-press-/)).toHaveLength(3);
   });

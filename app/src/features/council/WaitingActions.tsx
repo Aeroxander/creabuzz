@@ -240,7 +240,8 @@ export function WaitingActions({
                   <p className="text-xs text-muted">
                     {agreedLine(action.agreed, council.needed)}
                   </p>
-                  {action.kind === "other" ? null : agreed ? (
+                  {/* A call this app cannot describe is never offered for agreement here; a seat that already agreed can always take its agreement back. */}
+                  {action.kind === "other" && !agreed ? null : agreed ? (
                     <Press
                       accessibleName={`${TAKE_BACK_AGREEMENT}: ${action.words}`}
                       action={`council-withdraw:${numbers.chainId}:${council.contract}:${action.id}`}

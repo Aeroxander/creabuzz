@@ -75,12 +75,12 @@ export function MoneyFacts({
         <Row
           label="The project's money"
           testId="money-pot"
-          value={smallDollarsText(numbers.money.pot)}
+          value={`${smallDollarsText(numbers.money.pot)} dollars`}
         />
         <Row
           label="What one Share gives if taken out now"
           testId="money-share-value"
-          value={smallDollarsText(numbers.value.leaveValue)}
+          value={`${smallDollarsText(numbers.value.leaveValue)} dollars`}
         />
         <Row label="Where it stands" testId="money-state" value={state.label} />
       </dl>

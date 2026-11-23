@@ -85,11 +85,11 @@ describe("the count line: every percent from the rule, never the floor while und
   it("says what part has voted, the floor, and how a choice wins", () => {
     const n = replace("voting");
     expect(words.countLine(open(n), rule(n))).toBe(
-      "40% of Shares have voted. The vote counts when at least 33% do, and a list wins with more than half of those.",
+      "40% of Shares have voted. The vote counts when at least 33% do, and a list wins with more than half of the votes cast.",
     );
     const s = seats("seats");
     expect(words.countLine(open(s), rule(s))).toContain(
-      "and a person wins with more votes than keeping them.",
+      "and a person wins when more Shares are for them than for keeping the seat as it is.",
     );
   });
 

@@ -36,17 +36,17 @@ function parsedWith(change: (c: Json) => void) {
 describe("who backs it and what taking out gives", () => {
   it("says it for none, one and many", () => {
     expect(peopleLine(0)).toBe("Nobody backs it yet.");
-    expect(peopleLine(1)).toBe("1 person backs it.");
+    expect(peopleLine(1)).toBe("1 account backs it.");
     expect(peopleLine(parsedExample().holderCount)).toBe(
-      `${parsedExample().holderCount} people back it.`,
+      `${parsedExample().holderCount} accounts back it.`,
     );
-    expect(peopleLine(1200)).toBe("1,200 people back it.");
+    expect(peopleLine(1200)).toBe("1,200 accounts back it.");
   });
 
   it("gives what one Share gets from the record's own figure", () => {
     const n = parsedExample();
     expect(takeOutNowLine(n)).toBe(
-      `Taking out now would give ${smallDollarsText(n.value.leaveValue)} for each Share.`,
+      `Taking out now would give ${smallDollarsText(n.value.leaveValue)} dollars for each Share.`,
     );
   });
 });
@@ -63,15 +63,15 @@ describe("how long money has stayed", () => {
     const rank = n.held?.rank;
     expect(rank).toBeTruthy();
     expect(keptLine(n)).toBe(
-      `Kept 30 days or more: ${keptMoney(rank?.money ?? 0n)} by ${rank?.accounts} people.`,
+      `Kept 30 days or more: ${keptMoney(rank?.money ?? 0n)} by ${rank?.accounts} accounts.`,
     );
   });
 
-  it("says one person, not one people", () => {
+  it("says one account, not one accounts", () => {
     const n = parsedWith((c) => {
       c.held.rank.accounts = 1;
     });
-    expect(keptLine(n)).toMatch(/ by 1 person\.$/);
+    expect(keptLine(n)).toMatch(/ by 1 account\.$/);
   });
 
   it("on a test network with a short unit the window is in minutes", () => {
@@ -229,7 +229,7 @@ describe("what a streak and the kept money say", () => {
       c.held.countedAccounts = 3;
     });
     const line = keptLine(one) ?? "";
-    expect(line).toMatch(/by 1 person\.$/);
+    expect(line).toMatch(/by 1 account\.$/);
     expect(line).toMatch(/about 1,200 dollars/);
     expect(line).not.toMatch(/1,234/);
     expect(keptMoney(40_000_000n)).toBe("under 100 dollars");
@@ -263,18 +263,18 @@ describe("what Established means, line by line, from the record's own rule", () 
       `Most of the money has stayed: ${(rule?.minHeldBps ?? 0) / 100}% of it has been here 91 days or more. It needs ${(rule?.minHeldBps ?? 0) / 100}%.`,
     );
     expect(rows?.[1].text).toBe(
-      `At least ${rule?.minAccounts} people back it: ${rule?.minAccounts} do now.`,
+      `At least ${rule?.minAccounts} accounts back it: ${rule?.minAccounts} do now.`,
     );
-    expect(rows?.[2].text).toBe("Two people run it.");
+    expect(rows?.[2].text).toBe("Two accounts run it.");
   });
 
   it("a young project is told what is missing in the same words, never shamed", () => {
     const rows = establishedRows(parsedExample());
     expect(rows?.map((r) => r.met)).toEqual([true, false, false]);
     expect(rows?.[1].text).toMatch(
-      /^Not yet: at least \d+ people need to back it, and \d+ do now\.$/,
+      /^Not yet: at least \d+ accounts need to back it, and \d+ do now\.$/,
     );
-    expect(rows?.[2].text).toBe("One person runs it. Not yet: it needs two.");
+    expect(rows?.[2].text).toBe("One account runs it. Not yet: it needs two.");
     for (const row of rows ?? [])
       expect(row.text).not.toMatch(/fail|bad|worse/i);
   });
@@ -322,14 +322,14 @@ describe("the badge's line about who runs it, for a Council", () => {
     });
     expect(establishedRows(pair)?.[2]).toEqual({
       met: true,
-      text: "Two people run it.",
+      text: "Two accounts run it.",
     });
     const single = parsedWith((c) => {
       c.established.twoSigners = false;
     });
     expect(establishedRows(single)?.[2]).toEqual({
       met: false,
-      text: "One person runs it. Not yet: it needs two.",
+      text: "One account runs it. Not yet: it needs two.",
     });
   });
 

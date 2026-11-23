@@ -112,7 +112,7 @@ describe("each call a Pair can hold has a sentence naming what it does", () => {
       handOverCall({ treasury, next: ANNA, founderLeaves: true }),
     );
     expect(leave.words).toMatch(
-      /The founder leaves and gives up what has not unlocked of their own Team Shares/,
+      /The founder leaves and gives up the part of their own Team Shares they have not built up/,
     );
   });
   it("handing over to nobody withdraws the offer, and says so", () => {

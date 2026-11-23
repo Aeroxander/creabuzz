@@ -111,7 +111,8 @@ function TopMoney({
         {chips}
       </div>
       <p className="num headline text-2xl" data-testid="top-money-pot">
-        {smallDollarsText(numbers.money.pot)}
+        {smallDollarsText(numbers.money.pot)}{" "}
+        <span className="text-sm text-muted">dollars</span>
       </p>
       <p className="text-sm text-muted">{NOT_A_RETURN}</p>
       <p className="text-sm" data-testid="top-take-out-now">

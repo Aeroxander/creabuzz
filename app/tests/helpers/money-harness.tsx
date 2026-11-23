@@ -51,11 +51,23 @@ export function serve(events: Served[]) {
   served.splice(0, served.length, ...events);
 }
 
+/**
+ * How the mocked server answers a read: `hang` makes every read wait for ever, `fail` makes every read stop with an
+ * error. A test that turns one on turns it off again (`serve([])` does neither). Set here so the screens' own
+ * "still looking" and "could not be read" words are tested against the same read the screens use.
+ */
+export const readBehavior: { hang: boolean; fail: boolean } = {
+  hang: false,
+  fail: false,
+};
+
 /** What the mocked server was asked to publish. */
 export const published: unknown[] = [];
 
 /** Answers like the relay: matching kinds, authors, #d and until, newest first, cut at `limit`. */
-export async function readServed(filter: Filter) {
+export async function readServed(filter: Filter): Promise<Served[]> {
+  if (readBehavior.hang) return new Promise<Served[]>(() => {});
+  if (readBehavior.fail) throw new Error("The server did not answer.");
   return served
     .filter((e) => !filter.kinds || filter.kinds.includes(e.kind))
     .filter((e) => !filter.authors || filter.authors.includes(e.pubkey))
