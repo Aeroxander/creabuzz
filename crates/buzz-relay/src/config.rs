@@ -2145,7 +2145,13 @@ mod tests {
         let fi = crate::nip_fi_config::NIP_FI_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let cfg = ENV_MUTEX.lock().unwrap();
+        // Into the poisoned state rather than panicking: one test failing mid-assertion while it holds the guard must
+        // not turn into a failure of every later test that takes it (this lane once reported 55 poison panics behind
+        // one real failure). The guard exists to order env writes; a test that died holding it left no env write in
+        // flight, and the next holder restores its own keys regardless.
+        let cfg = ENV_MUTEX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         (fi, cfg)
     }
 
