@@ -335,7 +335,7 @@ test("the card while voting: a row per choice, the count line from the rule, one
     "Nobody on a list has to agree to it.",
   );
   await expect(page.getByTestId("vote-count")).toHaveText(
-    "40% of Shares have voted. The vote counts when at least 33% do, and a list wins with more than half of those.",
+    "40% of Shares have voted. The vote counts when at least 33% do, and a list wins with more than half of the votes cast.",
   );
   const presses = page.locator('[data-testid^="vote-press-"]');
   await expect(presses).toHaveCount(2);

@@ -236,7 +236,9 @@ export function ProjectTop({
   const fresh = numbers ? freshnessOf(numbers, now).level !== "stale" : false;
   const reached = fresh && numbers?.established?.reached === true;
   return (
-    <div className="flex flex-col gap-3" data-testid="project-top">
+    // 8px between the top's sections: at 360 x 640 the Back press must stay in the first screen (the app's own
+    // phone-360 contract), and 12px pushed it under the tab bar once the money lines said their units.
+    <div className="flex flex-col gap-2" data-testid="project-top">
       <Header project={project} />
       {investing ? null : (
         <StartedBy

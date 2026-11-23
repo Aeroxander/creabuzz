@@ -124,6 +124,7 @@ function CheckInBlock({
                     },
                   );
                 }}
+                className="min-h-11"
                 size="sm"
                 variant="secondary"
               >
