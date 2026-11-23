@@ -22,7 +22,9 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/creaton-backup-enc.XXXXXX")"
+# Normalized (cd && pwd) like backup.sh's own paths: a TMPDIR with a trailing slash would otherwise hand run.sh a path
+# with a doubled slash that backup.sh collapses, and the stand-ins below compare strings.
+TEST_DIR="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/creaton-backup-enc.XXXXXX")" && pwd)"
 trap 'rm -rf "${TEST_DIR}"' EXIT
 
 # The copy of the compose folder sits two levels under TEST_DIR, as it does in the checkout, so that run.sh finds the web
@@ -90,7 +92,12 @@ for ((i = 0; i < n; i++)); do
       [[ "${args[i + 1]}" == "--images" ]] && echo "creaton-relay:test"
       exit 0
       ;;
-    inspect) exit 1 ;;
+    inspect)
+      # The image is there (this test is about backups and placeholders, not about building). IMAGE_MISSING=1 turns it
+      # into a machine where it was never built; `deploy/compose/test-app-settings.sh` covers that refusal itself.
+      [[ "${IMAGE_MISSING:-}" == "1" ]] && exit 1
+      exit 0
+      ;;
   esac
 done
 if [[ "$*" == *psql* ]]; then echo 7; fi
