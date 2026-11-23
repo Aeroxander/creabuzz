@@ -115,8 +115,8 @@ export function LaunchSheet({
       ) : offer.isError || !shown ? (
         <div className="flex flex-col gap-2" data-testid="launch-read-failed">
           <p className="text-sm">
-            The platform's settings could not be read from the network, so
-            nothing can be sent now. Nothing changed.
+            Creaton's settings could not be read from the network, so nothing
+            can be sent now. Nothing changed.
           </p>
           <Button onClick={() => void offer.refetch()} variant="secondary">
             Try again
@@ -198,7 +198,7 @@ export function LaunchSheet({
             <summary className="cursor-pointer">Technical details</summary>
             <p className="mt-1.5 break-all" data-testid="launch-fingerprint">
               Settings fingerprint {shown.settingsHash}. The launch is refused
-              if the platform's settings change before you sign.
+              if Creaton's settings change before you sign.
             </p>
           </details>
         </>

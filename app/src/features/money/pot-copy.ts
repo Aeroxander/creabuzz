@@ -280,7 +280,7 @@ const EARLIER_WORDS: Record<
     any: "The project's name and symbol must each be 1 to 64 letters long. Nothing was created.",
   },
   BadSettings: {
-    any: "The platform's settings are not valid. Nothing changed.",
+    any: "Creaton's settings are not valid. Nothing changed.",
   },
   BadStack: {
     any: "The project's parts could not be put together. Nothing was created. Try again.",
@@ -299,7 +299,7 @@ const EARLIER_WORDS: Record<
     any: "An account did not hold enough for this. Nothing changed.",
   },
   NotAdmin: {
-    any: "Only the platform's administrator can do this. Nothing changed.",
+    any: "Only Creaton's administrator can do this. Nothing changed.",
   },
   NotRunner: {
     any: "Only the account that runs this project can do this. Nothing changed.",
@@ -311,8 +311,8 @@ const EARLIER_WORDS: Record<
   },
   SettingsMoved: {
     launch:
-      "The platform's settings changed while you were deciding. Nothing was created; press again to launch under the new settings.",
-    any: "The platform's settings changed. Nothing changed; try again.",
+      "Creaton's settings changed while you were deciding. Nothing was created; press again to launch under the new settings.",
+    any: "Creaton's settings changed. Nothing changed; try again.",
   },
   UnknownProject: {
     any: "The network does not know this project. Nothing changed.",

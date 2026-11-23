@@ -293,7 +293,7 @@ describe("the launch sheet", () => {
     expect(chain.sent).toEqual([]);
   });
 
-  it("refuses with words, and sends nothing, when the platform's settings changed between the sheet and the signature; then sends under the new ones", async () => {
+  it("refuses with words, and sends nothing, when Creaton's settings changed between the sheet and the signature; then sends under the new ones", async () => {
     setup();
     show();
     await open();
@@ -302,7 +302,7 @@ describe("the launch sheet", () => {
     fireEvent.click(screen.getByTestId("sheet-confirm"));
     const problem = await screen.findByTestId("sheet-problem");
     expect(problem.textContent).toMatch(
-      /The platform's settings changed while you were deciding\. Nothing was sent/,
+      /Creaton's settings changed while you were deciding\. Nothing was sent/,
     );
     expect(problem.textContent).not.toMatch(/0x|SettingsMoved|revert/);
     expect(chain.sent).toEqual([]);

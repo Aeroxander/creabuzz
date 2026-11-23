@@ -283,7 +283,7 @@ export function describePotCall(
           const agent = address(args[0]);
           return {
             kind: "agent",
-            words: `Let ${who(agent)} act as a helper, with the platform's usual daily limits on what it can draw.`,
+            words: `Let ${who(agent)} act as a helper, with Creaton's usual daily limits on what it can draw.`,
             names: [agent],
           };
         }

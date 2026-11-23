@@ -125,4 +125,4 @@ export function launchTermsSentence(
 
 /** What the sheet says when the settings hash it read is not the one the Launcher has at the signature. */
 export const SETTINGS_MOVED_WORDS =
-  "The platform's settings changed while you were deciding. Nothing was sent. The new settings are shown again; read them and press again.";
+  "Creaton's settings changed while you were deciding. Nothing was sent. The new settings are shown again; read them and press again.";

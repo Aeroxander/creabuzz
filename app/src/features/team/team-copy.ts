@@ -66,8 +66,8 @@ const WORDS: Record<
   // Launcher
   SettingsMoved: {
     launch:
-      "The platform's settings changed while you were deciding. Nothing was created; press again to launch under the new settings.",
-    any: "The platform's settings changed. Nothing changed; try again.",
+      "Creaton's settings changed while you were deciding. Nothing was created; press again to launch under the new settings.",
+    any: "Creaton's settings changed. Nothing changed; try again.",
   },
   ProjectExists: {
     launch:
