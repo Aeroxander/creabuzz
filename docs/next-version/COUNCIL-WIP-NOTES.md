@@ -23,8 +23,14 @@ reader/helper/web-push/handlers tests, and the Postgres lane), regenerate the th
 three examples; wire the remaining seat-holder runner presses and the Council worlds in the two loop scripts; then an independent
 verifier runs the plan's full check set. Nothing from this branch goes to `v6` until that verifier finds no blocker.
 
-**Branch `v7` (23 November 2026) picks up from here** and wires the seat-holder runner presses (`5b5fad4c0`, every runner
-press a seat reaches sends the call `Council.listed` accepts, with the never-ask-twice guard carried to the Council's waiting
-calls), fixes the unit lane's two pre-existing holes, and closes a launch-readiness pass (`docs/next-version/LAUNCH-READINESS.md`,
-which is the account of what is verified and what is still open — including the independent verifier's pass, which is still
-owed). `v7` is the branch to test from; nothing here promotes this round to `v6` on its own.
+**Branch `v7` (23 November 2026) picks up from here** and finishes the "to continue" line above: the seat-holder runner
+presses are wired (`5b5fad4c0`, every runner press a seat reaches sends the call `Council.listed` accepts, with the
+never-ask-twice guard carried to the Council's waiting calls) **and reached in the app** (`7a162fd41`, the weekly check-in
+press beside the runner's other presses — the This-week page lists only a person's own projects, so before this a seat or a
+Pair's second signer could not check in at all), the Council worlds in the two loop scripts run by journey name
+(`77614af82`: `scripts/pot-full-loop.sh pot-council.spec` and `pot-replace.spec` pick their world like `pot-pause.spec`
+does, which the single-journey form never did before), and the council journey presses Check in and Draw from a seat through
+the app and runs each to `Executed` (**27 checks green**). The unit lane's two pre-existing holes are fixed (`461a7a65f`), and
+`docs/next-version/LAUNCH-READINESS.md` is the account of what is verified and what is still open — including the
+independent verifier's pass, which is still owed. `v7` is the branch to test from; nothing here promotes this round to `v6`
+on its own.
