@@ -22,3 +22,9 @@ To continue: run the server's Rust lane (`cargo fmt --all -- --check`, clippy on
 reader/helper/web-push/handlers tests, and the Postgres lane), regenerate the third example with `UPDATE_EXAMPLE=1` and check all
 three examples; wire the remaining seat-holder runner presses and the Council worlds in the two loop scripts; then an independent
 verifier runs the plan's full check set. Nothing from this branch goes to `v6` until that verifier finds no blocker.
+
+**Branch `v7` (23 November 2026) picks up from here** and wires the seat-holder runner presses (`5b5fad4c0`, every runner
+press a seat reaches sends the call `Council.listed` accepts, with the never-ask-twice guard carried to the Council's waiting
+calls), fixes the unit lane's two pre-existing holes, and closes a launch-readiness pass (`docs/next-version/LAUNCH-READINESS.md`,
+which is the account of what is verified and what is still open — including the independent verifier's pass, which is still
+owed). `v7` is the branch to test from; nothing here promotes this round to `v6` on its own.
