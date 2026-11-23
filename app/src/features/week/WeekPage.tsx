@@ -52,7 +52,8 @@ export function WeekPage() {
           icon={<CalendarCheck size={28} />}
           title="Nothing to do yet"
         >
-          Start a project and your week shows here.
+          Start a project and your week shows here. If you run a project someone
+          else started, its weekly check-in is on that project's Money tab.
         </EmptyState>
       ) : projects.isPending ? (
         <Card className="h-28 animate-pulse" />

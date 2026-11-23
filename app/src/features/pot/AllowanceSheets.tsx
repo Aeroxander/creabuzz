@@ -25,10 +25,17 @@ import { dollarsPhrase } from "../money/pot-copy-tasks";
 import { dayText, type ProjectNumbers, timeText } from "../money/numbers";
 import { TeamPauseLine } from "../pause/TeamPauseLine";
 import { useTeamPause } from "../pause/use-team-pause";
+import { alreadyAsked } from "./asked-already";
 import { PotSheet } from "./PotSheet";
 import { RunnerAskNote } from "./RunnerAskNote";
 import { doneWords, runnerSend } from "./runner-calls";
-import { boxNow, rateWords, smallDollarsText } from "./pot-words";
+import {
+  alreadyAskedUnknownWords,
+  alreadyAskedWords,
+  boxNow,
+  rateWords,
+  smallDollarsText,
+} from "./pot-words";
 import type { Ready } from "./use-pot";
 
 /** The allowance as the chain has it now, read when a sheet opens. */
@@ -118,6 +125,26 @@ function DrawSheet({ numbers, ready, sheet, onClose }: Props) {
           }),
         )
       : null;
+  // A Pair's and a Council's proposals each get their own id, so a second identical ask would run the step twice:
+  // what already waits is read before anything is sent (the words are pot-words').
+  const askedThrough = send && send.through !== "alone" ? send.through : null;
+  const askedAgain =
+    askedThrough && parsed.ok
+      ? async () => {
+          const inner = drawCall({
+            treasury: numbers.contracts.treasury,
+            to: target,
+            amount: parsed.raw,
+          });
+          try {
+            return (await alreadyAsked(ready, numbers, askedThrough, inner))
+              ? alreadyAskedWords(askedThrough, "draw")
+              : null;
+          } catch {
+            return alreadyAskedUnknownWords(askedThrough);
+          }
+        }
+      : undefined;
   return (
     <PotSheet
       account={ready.address}
@@ -146,6 +173,7 @@ function DrawSheet({ numbers, ready, sheet, onClose }: Props) {
       open={open}
       playMoney={numbers.playMoney}
       problemAction="draw"
+      recheck={askedAgain}
       testId="draw-sheet"
       title="Draw from the allowance box"
     >

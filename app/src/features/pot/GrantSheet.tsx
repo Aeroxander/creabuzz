@@ -7,10 +7,15 @@ import { grantTeamCall } from "@creaton/core/pot/pot-calls.ts";
 import { useState } from "react";
 import { Field } from "../../ui/field";
 import { dayText, type ProjectNumbers } from "../money/numbers";
+import { alreadyAsked } from "./asked-already";
 import { PotSheet } from "./PotSheet";
 import { RunnerAskNote } from "./RunnerAskNote";
 import { doneWords, runnerSend } from "./runner-calls";
-import { sharesWords } from "./pot-words";
+import {
+  alreadyAskedUnknownWords,
+  alreadyAskedWords,
+  sharesWords,
+} from "./pot-words";
 import type { Ready } from "./use-pot";
 
 const SHARE = 1_000_000_000_000_000_000n;
@@ -76,6 +81,20 @@ export function GrantSheet({
         })
       : null;
   const send = inner ? runnerSend(numbers, ready.address, inner) : null;
+  // The same grant asked twice would grant twice (each proposal has its own id): what waits is read first.
+  const askedThrough = send && send.through !== "alone" ? send.through : null;
+  const askedAgain =
+    inner && askedThrough
+      ? async () => {
+          try {
+            return (await alreadyAsked(ready, numbers, askedThrough, inner))
+              ? alreadyAskedWords(askedThrough, "grant")
+              : null;
+          } catch {
+            return alreadyAskedUnknownWords(askedThrough);
+          }
+        }
+      : undefined;
   return (
     <PotSheet
       account={ready.address}
@@ -104,6 +123,7 @@ export function GrantSheet({
       open={open}
       playMoney={numbers.playMoney}
       problemAction="grant"
+      recheck={askedAgain}
       testId="grant-sheet"
       title="Grant Team Shares"
     >

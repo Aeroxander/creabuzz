@@ -93,6 +93,27 @@ export function arrivingWords(raw: bigint, leftSecs: number | null): string {
   return `${smallDollarsText(raw)} dollars of outside money is still arriving${left}. It is not paid out now: taking out now leaves it for the people who stay.`;
 }
 
+/**
+ * The same step is already waiting where it must be agreed to: nothing new is asked, because agreeing to both would
+ * run it twice. Said before anything is sent (`pot/asked-already.ts` reads what waits).
+ */
+export function alreadyAskedWords(
+  through: "pair" | "council",
+  step: "draw" | "grant",
+): string {
+  const what = step === "draw" ? "draw" : "Team Shares grant";
+  return through === "pair"
+    ? `This same ${what} is already waiting for the other signer to confirm it, so nothing new was asked. They confirm it on the Money tab; the step happens once.`
+    : `This same ${what} is already waiting for the seats to agree to it, so nothing new was asked. They agree on the Money tab; the step happens once.`;
+}
+
+/** What is waiting could not be read: nothing is sent on a guess. */
+export function alreadyAskedUnknownWords(through: "pair" | "council"): string {
+  return through === "pair"
+    ? "What is already waiting for the other signer could not be read just now, so nothing was sent. Press again in a moment."
+    : "What is already waiting for the seats could not be read just now, so nothing was sent. Press again in a moment.";
+}
+
 /** "about 3 days", "about 1 day", "less than a day": a span of seconds for people. */
 export function spanWords(seconds: number): string {
   const days = Math.round(seconds / 86_400);

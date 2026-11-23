@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import { numbersFor, S } from "../../../tests/helpers/pot-harness";
 import { allowancePerDay, dollarsText } from "../money/numbers";
 import {
+  alreadyAskedUnknownWords,
+  alreadyAskedWords,
   allowanceWords,
   arrivingWords,
   boxNow,
@@ -186,6 +188,25 @@ describe("plain words", () => {
       /\brevert/i,
     ])
       expect(all).not.toMatch(word);
+  });
+});
+
+describe("a step already waiting in the runner", () => {
+  it("says what is already waiting, for whom, and that the step happens once", () => {
+    expect(alreadyAskedWords("pair", "draw")).toBe(
+      "This same draw is already waiting for the other signer to confirm it, so nothing new was asked. They confirm it on the Money tab; the step happens once.",
+    );
+    expect(alreadyAskedWords("council", "grant")).toBe(
+      "This same Team Shares grant is already waiting for the seats to agree to it, so nothing new was asked. They agree on the Money tab; the step happens once.",
+    );
+  });
+
+  it("what waits could not be read: nothing is sent on a guess, and it says so for whom", () => {
+    expect(alreadyAskedUnknownWords("pair")).toMatch(/could not be read/);
+    expect(alreadyAskedUnknownWords("council")).toMatch(
+      /waiting for the seats could not be read/,
+    );
+    expect(alreadyAskedUnknownWords("council")).toMatch(/nothing was sent/);
   });
 });
 

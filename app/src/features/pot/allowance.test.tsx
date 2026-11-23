@@ -24,7 +24,12 @@ import {
   numbersFor,
 } from "../../../tests/helpers/pot-harness";
 import { councilRecord } from "../../../tests/helpers/council-v2-parse";
-import { checkInCall } from "@creaton/core/pot/pot-calls.ts";
+import { checkInCall, drawCall } from "@creaton/core/pot/pot-calls.ts";
+import {
+  encodeParameters,
+  selectorOf,
+} from "@creaton/core/launchpad/evmAbi.ts";
+import { addressTopic, topicOf } from "@creaton/core/launchpad/work.ts";
 import { dollarsText, type ProjectNumbers } from "../money/numbers";
 import { CHECK_IN_NO_RECORD } from "../money/runner";
 import { proposeAskLine } from "../council/council-words";
@@ -48,9 +53,13 @@ const numbers = numbersFor();
 const NOW = numbers.builtAt + 100;
 const PAIR = "0x00000000000000000000000000000000000000a1";
 const TO = "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc";
+const SECOND = "0x00000000000000000000000000000000000000dd";
 let chain: PotChain;
 
 const allowance = (over: Record<string, unknown> = {}) => ({
+  // The never-ask-twice guard reads what waits in the runner before an ask (a Pair's proposals): nothing waits here
+  // unless a test plants a log.
+  PROPOSAL_TTL: [86_400n],
   box: [700n * D],
   boxCap: [7_000n * D],
   ratePpm: [1_000n],
@@ -455,5 +464,108 @@ describe("a project run by two", () => {
     const inner = decodeCall(TREASURY_ABI, proposal?.args[1] as string);
     expect(inner?.name).toBe("draw");
     expect(inner?.args).toEqual([TO, 10n * D]);
+  });
+});
+
+/** The event a Pair and a Council both write when a call is put forward for the others to agree to. */
+const PROPOSED = topicOf("Proposed(bytes32,address,address,bytes,uint256)");
+
+describe("the same draw is never asked twice", () => {
+  // A Pair and a Council give every proposal its own id, so a second identical ask would draw twice. What already
+  // waits is read before the press; nothing is sent when the same call is among it.
+  it("a draw already waiting in the Pair is not asked again: the press sends nothing and says so", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    setup(BACKER_EVM, {
+      proposer: () => [SECOND],
+      proposedAt: [BigInt(now)],
+    });
+    show(pairRun, BACKER_EVM);
+    fireEvent.click(await screen.findByTestId("allowance-draw"));
+    await screen.findByTestId("draw-box");
+    fireEvent.change(screen.getByLabelText("Draw to which account?"), {
+      target: { value: TO },
+    });
+    fireEvent.change(screen.getByLabelText("How many dollars?"), {
+      target: { value: "1" },
+    });
+    // What an earlier press left waiting in the Pair: the exact call this sheet is about to ask for.
+    const inner = drawCall({
+      treasury: numbers.contracts.treasury,
+      to: TO,
+      amount: D,
+    });
+    chain.logs = [
+      {
+        address: PAIR,
+        topics: [PROPOSED, `0x${"01".repeat(32)}`, addressTopic(SECOND)],
+        data: encodeParameters(
+          ["address", "bytes", "uint256"],
+          [inner.to, inner.data, 1n],
+        ),
+        blockNumber: "0x10",
+        transactionHash: `0x${"ee".repeat(32)}`,
+      },
+    ];
+    fireEvent.click(screen.getByTestId("sheet-confirm"));
+    await waitFor(() =>
+      expect(screen.getByTestId("sheet-problem").textContent).toContain(
+        "already waiting for the other signer",
+      ),
+    );
+    expect(chain.sent).toEqual([]);
+  });
+
+  it("a draw already waiting in the Council is not asked again, and the words name the seats", async () => {
+    const run = councilRecord("voting");
+    const council = run.council;
+    if (!council) throw new Error("the record has no Council");
+    const seat = council.seats[1]?.account;
+    if (!seat) throw new Error("the second seat is open");
+    const now = Math.floor(Date.now() / 1000);
+    // The Council's own proposals view answers by selector (its shape is the Pair's plus a generation and a mask).
+    chain = installPotChain({
+      account: seat,
+      answers: { ...allowance(), generation: [1n] } as never,
+      answersBySelector: {
+        [selectorOf("proposals(bytes32)")]: () =>
+          encodeParameters(
+            ["uint48", "uint32", "uint8"],
+            [BigInt(now), 1n, 1n],
+          ),
+      },
+    });
+    show(run, seat);
+    fireEvent.click(await screen.findByTestId("allowance-draw"));
+    await screen.findByTestId("draw-box");
+    fireEvent.change(screen.getByLabelText("Draw to which account?"), {
+      target: { value: TO },
+    });
+    fireEvent.change(screen.getByLabelText("How many dollars?"), {
+      target: { value: "1" },
+    });
+    const inner = drawCall({
+      treasury: run.contracts.treasury,
+      to: TO,
+      amount: D,
+    });
+    chain.logs = [
+      {
+        address: council.contract,
+        topics: [PROPOSED, `0x${"01".repeat(32)}`, addressTopic(seat)],
+        data: encodeParameters(
+          ["address", "bytes", "uint256"],
+          [inner.to, inner.data, 0n],
+        ),
+        blockNumber: "0x10",
+        transactionHash: `0x${"ee".repeat(32)}`,
+      },
+    ];
+    fireEvent.click(screen.getByTestId("sheet-confirm"));
+    await waitFor(() =>
+      expect(screen.getByTestId("sheet-problem").textContent).toContain(
+        "already waiting for the seats",
+      ),
+    );
+    expect(chain.sent).toEqual([]);
   });
 });

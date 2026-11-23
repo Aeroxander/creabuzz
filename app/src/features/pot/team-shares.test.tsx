@@ -3,6 +3,9 @@
 // above what backers put in, and each call is made from the numbers on its sheet.
 import { applyServerSettings } from "@creaton/core/client/server-settings.ts";
 import { decodeCall } from "@creaton/core/pot/abi-codec.ts";
+import { grantTeamCall } from "@creaton/core/pot/pot-calls.ts";
+import { encodeParameters } from "@creaton/core/launchpad/evmAbi.ts";
+import { addressTopic, topicOf } from "@creaton/core/launchpad/work.ts";
 import {
   PAIR_ABI,
   TREASURY_ABI,
@@ -69,6 +72,8 @@ function setup(
     claimable: bigint;
     accrued: bigint;
   }> = {},
+  /** Extra chain answers (what a guard reads before the press, for one). */
+  answers: Record<string, unknown> = {},
 ) {
   const g = {
     state: 0n,
@@ -85,6 +90,9 @@ function setup(
   chain = installPotChain({
     account,
     answers: {
+      ...answers,
+      // The never-ask-twice guard reads what waits in the runner before an ask (a Pair's proposals).
+      PROPOSAL_TTL: [86_400n],
       idsOf: [[2n]],
       grantOf: [
         [account, g.prot, g.state, g.burnAt, g.total, g.claimed, 0n, g.burn],
@@ -138,6 +146,9 @@ describe("Team Shares says what they are", () => {
     expect(screen.queryByTestId("team-shares")).toBeNull();
   });
 });
+
+/** The event a Pair writes when a call is put forward for the other signer to confirm. */
+const PROPOSED = topicOf("Proposed(bytes32,address,address,bytes,uint256)");
 
 describe("grant Team Shares", () => {
   async function open() {
@@ -233,6 +244,58 @@ describe("grant Team Shares", () => {
     expect(decodeCall(TREASURY_ABI, proposal?.args[1] as string)?.args).toEqual(
       [BACKER_EVM, 10n * S],
     );
+  });
+
+  it("a grant already waiting in the Pair is not asked again: the press sends nothing and says so", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    setup(
+      FOUNDER_EVM,
+      {},
+      { proposer: () => [BACKER_EVM], proposedAt: [BigInt(now)] },
+    );
+    const pairRun: ProjectNumbers = {
+      ...numbers,
+      runner: {
+        address: PAIR,
+        isPair: true,
+        signers: [FOUNDER_EVM, BACKER_EVM],
+      },
+      contracts: { ...numbers.contracts, pair: PAIR },
+    };
+    show(pairRun);
+    fireEvent.click(await screen.findByTestId("grant-open"));
+    await screen.findByTestId("grant-pool");
+    fireEvent.change(screen.getByLabelText("Grant to"), {
+      target: { value: ANNA.pubkey },
+    });
+    fireEvent.change(screen.getByLabelText("How many Team Shares?"), {
+      target: { value: "10" },
+    });
+    // What an earlier press left waiting in the Pair: the exact grant this sheet is about to ask for.
+    const inner = grantTeamCall({
+      treasury: numbers.contracts.treasury,
+      member: BACKER_EVM,
+      amount: 10n * S,
+    });
+    chain.logs = [
+      {
+        address: PAIR,
+        topics: [PROPOSED, `0x${"01".repeat(32)}`, addressTopic(BACKER_EVM)],
+        data: encodeParameters(
+          ["address", "bytes", "uint256"],
+          [inner.to, inner.data, 1n],
+        ),
+        blockNumber: "0x10",
+        transactionHash: `0x${"ee".repeat(32)}`,
+      },
+    ];
+    fireEvent.click(screen.getByTestId("sheet-confirm"));
+    await waitFor(() =>
+      expect(screen.getByTestId("sheet-problem").textContent).toContain(
+        "already waiting for the other signer",
+      ),
+    );
+    expect(chain.sent).toEqual([]);
   });
 });
 

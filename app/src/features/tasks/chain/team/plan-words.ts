@@ -101,7 +101,7 @@ export const PLAN_BLOCK = {
     "The team has not checked in lately, so no task can be planned or taken until they do. Check in first, on This week.",
   full: NEW_TASK_ERRORS.TooManyOpen.any.replace(" Nothing changed.", ""),
   notRunner:
-    "Only the account that runs this project can plan a task (with two people running it, either signer can ask the other).",
+    "Only the account that runs this project can plan a task (with two accounts running it, either signer can ask the other).",
   noPay:
     "This task says no pay, so it cannot be planned. Post it again with what it pays.",
   boxPaid:
