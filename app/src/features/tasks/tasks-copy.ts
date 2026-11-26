@@ -2,6 +2,7 @@
  * The words of the Tasks tab: what each state says, and every problem a task step can meet as a sentence that says
  * what happened and what to do next. Money problems come from `moneyProblem`; this adds the steps that are records.
  */
+import { shortAddress } from "../../lib/short-address";
 import { dollarsText } from "../money/numbers";
 import { potProblem } from "../money/pot-copy";
 import type { TaskState } from "./task-record";
@@ -69,7 +70,7 @@ export const TASK_PROBLEM = {
   ownWork:
     "This work was done by you or by an agent you run. Someone else on the team has to accept it.",
   pairNeedsBoth:
-    'This project is run by two people, and a payment from the allowance needs both of you to sign it. Ask for the payment with "Draw from the box" on the Money tab: the other signer confirms it there.',
+    'This project is run by two accounts, so the pay is asked of your co-signer before it goes out. Accept the task first, then press "Ask for the pay from the box" on it: they confirm it on the Money tab.',
   notRunner: "Only the account that runs this project can pay for a task.",
   agentLimits:
     "The limits were not set. Only the account that runs this project can set them.",
@@ -209,9 +210,12 @@ export function boxShortWords(
   return `The allowance box holds ${dollarsText(box)} dollars now, which is less than this task pays.${day} ${then}`;
 }
 
-/** The sentence beside "Pay from the box": what goes where. */
+/**
+ * The sentence beside "Pay from the box": what goes where. The account is shown the way every screen shows one it has
+ * no name for (its short form): a full address never sits mid-sentence in the words a payer reads before money moves.
+ */
 export function payTermsWords(usd: number, payee: string): string {
-  return `${dollarsWords(usd)} go from the allowance box to ${payee}, the account the worker named.`;
+  return `${dollarsWords(usd)} go from the allowance box to ${shortAddress(payee)}, the account the worker named.`;
 }
 
 /** The payment found on the chain, in words. */
@@ -224,7 +228,7 @@ export function foundWords(
     at === null
       ? ""
       : ` on ${new Date(at * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}`;
-  return `A payment of ${dollarsWords(usd)} to ${payee} left the box${when}. If it was this task's pay, save it here: nothing is paid twice.`;
+  return `A payment of ${dollarsWords(usd)} to ${shortAddress(payee)} left the box${when}. If it was this task's pay, save it here: nothing is paid twice.`;
 }
 
 /** What a person reads when paying for a task stops. */

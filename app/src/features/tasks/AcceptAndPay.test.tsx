@@ -265,7 +265,7 @@ describe("accept and pay", () => {
       />,
     );
     expect(screen.getByTestId("task-accept-problem").textContent).toMatch(
-      /needs both of you to sign/,
+      /asked of your co-signer before it goes out/,
     );
     expect(screen.getByTestId("task-accept").textContent).toBe(
       "Accept now, pay 40 dollars later",

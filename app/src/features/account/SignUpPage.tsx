@@ -141,6 +141,9 @@ function CreateView({
     try {
       getOrCreateIdentity();
       recordTerms(policy);
+      // The account lives in this browser's site data only: offer the key that works everywhere while it is open,
+      // exactly as the passkey path does (without it, clearing the site data loses the account for good).
+      offerRecoveryKey({ account: userPubkey(), onClose: () => {} });
       announceAccountChange();
       pubkey = userPubkey();
     } catch {
@@ -246,6 +249,11 @@ function CreateView({
         >
           Create without a passkey
         </Button>
+        <p className="-mt-1 text-center text-xs text-muted">
+          This account is kept in this browser only. If this browser's data is
+          cleared, only your recovery key can bring it back — save it when it is
+          offered.
+        </p>
       </div>
       <div className="plain flex items-center justify-between gap-2 rounded-2xl px-3 text-sm">
         <button

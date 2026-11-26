@@ -194,7 +194,8 @@ export function TasksTab({
       )}
       {read.data.complete ? null : (
         <p className="text-xs text-muted">
-          Older tasks are not shown: this project has more than one read holds.
+          Older tasks are not shown: this project has more tasks than one read
+          brings back. The newest are here.
         </p>
       )}
       {runner && numbers ? <AgentCaps numbers={numbers} /> : null}

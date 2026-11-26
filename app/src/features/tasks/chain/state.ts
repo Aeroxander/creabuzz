@@ -23,6 +23,7 @@ import {
   plannedMoreThanOnce,
   takerDiffers,
 } from "./words";
+import { shortAddress } from "../../../lib/short-address";
 
 export { doorFor, shareFor } from "./door";
 export { durationWords, noticeWords } from "./duration";
@@ -145,11 +146,6 @@ export interface StateOptions {
   windDownAt?: number | null;
   /** The pay-to's name; without it the detail says "Whoever takes it" for an open task and the wallet's start otherwise. */
   payeeName?: string | null;
-}
-
-/** "0x3c44…93bc": a wallet the app has no name for, short enough for a line (the full address is always in the details). */
-function shortAddress(address: string): string {
-  return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
 /**

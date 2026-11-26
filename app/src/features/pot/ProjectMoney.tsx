@@ -37,6 +37,7 @@ import { targetOf } from "./target";
 import { TeamSharesSection } from "./TeamSharesSection";
 import { usePotWallet } from "./use-pot";
 import { YourShares } from "./YourShares";
+import { shortAddress } from "../../lib/short-address";
 
 function PlayMoneyLine() {
   return (
@@ -86,7 +87,7 @@ export function ProjectMoney({
   // A name for an account's address, for the sentences a second signer reads.
   const nameOfAddress = (address: string) =>
     members.find((m) => m.address === address.toLowerCase())?.name ??
-    `${address.slice(0, 6)}…${address.slice(-4)}`;
+    shortAddress(address);
   const wallet = usePotWallet(
     numbers && !numbers.removed ? numbers.chainId : undefined,
   );

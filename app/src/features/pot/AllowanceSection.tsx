@@ -10,6 +10,7 @@ import { TeamPauseLine } from "../pause/TeamPauseLine";
 import { useTeamPause } from "../pause/use-team-pause";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
+import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "../../ui/toast";
 import { dayText, type ProjectNumbers, timeText } from "../money/numbers";
 import { potProblem } from "../money/pot-copy";
@@ -77,6 +78,7 @@ function CheckInBlock({
     checkInAction(numbers.chainId, numbers.contracts.treasury),
   );
   const toast = useToast();
+  const queryClient = useQueryClient();
   const [problem, setProblem] = useState<string | null>(null);
   return (
     <div data-testid="allowance-checkin">
@@ -98,6 +100,7 @@ function CheckInBlock({
             <div className="mt-1 flex flex-col items-start gap-1.5">
               <Button
                 data-testid="allowance-check-in"
+                className="min-h-11"
                 disabled={send.isPending}
                 onClick={() => {
                   setProblem(null);
@@ -106,11 +109,16 @@ function CheckInBlock({
                   send.send(
                     { chainId: numbers.chainId, build: () => [call] },
                     {
-                      onSuccess: () =>
+                      onSuccess: () => {
+                        // The "last check-in" and "overdue" lines read the allowance's own query: refresh it.
+                        void queryClient.invalidateQueries({
+                          queryKey: ["pot"],
+                        });
                         toast(
                           "Checked in. The allowance keeps running.",
                           "done",
-                        ),
+                        );
+                      },
                       onError: (error) =>
                         setProblem(potProblem(error, "check-in")),
                     },

@@ -25,7 +25,7 @@ export function RecoveryOfferHost() {
   };
   return (
     <Sheet
-      description="A passkey signs in only on this device."
+      description="Your recovery key signs you in on any device."
       onOpenChange={(open) => {
         if (!open) close();
       }}

@@ -10,6 +10,7 @@ import { canSendBack, canWithdraw, phaseOf, stateWords } from "../state";
 import type { ChainTask } from "../types";
 import { dollarsPhrase } from "../words";
 import { ReturnOffer } from "../holder/ReturnOffer";
+import { shortAddress } from "../holder/holder-words";
 import { TakeOffer } from "../holder/TakeOffer";
 import { SendBackPress } from "./SendBackPress";
 import { secondPlan } from "./plan-words";
@@ -42,7 +43,7 @@ export function PlanOnlyCard({
   ageNote: string | null;
 }) {
   const titleId = useId();
-  const who = row.payee ?? "whoever takes it";
+  const who = row.payee ? shortAddress(row.payee) : "whoever takes it";
   const phase = phaseOf(row, now, windDownAt);
   const words = stateWords(row, now, { windDownAt });
   return (

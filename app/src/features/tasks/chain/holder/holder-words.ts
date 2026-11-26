@@ -5,6 +5,7 @@
  * the legal line itself. The words of every contract refusal live in `money/pot-copy.ts`; the two lines of a planned task and
  * the line for a task that moved are in `chain/words.ts`.
  */
+import { shortAddress } from "../../../../lib/short-address";
 import { timeText } from "../../../money/numbers";
 import {
   NEW_TASK_ERRORS,
@@ -57,9 +58,7 @@ export function setAsideAndRoom(input: {
 }
 
 /** The name a task's wallet is shown under when nobody here gave it a name: its start and its end. */
-export function shortAddress(address: string): string {
-  return `${address.slice(0, 6)}…${address.slice(-4)}`;
-}
+export { shortAddress };
 
 // --- The Take sheet (5.8) ---------------------------------------------------------------------------------------------
 

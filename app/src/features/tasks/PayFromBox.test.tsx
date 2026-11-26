@@ -228,7 +228,14 @@ describe("an accepted task whose pay is owed", () => {
     card(accepted());
     const button = await screen.findByTestId("task-pay");
     expect(button.textContent).toBe("Pay from the box");
-    expect(screen.getByTestId("task-pay-terms").textContent).toContain(PAYEE);
+    // The account appears the way every screen names one it has no name for: its short form, never a full address
+    // in the words a payer reads before the money moves.
+    expect(screen.getByTestId("task-pay-terms").textContent).toContain(
+      "0x0000…00cd",
+    );
+    expect(screen.getByTestId("task-pay-terms").textContent).not.toContain(
+      PAYEE,
+    );
     expect(screen.getByTestId("task-play-money").textContent).toMatch(
       /play money/,
     );
@@ -401,7 +408,7 @@ describe("a payment already made", () => {
     logs = [drawLog(PAYEE, 40_000_000n, FOUND_TX)];
     card(accepted());
     expect((await screen.findByTestId("task-pay-found")).textContent).toMatch(
-      /A payment of 40 dollars to 0x0+cd left the box/,
+      /A payment of 40 dollars to 0x0000…00cd left the box/,
     );
     expect(screen.queryByTestId("task-pay")).toBeNull();
     fireEvent.click(screen.getByTestId("task-pay-save"));

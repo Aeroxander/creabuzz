@@ -341,7 +341,7 @@ function AccountTab() {
         Sign out
       </Button>
       <Sheet
-        description="A passkey signs in only on this device."
+        description="Your recovery key signs you in on any device."
         onOpenChange={setShowKey}
         open={showKey}
         title="Save your recovery key"
