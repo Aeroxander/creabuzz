@@ -1698,6 +1698,19 @@ async fn run_jwks_refresh_supervisor<F, Fut>(
     }
 }
 
+/// Serialize bin tests whose assertions depend on which tracing dispatchers
+/// are live. tracing-core caches each callsite's interest process-wide from the
+/// dispatchers live when it is first hit or rebuilt, so a parallel test's
+/// dispatcher can enable or disable another test's callsites (the NIP-FI log
+/// capture test lost its library `warn!` this way). Not reentrant; take it once
+/// per test. The lib crate has its own lock (`test_support`), which a separate
+/// test binary cannot see.
+#[cfg(test)]
+fn tracing_dispatch_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 #[cfg(test)]
 mod env_filter_tests {
     use super::log_env_filter;
@@ -1706,6 +1719,7 @@ mod env_filter_tests {
 
     #[test]
     fn unset_enables_datastore_only_for_otel_filter() {
+        let _tracing = super::tracing_dispatch_lock();
         let logs = tracing_subscriber::registry().with(log_env_filter(None));
         tracing::subscriber::with_default(logs, || {
             assert!(!tracing::enabled!(target: "buzz_datastore", tracing::Level::INFO));
@@ -4065,7 +4079,14 @@ mod composition_tests {
     //   - assertion fires: callback_returned_false must be true.
     //   At T=122 direct call: same logic → Some → Claim 3 (is_none()) assertion fires.
     #[tokio::test(start_paused = true)]
+    #[allow(clippy::await_holding_lock)]
     async fn composition_failure_does_not_extend_snapshot_freshness() {
+        // This test fires the same `fetch failed` callsite that the log test
+        // asserts on, with no dispatcher of its own; run alongside it, it
+        // makes the log test miss that warning (tracing caches callsite
+        // interest process-wide, see `tracing_dispatch_lock`). The runtime is
+        // current-thread, so holding the guard across `.await` cannot deadlock.
+        let _tracing = super::tracing_dispatch_lock();
         const ISSUER: &str = "comp-b.issuer.test";
         const REFRESH: u64 = 60;
         const HARD_DEADLINE: u64 = 90;
@@ -4321,6 +4342,8 @@ mod composition_tests {
     #[test]
     fn composition_log_does_not_leak_issuer_url() {
         use std::io::Write;
+
+        let _tracing = super::tracing_dispatch_lock();
 
         // Sentinel must be lowercase: JwksSourceContract::new() canonicalizes
         // the URI and lowercases the host component. An uppercase sentinel would
