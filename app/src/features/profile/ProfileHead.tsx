@@ -1,7 +1,7 @@
 import { nameOf, useProfiles } from "../../lib/profiles";
 import { Avatar } from "../../ui/avatar";
 
-/** The head of a profile: picture, name, about. The name is the screen's h1 unless the screen has its own. */
+/** The head of a profile: initials, name, about. The name is the screen's h1 unless the screen has its own. */
 export function ProfileHead({
   pubkey,
   level = "h1",

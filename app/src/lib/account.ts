@@ -19,7 +19,7 @@ export function announceAccountChange(): void {
 
 export interface AccountState {
   pubkey: string | null;
-  /** A passkey account whose key lives only in memory: one passkey tap before it can sign or open messages. */
+  /** A passkey account whose key lives only in memory: one passkey tap before it can sign. */
   locked: boolean;
 }
 

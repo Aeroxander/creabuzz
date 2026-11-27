@@ -28,7 +28,7 @@ import { useProjectsBy } from "../profile/use-own-projects";
 // What this account holds across projects (money calls and ABIs load only where investing is on).
 const YourSharesList = lazy(() => import("../pot/YourSharesList"));
 
-/** You: your profile, messages, your projects and your account. */
+/** You: your profile, your projects and your account. */
 export function YouPage() {
   const { pubkey } = useAccount();
   if (!pubkey) return <SignedOut />;
@@ -247,8 +247,8 @@ function AccountTab() {
               } catch {
                 // Storage refused: there is nothing kept to remove.
               }
-              // A full page load, as web/ does: it drops everything held in memory for this account (opened
-              // messages, follows), so nothing of it stays readable on a shared phone.
+              // A full page load: it drops everything held in memory for this account, so nothing of it stays
+              // readable on a shared phone.
               window.location.assign("/");
             }}
             variant="secondary"
