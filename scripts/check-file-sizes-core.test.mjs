@@ -17,6 +17,7 @@ import {
   countLines,
   evaluateFileSize,
   parseChangedFiles,
+  resolveBase,
   resolveBaseRef,
 } from "./check-file-sizes-core.mjs";
 
@@ -90,24 +91,102 @@ function createEntrypointFixture({
   return { result, relativeFiles: files.map(({ relativeFile }) => relativeFile) };
 }
 
-test("local base resolution uses the branch merge-base and fails without origin/main", () => {
+function createBaseRepo() {
   const repo = mkdtempSync(path.join(tmpdir(), "file-size-base-"));
   git(repo, "init", "-b", "main");
   git(repo, "config", "user.name", "Test");
   git(repo, "config", "user.email", "test@example.com");
   git(repo, "commit", "--allow-empty", "-m", "base");
-  git(repo, "remote", "add", "origin", repo);
-  git(repo, "fetch", "origin", "main:refs/remotes/origin/main");
-  const base = git(repo, "rev-parse", "HEAD");
+  return repo;
+}
+
+// A root commit that shares no history with the repository's branches, as
+// `origin/main` does on the lite branch.
+function unrelatedCommit(repo) {
+  const emptyTree = git(repo, "hash-object", "-t", "tree", "/dev/null");
+  return git(repo, "commit-tree", emptyTree, "-m", "unrelated root");
+}
+
+function addBranchCommits(repo) {
   git(repo, "switch", "-c", "feature");
   git(repo, "commit", "--allow-empty", "-m", "first branch commit");
   git(repo, "commit", "--allow-empty", "-m", "second branch commit");
+}
+
+test("the configured base wins over every fallback", () => {
+  const repo = createBaseRepo();
+  const base = git(repo, "rev-parse", "HEAD");
+  git(repo, "update-ref", "refs/remotes/origin/main", base);
+  addBranchCommits(repo);
+
+  const resolved = resolveBase(repo, { CHECK_FILE_SIZES_BASE: "some-commit" });
+  assert.equal(resolved.ref, "some-commit");
+  assert.match(resolved.description, /CHECK_FILE_SIZES_BASE/);
+});
+
+test("on GitHub Actions the base is HEAD^1", () => {
+  const repo = createBaseRepo();
+  addBranchCommits(repo);
+
+  assert.equal(resolveBaseRef(repo, { GITHUB_ACTIONS: "true" }), "HEAD^1");
+});
+
+test("local base resolution uses the merge-base with origin/main", () => {
+  const repo = createBaseRepo();
+  git(repo, "remote", "add", "origin", repo);
+  git(repo, "fetch", "origin", "main:refs/remotes/origin/main");
+  const base = git(repo, "rev-parse", "HEAD");
+  addBranchCommits(repo);
 
   assert.equal(resolveBaseRef(repo, {}), base);
-  git(repo, "update-ref", "-d", "refs/remotes/origin/main");
+  assert.match(resolveBase(repo, {}).description, /origin\/main/);
+});
+
+test("a base that is HEAD itself resolves to HEAD", () => {
+  const repo = createBaseRepo();
+  git(repo, "update-ref", "refs/remotes/origin/main", git(repo, "rev-parse", "HEAD"));
+
+  assert.equal(resolveBaseRef(repo, {}), "HEAD");
+});
+
+test("origin/main with no shared history falls back to the merge-base with origin/lite", () => {
+  const repo = createBaseRepo();
+  const base = git(repo, "rev-parse", "HEAD");
+  git(repo, "update-ref", "refs/remotes/origin/main", unrelatedCommit(repo));
+  git(repo, "update-ref", "refs/remotes/origin/lite", base);
+  addBranchCommits(repo);
+
+  const resolved = resolveBase(repo, {});
+  assert.equal(resolved.ref, base);
+  assert.match(resolved.description, /origin\/lite/);
+});
+
+test("a missing origin/main falls back to the merge-base with origin/lite", () => {
+  const repo = createBaseRepo();
+  const base = git(repo, "rev-parse", "HEAD");
+  git(repo, "update-ref", "refs/remotes/origin/lite", base);
+  addBranchCommits(repo);
+
+  assert.equal(resolveBaseRef(repo, {}), base);
+});
+
+test("with no remote branch sharing history the base is HEAD^1 and says so", () => {
+  const repo = createBaseRepo();
+  git(repo, "update-ref", "refs/remotes/origin/main", unrelatedCommit(repo));
+  addBranchCommits(repo);
+
+  const resolved = resolveBase(repo, {});
+  assert.equal(resolved.ref, "HEAD^1");
+  assert.match(resolved.description, /HEAD\^1/);
+  assert.match(resolved.description, /origin\/main nor origin\/lite/);
+});
+
+test("with no shared history and no parent commit the base cannot be resolved", () => {
+  const repo = createBaseRepo();
+
   assert.throws(
-    () => resolveBaseRef(repo, {}),
-    /Fetch origin\/main or set CHECK_FILE_SIZES_BASE/,
+    () => resolveBase(repo, {}),
+    /Fetch origin or set CHECK_FILE_SIZES_BASE/,
   );
 });
 

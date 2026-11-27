@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Pre-push scope signal (warn-only, never fails the push).
 #
-# The scoped pre-push lanes derive their file set from `git diff origin/main...HEAD`,
+# The scoped pre-push lanes derive their file set from the branch's merge-base diff
+# (`scripts/branch-changed-files.sh`),
 # and lefthook's own stock discovery is `git diff HEAD @{push}` — both inspect the
 # checked-out HEAD, not the SHAs actually being pushed. Pushing a non-checked-out
 # ref (e.g. `git push origin other-branch`, an explicit refspec, or `--all`) can

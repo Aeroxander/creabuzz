@@ -12,7 +12,8 @@ fi
 git fetch --quiet origin main || true
 git rev-parse --verify --quiet origin/main >/dev/null || exit 0
 
-base=$(git merge-base HEAD origin/main)
+# The lite branch shares no history with origin/main: nothing can skew.
+base=$(git merge-base HEAD origin/main 2>/dev/null) || exit 0
 if [ "$base" = "$(git rev-parse origin/main)" ]; then
   exit 0
 fi

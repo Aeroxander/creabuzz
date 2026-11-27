@@ -1,14 +1,16 @@
 # Glob patterns below mirror the `changes` job's dorny/paths-filter groups in
 # .github/workflows/ci.yml — keep the two in sync. Each globbed pre-push lane
-# also sets `files: git diff --name-only origin/main...HEAD` so its file set is
-# the branch's merge-base diff against origin/main — the same semantics as CI's
-# dorny/paths-filter and `scripts/check-file-sizes-core.mjs` `resolveBaseRef`.
+# also sets `files: ./scripts/branch-changed-files.sh` so its file set is the
+# branch's merge-base diff against origin/main (origin/lite on the lite branch,
+# which shares no history with main; HEAD^1 when neither shares history) — the
+# same base order as `scripts/check-file-sizes-core.mjs` `resolveBase`, and the
+# same semantics as CI's dorny/paths-filter.
 # Without it lefthook derives files from `git diff HEAD @{push}`, which after a
 # rebase or `git merge origin/main` includes everything main changed since the
 # branch's last push (firing the Rust and app lanes on unrelated pushes), and
 # on a brand-new branch falls back to a stale remote's tip (a full-suite run).
-# The three-dot diff scopes every lane to what this branch actually changed.
-# Both the three-dot diff and lefthook's stock discovery inspect the checked-out
+# The merge-base diff scopes every lane to what this branch actually changed.
+# Both the merge-base diff and lefthook's stock discovery inspect the checked-out
 # HEAD, so pushing a non-HEAD ref (explicit refspec, `--all`) validates HEAD's
 # tree, not the pushed commit — the always-on `push-head-scope` lane warns when
 # they diverge and CI remains the authoritative gate for that ref.
@@ -85,7 +87,7 @@ pre-push:
       # would only duplicate policy and create another place for coverage drift.
       run: ./scripts/without-git-env.sh just file-size-check
     rust-tests:
-      files: git diff --name-only origin/main...HEAD
+      files: ./scripts/branch-changed-files.sh
       glob: ["crates/**", "migrations/**", "schema/**", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "deny.toml", "scripts/run-tests.sh", "Justfile"]
       env:
         # Lanes run under a pty; with agent shells' TERM=dumb, nextest's
@@ -95,7 +97,7 @@ pre-push:
         NEXTEST_NO_INPUT_HANDLER: "1"
       run: ./scripts/without-git-env.sh just test-unit
     app-check:
-      files: git diff --name-only origin/main...HEAD
+      files: ./scripts/branch-changed-files.sh
       glob: ["app/**", "packages/**", "pnpm-lock.yaml", "pnpm-workspace.yaml", "patches/**", "package.json", "knip.jsonc", "Justfile"]
       env: &pnpm-verify-deps
         # Warn when node_modules looks stale against the workspace (pnpm uses
@@ -105,7 +107,7 @@ pre-push:
         pnpm_config_verify_deps_before_run: warn
       run: ./scripts/without-git-env.sh just app-check
     app-test:
-      files: git diff --name-only origin/main...HEAD
+      files: ./scripts/branch-changed-files.sh
       glob: ["app/**", "packages/**", "pnpm-lock.yaml", "pnpm-workspace.yaml", "patches/**", "package.json", "Justfile"]
       env: *pnpm-verify-deps
       run: ./scripts/without-git-env.sh just app-test

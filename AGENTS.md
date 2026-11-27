@@ -168,8 +168,9 @@ and fast unit tests in parallel (Rust, app)
 — no overlap with pre-commit. Builds are CI-only. Run `just fix-all` to auto-fix
 all formatting in one shot. Run `just ci` for the full local gate. Run `just
 hooks` to re-install hooks after env changes. Each globbed pre-push lane is
-scoped to the branch's merge-base diff against `origin/main` (`git diff
-origin/main...HEAD`), matching CI's paths-filter — so a lane only fires when this
+scoped to the branch's merge-base diff (`scripts/branch-changed-files.sh`: against
+`origin/main`, or `origin/lite` on the lite branch, which shares no history with
+main), matching CI's paths-filter — so a lane only fires when this
 branch actually changed a file it covers, never because `origin/main` moved.
 These lanes validate the checked-out HEAD; pushing a non-HEAD ref (explicit
 refspec, `--all`) gets a non-fatal `push-head-scope` warning and relies on CI for

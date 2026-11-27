@@ -41,28 +41,69 @@ function findRule(rules, relativePath) {
   return rules.find((rule) => relativePath.startsWith(`${rule.root}/`));
 }
 
-export function resolveBaseRef(repoRoot, env = process.env) {
+// Remote branches whose merge-base with HEAD can serve as the ratchet's base,
+// in order. `origin/lite` covers the lite branch, which shares no history with
+// `origin/main`.
+const BASE_CANDIDATES = ["origin/main", "origin/lite"];
+
+function mergeBaseWith(repoRoot, ref) {
+  try {
+    return git(["merge-base", ref, "HEAD"], repoRoot, {
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    // The ref is missing, or it shares no history with HEAD.
+    return null;
+  }
+}
+
+/**
+ * Pick the commit the ratchet compares against and say which rule picked it.
+ * In order: CHECK_FILE_SIZES_BASE; HEAD^1 on GitHub Actions; the merge-base
+ * with origin/main, then origin/lite, when that ref shares history with HEAD;
+ * finally HEAD^1.
+ */
+export function resolveBase(repoRoot, env = process.env) {
   if (env.CHECK_FILE_SIZES_BASE) {
-    return env.CHECK_FILE_SIZES_BASE;
+    return {
+      ref: env.CHECK_FILE_SIZES_BASE,
+      description: "CHECK_FILE_SIZES_BASE",
+    };
   }
 
   if (env.GITHUB_ACTIONS === "true") {
-    return "HEAD^1";
+    return { ref: "HEAD^1", description: "HEAD^1 (GitHub Actions)" };
+  }
+
+  const head = git(["rev-parse", "HEAD"], repoRoot).trim();
+  for (const candidate of BASE_CANDIDATES) {
+    const mergeBase = mergeBaseWith(repoRoot, candidate);
+    if (mergeBase) {
+      return {
+        ref: mergeBase === head ? "HEAD" : mergeBase,
+        description: `merge-base with ${candidate}`,
+      };
+    }
   }
 
   try {
-    const mergeBase = git(
-      ["merge-base", "origin/main", "HEAD"],
-      repoRoot,
-    ).trim();
-    const head = git(["rev-parse", "HEAD"], repoRoot).trim();
-    return mergeBase === head ? "HEAD" : mergeBase;
+    git(["rev-parse", "--verify", "--quiet", "HEAD^1^{commit}"], repoRoot, {
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return {
+      ref: "HEAD^1",
+      description: `HEAD^1, because neither ${BASE_CANDIDATES.join(" nor ")} shares history with HEAD`,
+    };
   } catch (error) {
     throw new Error(
-      "Could not resolve the file-size base from origin/main. Fetch origin/main or set CHECK_FILE_SIZES_BASE to an explicit commit.",
+      `Could not resolve the file-size base: neither ${BASE_CANDIDATES.join(" nor ")} shares history with HEAD, and HEAD has no parent. Fetch origin or set CHECK_FILE_SIZES_BASE to an explicit commit.`,
       { cause: error },
     );
   }
+}
+
+export function resolveBaseRef(repoRoot, env = process.env) {
+  return resolveBase(repoRoot, env).ref;
 }
 
 export function parseChangedFiles(output) {
@@ -119,7 +160,8 @@ export async function runFileSizeCheck({ projectRoot, rules, label }) {
   // cannot collapse the project pathspec to an empty string.
   const repoRoot = path.dirname(projectRoot);
   const projectRelative = toPosixPath(path.basename(projectRoot));
-  const baseRef = resolveBaseRef(repoRoot);
+  const { ref: baseRef, description: baseDescription } = resolveBase(repoRoot);
+  console.log(`${label} file size base: ${baseRef} (${baseDescription})`);
 
   // Fail clearly instead of silently turning a missing/shallow base into a pass.
   git(["cat-file", "-e", `${baseRef}^{commit}`], repoRoot);
@@ -162,7 +204,7 @@ export async function runFileSizeCheck({ projectRoot, rules, label }) {
 
   if (violations.length === 0) return;
 
-  console.error(`${label} file size ratchet failed (base ${baseRef}):`);
+  console.error(`${label} file size ratchet failed (base ${baseRef}, ${baseDescription}):`);
   for (const violation of violations) {
     const before = violation.baseLines == null ? "new" : violation.baseLines;
     const delta =
