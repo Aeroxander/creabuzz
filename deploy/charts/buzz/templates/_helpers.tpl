@@ -78,7 +78,7 @@ app.kubernetes.io/component: relay
 
 {{/*
 Datadog unified-service-tagging version for every chart-managed Pod (relay,
-pairing relay, storage accounting, operator jobs). It names the deployed image:
+storage accounting, operator jobs). It names the deployed image:
 image.tag when set — the readable build name operators and dashboards already
 use, which promotion tooling writes together with image.digest — otherwise the
 digest, otherwise Chart.AppVersion. The chart owns this label so a wrapper never
@@ -236,9 +236,4 @@ secrets.existingSecret, use that. Otherwise use the chart-managed one.
 {{- else if .Values.minio.enabled -}}
 {{- include "buzz.minioEndpoint" . -}}
 {{- end -}}
-{{- end -}}
-
-{{- define "buzz.pairingRelaySelectorLabels" -}}
-{{ include "buzz.selectorLabels" . }}
-app.kubernetes.io/component: pairing-relay
 {{- end -}}

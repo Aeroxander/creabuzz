@@ -111,7 +111,7 @@ pub struct PricingIdentity {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentTurnMetricPayload {
-    /// Harness identifier (e.g. `"goose"`, `"buzz-agent"`). REQUIRED.
+    /// Harness identifier (e.g. `"goose"`). REQUIRED.
     pub harness: String,
 
     /// Model identifier as reported by the harness, or `None` if unknown.

@@ -1,12 +1,11 @@
 name: Auto-tag on Release PR Merge
 
-# Three PR-driven release lanes share this workflow. Each uses an explicit branch
+# Two PR-driven release lanes share this workflow. Each uses an explicit branch
 # prefix; the main chart lane also auto-detects a Chart.yaml version bump so
 # a chart feature PR can publish its own new version when merged:
 #
 #   relay-release/<v>  → tag relay-v<v>  → docker.yml (relay image)
 #   chart-release/<v>  → tag chart-v<v>  → helm-chart.yml (main helm chart)
-#   push-chart-release/<v> → tag push-chart-v<v> → push-gateway-helm-chart.yml
 #   any internal PR that bumps deploy/charts/buzz/Chart.yaml `version`
 #                       → tag chart-v<v>  → helm-chart.yml (helm chart)
 #
@@ -53,9 +52,6 @@ jobs:
             chart-release/*)
               VERSION="${BRANCH#chart-release/}"
               TAG_PREFIX="chart-v" ;;
-            push-chart-release/*)
-              VERSION="${BRANCH#push-chart-release/}"
-              TAG_PREFIX="push-chart-v" ;;
             *)
               parent_sha="$(git rev-parse HEAD^)"
               old_version="$(git show "${parent_sha}:deploy/charts/buzz/Chart.yaml" 2>/dev/null | awk '/^version:/ {print $2}')"

@@ -36,7 +36,7 @@ PR cannot stage this rollout.
    even for public repositories). Verify an anonymous pull of
    `ghcr.io/block/buzz-minio:latest`.
 3. Rebase the separate consumer PR onto `main`, run its integration checks, and
-   merge it. That PR selects the override in relay and mesh lifecycle CI.
+   merge it. That PR selects the override in relay CI.
 
 Subsequent publications preserve package visibility.
 

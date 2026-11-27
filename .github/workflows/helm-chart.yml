@@ -28,8 +28,8 @@ on:
   push:
     # No `paths` filter here: GitHub applies a push `paths` filter to tag
     # pushes too, so a `chart-v*` tag whose commit didn't touch a chart file
-    # would be filtered out and never publish. docker.yml / sprig
-    # all keep `paths` out of a tag-carrying `push` for exactly this reason —
+    # would be filtered out and never publish. docker.yml
+    # keeps `paths` out of a tag-carrying `push` for exactly this reason —
     # PR runs stay scoped via `pull_request.paths` below; main pushes lint
     # unconditionally (cheap), and tag pushes always run so publish can fire.
     branches: [main]
@@ -37,7 +37,6 @@ on:
   pull_request:
     paths:
       - "deploy/charts/buzz/**"
-      - "deploy/charts/buzz-push-gateway/**"
       - ".github/workflows/helm-chart.yml"
       - "ct.yaml"
 
@@ -85,9 +84,6 @@ jobs:
 
       - name: Build chart dependencies
         run: helm dependency build deploy/charts/buzz
-
-      - name: Push gateway chart lint + render guard
-        run: deploy/charts/buzz-push-gateway/tests/render.sh
 
       - name: ct lint
         run: ct lint --config ct.yaml --all

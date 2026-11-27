@@ -261,7 +261,6 @@ const scenarios = [
     ["docs/design.md", "crates/buzz-relay/src/lib.rs"],
     ["rust"],
   ],
-  ["embedded ACP prompt", ["crates/buzz-acp/src/base_prompt.md"], ["rust"]],
   // Removed surfaces select nothing: no suite runs for a path that no longer has one.
   ["removed desktop path", ["desktop/src/main.tsx"], []],
   ["removed web path", ["web/src/main.tsx"], []],

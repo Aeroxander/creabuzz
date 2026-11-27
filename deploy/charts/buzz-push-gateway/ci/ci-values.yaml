@@ -1,2 +1,0 @@
-# Chart-testing input only. Real deployments must inject their own origin.
-gatewayOrigin: https://push.example

@@ -92,9 +92,6 @@ run_unit_tests() {
   run_test_step "buzz-pubsub conn_control tests" \
     cargo test -p buzz-pubsub --lib conn_control::tests:: -- --nocapture
 
-  run_test_step "buzz-voice tests" \
-    cargo test -p buzz-voice --lib -- --nocapture
-
   run_test_step "buzz-cli tests" \
     cargo test -p buzz-cli -- --nocapture
 
@@ -104,16 +101,6 @@ run_unit_tests() {
   # avoids the full-package rustdoc dependency-resolution flake.
   run_test_step "buzz-sdk unit tests" \
     cargo test -p buzz-sdk --lib -- --nocapture
-
-  # Keep the relay-to-agent trust-boundary regressions in the fallback path
-  # when cargo-nextest is unavailable.
-  run_test_step "buzz-acp tests" \
-    cargo test -p buzz-acp -- --nocapture
-
-  # Keep MCP lifecycle coverage in step with the nextest path.
-  run_test_step "buzz-dev-mcp tests" \
-    cargo test -p buzz-dev-mcp -- --nocapture
-
 
   # buzz-db migrator/lint unit tests (no infra): guard the embedded-migrator
   # invariant (exactly the consolidated 0001; cutover/backfill stays an operator
@@ -139,35 +126,6 @@ run_unit_tests() {
   # fixtures (buzz-conformance). Pure in-process trace replay, no infra.
   run_test_step "buzz-conformance tests" \
     cargo test -p buzz-conformance -- --nocapture
-
-  run_test_step "buzz-push-gateway tests" \
-    cargo test -p buzz-push-gateway -- --nocapture
-  run_test_step "buzz-push-gateway personal development tests" \
-    cargo test -p buzz-push-gateway --features personal-dev-app-attest -- --nocapture
-
-  # Kubernetes backend provider: pure decision layers driven by a fake
-  # substrate, no cluster. Mirrors the nextest path in `just test-unit` —
-  # the two lists must stay in step or the fallback silently covers less.
-  run_test_step "buzz-backend-kubernetes tests" \
-    cargo test -p buzz-backend-kubernetes -- --nocapture
-
-  # Keep fallback parity with `just test-unit`: one LaunchDarkly-feature run
-  # exercises both default and feature-gated buzz-feature-flags tests.
-  run_test_step "buzz-feature-flags tests (launchdarkly)" \
-    cargo test -p buzz-feature-flags --features launchdarkly -- --nocapture
-
-  # buzz-agent model-capabilities corpus: the Rust half of the cross-language
-  # drift guard. model_capabilities.rs embeds scripts/model-capabilities.json +
-  # scripts/normative-corpus.json via include_str! and replays the full locked
-  # corpus as pure in-process tests (no infra). Mirrors the nextest path in
-  # `just test-unit` — the two lists must stay in step.
-  run_test_step "buzz-agent unit tests" \
-    cargo test -p buzz-agent --lib -- --nocapture
-
-  # ACP author-gate and queue tests are pure unit tests. Keep this fallback in
-  # step with `just test-unit`; ignored lifecycle tests run elsewhere.
-  run_test_step "buzz-acp unit tests" \
-    cargo test -p buzz-acp --lib -- --nocapture
 
   # Mirror the relay filters from `just test-unit`: the three handler modules,
   # storage-snapshot helpers, readiness and router unit suites, and the single

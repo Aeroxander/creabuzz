@@ -106,8 +106,8 @@
 //!
 //! By default the apply engine writes one `["skill", <id>, <applies_to>]`
 //! binding tag per template skill onto **every** persona event it publishes,
-//! and the consumer (`buzz-acp::project_skills`) keys on tag *presence* and
-//! records the scope verbatim — it does not filter personas by role. So
+//! and the consumer keys on tag *presence* and records the
+//! scope verbatim — it does not filter personas by role. So
 //! `applies_to: developers` alone never limits a skill to "developer"
 //! personas: it is honest metadata about who the skill is written for, not a
 //! runtime access boundary.

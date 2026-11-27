@@ -34,7 +34,7 @@
 //! | 2 | non-member REQ for kind:30003 returns nothing | `trust_nonmember_read_denied` | relay membership tests |
 //! | 3 | untrusted Mesh owner cannot infer with a leaked join token | hardware harness | `mesh_admission_smoke` |
 //! | 4 | B's agent completes a chat against A's model over mesh | `live_agent_completes_chat_over_mesh` | runbook |
-//! | 5 | dropped member → typed auth failure reaches lastError | runbook (desktop harness) | buzz-agent `-32001` unit |
+//! | 5 | dropped member → typed auth failure reaches lastError | runbook | none |
 //! | 6 | split: model too big → 2 serve nodes → chat completes | `live_split_model_completes` | runbook |
 
 use std::time::Duration;
@@ -213,7 +213,7 @@ async fn trust_nonmember_read_denied() {
 }
 
 /// Assertion 4 (the headline demo): with desktop A serving a model and desktop
-/// B running a mesh client + a launched buzz-agent pointed at B's local
+/// B running a mesh client + an agent pointed at B's local
 /// `:9337/v1`, a chat completion returns a non-empty response routed over the
 /// mesh to A's GPU.
 ///

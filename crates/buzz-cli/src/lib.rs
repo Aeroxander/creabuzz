@@ -27,15 +27,14 @@ where
     I: IntoIterator<Item = S>,
     S: Into<std::ffi::OsString> + Clone,
 {
-    // Install ring as the process-level rustls CryptoProvider. Required because the
-    // release workflow builds all binaries in one cargo invocation, which unifies
-    // features across the workspace and enables *both* ring (from buzz-acp/buzz-dev-mcp)
-    // and aws-lc-rs (from reqwest's rustls feature via hyper-rustls). With both on,
-    // rustls cannot auto-select a provider, and any code that reaches
+    // Install ring as the process-level rustls CryptoProvider. Required because a
+    // multi-package cargo build unifies features across the workspace and enables
+    // *both* ring and aws-lc-rs (from reqwest's rustls feature via hyper-rustls).
+    // With both on, rustls cannot auto-select a provider, and any code that reaches
     // ClientConfig::builder() — specifically the WSS path in publish_ephemeral_event
     // used by `agents draft-create`, `agents draft-update`, and `users set-presence`
-    // — panics at rustls crypto/mod.rs. The `let _ =` swallow is intentional: when
-    // buzz-dev-mcp delegates to run_from_args, it has already installed ring; the
+    // — panics at rustls crypto/mod.rs. The `let _ =` swallow is intentional: if a
+    // caller embedding run_from_args already installed a provider, the
     // double-install returns Err and is harmless.
     let _ = rustls::crypto::ring::default_provider().install_default();
 
@@ -3748,7 +3747,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
                 ))
             })?;
             // Canonical wire form derives from the parsed-and-verified tag
-            // (same shape as buzz-acp's RestClient), never from raw input.
+            // (the same canonical form the relay verifies), never from raw input.
             let canonical = serde_json::to_string(tag.as_slice())
                 .map_err(|e| CliError::Auth(format!("BUZZ_AUTH_TAG serialization failed: {e}")))?;
             (Some(tag), Some(canonical))

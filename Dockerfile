@@ -2,8 +2,8 @@
 #
 # Public Buzz relay image — published as ghcr.io/block/buzz:<tag>.
 #
-# Builds the `buzz-relay` binary (Rust 1.95) and the Creaton app's static bundle
-# (app/, pnpm + vite), then assembles them into a small debian-slim runtime with
+# Builds the `buzz-relay` and `buzz-admin` binaries (Rust 1.95) and the Creaton
+# app's static bundle (app/, pnpm + vite), then assembles them into a small debian-slim runtime with
 # `git` available (the relay shells out to git for repo hydrate / receive-pack
 # / upload-pack — see crates/buzz-relay/src/api/git).
 #
@@ -76,15 +76,13 @@ ENV BUZZ_SOURCE_SHA=${BUZZ_SOURCE_SHA} \
     BUZZ_BUILD_ID=${BUZZ_BUILD_ID} \
     BUZZ_BUILD_URL=${BUZZ_BUILD_URL}
 RUN cargo build --release --locked -p buzz-relay --bin buzz-relay \
-                                   -p buzz-admin --bin buzz-admin \
-                                   -p buzz-pair-relay --bin buzz-pair-relay
+                                   -p buzz-admin --bin buzz-admin
 
 # Derive the normal release binaries from the same optimized ELF files as the
 # debug image so the two variants cannot drift at code-generation time.
 FROM builder AS stripped-binaries
 RUN strip target/release/buzz-relay \
-    && strip target/release/buzz-admin \
-    && strip target/release/buzz-pair-relay
+    && strip target/release/buzz-admin
 
 # ─── Stage 4a: node, pnpm and the optional proxy CA / npm mirror ────────────
 # The set-up the app bundle below starts from. Nothing is built here.
@@ -251,7 +249,6 @@ FROM runtime-base AS runtime-debug
 COPY --from=app-builder /build/app/dist                 /srv/buzz/web
 COPY --from=builder /build/target/release/buzz-relay /usr/local/bin/buzz-relay
 COPY --from=builder /build/target/release/buzz-admin /usr/local/bin/buzz-admin
-COPY --from=builder /build/target/release/buzz-pair-relay /usr/local/bin/buzz-pair-relay
 
 # The Creaton image (deploy/compose/compose.creaton.yml builds it): the stripped binaries with the Creaton app (app/) as
 # the web bundle.
@@ -259,7 +256,6 @@ FROM runtime-base AS runtime-creaton
 COPY --from=app-builder /build/app/dist                 /srv/buzz/web
 COPY --from=stripped-binaries /build/target/release/buzz-relay /usr/local/bin/buzz-relay
 COPY --from=stripped-binaries /build/target/release/buzz-admin /usr/local/bin/buzz-admin
-COPY --from=stripped-binaries /build/target/release/buzz-pair-relay /usr/local/bin/buzz-pair-relay
 
 # The final/default target, so a plain `docker build .` and the release tags build the Creaton image. This stays the last
 # stage on purpose.

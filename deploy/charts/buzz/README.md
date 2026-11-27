@@ -476,7 +476,7 @@ sanitized.
 
 ## Datadog version label
 
-Every Pod the chart renders — relay, pairing relay, storage accounting, and the
+Every Pod the chart renders — relay, storage accounting, and the
 deletion drain operator job — carries a chart-owned
 `tags.datadoghq.com/version` label derived from the deployed image:
 `image.tag` when set, otherwise `image.digest`, otherwise `Chart.AppVersion`.
@@ -538,22 +538,6 @@ rendered label into `image.tag`.
 The image reference in the Pod spec and `BUZZ_STORAGE_SNAPSHOT_CODE_SHA` always
 keep the exact revision; the label is the joinable telemetry key. See
 `docs/deployment-identity.md`.
-
-## Device pairing relay
-
-The chart can run Buzz's stateless pairing WebSocket relay as an independent
-Deployment and Service using the same image as the main relay:
-
-```yaml
-pairingRelay:
-  enabled: true
-  url: wss://pairing.example.com
-```
-
-`pairingRelay.url` is advertised in the main relay's NIP-11 document so Buzz
-clients connect directly to the dedicated endpoint. The chart does not create
-an Ingress or HTTPRoute for the pairing Service; route the public hostname to
-`<release>-buzz-pairing:5000` with your platform's ingress configuration.
 
 ## HA (production)
 

@@ -2391,24 +2391,6 @@ mod postgres_tests {
         let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let this_file = manifest_dir.join("src/runtime/migration.rs");
         let crates_dir = manifest_dir.parent().expect("workspace crates dir");
-        // The push gateway migrates its own dedicated authority database; it
-        // never holds relay tenant tables, so it is exempt from the relay
-        // schema/destruction lock. The community_id check below keeps that
-        // exemption honest.
-        let push_gateway_exception = crates_dir.join("buzz-push-gateway/src/postgres.rs");
-        let push_gateway_migrations = crates_dir.join("buzz-push-gateway/migrations");
-        for entry in
-            std::fs::read_dir(&push_gateway_migrations).expect("read push gateway migrations")
-        {
-            let path = entry.expect("read push gateway migration entry").path();
-            let sql = std::fs::read_to_string(&path).expect("read push gateway migration");
-            assert!(
-                !sql.to_ascii_lowercase().contains("community_id"),
-                "{} defines community-scoped data; its migrator would bypass the \
-                 schema/destruction lock and must move under buzz-db migrations",
-                path.display()
-            );
-        }
         let mut files = Vec::new();
         rust_sources(crates_dir, &mut files);
         for path in &files {
@@ -2425,8 +2407,6 @@ mod postgres_tests {
                     "migration.rs must embed the migrator once, run it once in production, \
                      and expose exactly one test-only bounded run"
                 );
-            } else if *path == push_gateway_exception {
-                continue;
             } else {
                 assert_eq!(
                     (macro_hits, run_hits, run_to_hits),

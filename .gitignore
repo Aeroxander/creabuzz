@@ -81,9 +81,6 @@ deploy/charts/*/charts/*.tgz
 # Local Redis dump (written at the repo root when a dev Redis runs from here)
 dump.rdb
 
-# fleet worker identity (generated on first start)
-.buzz-fleet-worker.key
-
 # Local orchestration state (not product source)
 .slim/deepwork/
 

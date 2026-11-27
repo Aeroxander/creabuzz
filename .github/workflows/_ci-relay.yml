@@ -36,9 +36,7 @@ jobs:
       matrix:
         include:
           - artifact: relay-binaries
-            paths: |
-              target/ci/buzz-relay
-              target/ci/git-credential-nostr
+            paths: target/ci/buzz-relay
           - artifact: backend-integration-tests
             paths: target/ci/backend-integration-tests.tar.zst
           - artifact: postgres-tests
@@ -84,7 +82,7 @@ jobs:
         if: steps.relay-artifacts-cache.outputs.cache-hit != 'true' && matrix.artifact == 'relay-binaries'
         env:
           RUSTC_WRAPPER: sccache
-        run: cargo build --profile ci -p buzz-relay -p git-credential-nostr
+        run: cargo build --profile ci -p buzz-relay
       - name: Build backend integration test archive
         if: steps.relay-artifacts-cache.outputs.cache-hit != 'true' && matrix.artifact == 'backend-integration-tests'
         env:
@@ -395,8 +393,7 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           save-if: ${{ github.event_name != 'pull_request' }}
-      # Reuse the relay + git-credential-nostr built by Relay Artifacts
-      # instead of compiling them a second time.
+      # Reuse the relay built by Relay Artifacts instead of compiling it again.
       - name: Download relay binary
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -405,7 +402,7 @@ jobs:
           path: target/ci
       - name: Start relay
         run: |
-          chmod +x ./target/ci/buzz-relay ./target/ci/git-credential-nostr
+          chmod +x ./target/ci/buzz-relay
           ./scripts/start-relay-for-tests.sh --no-build
       - name: Relay E2E tests
         run: |
@@ -416,7 +413,6 @@ jobs:
           cargo test -p buzz-test-client --test e2e_relay nip29_departure_wire -- --ignored --nocapture
         env:
           RELAY_URL: ws://localhost:3000
-          GIT_CREDENTIAL_NOSTR_BIN: ${{ github.workspace }}/target/ci/git-credential-nostr
       - name: Org graph e2e
         # NIP-ORG conformance over the live WebSocket seam (LWW lifecycle,
         # p-gate, binding authority) with direct DB fixture setup. Must run in

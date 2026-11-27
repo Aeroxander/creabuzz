@@ -7,7 +7,7 @@
 //!
 //!   1. **N=1 parity** — with one configured host → one default community, every
 //!      existing client observes byte-identical behavior. This is asserted by the
-//!      *existing* e2e suites (`e2e_relay`, `e2e_media`, `e2e_git`, …) run
+//!      *existing* e2e suites (`e2e_relay`, `e2e_media`, …) run
 //!      with `RELAY_URL` pointed at the new relay; no new test is needed here,
 //!      only the documented obligation that those suites stay green unchanged.
 //!

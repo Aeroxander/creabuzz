@@ -112,24 +112,15 @@ crates/
   buzz-search         # Postgres FTS full-text search
   buzz-audit          # Hash-chain audit log
   buzz-media          # Blossom/S3 media storage
-  # Agent surface
-  buzz-acp            # ACP harness bridging Buzz events to AI agents
-  buzz-agent          # Minimal ACP-compliant agent (non-streaming, tool-calls-as-output)
-  buzz-dev-mcp        # Developer MCP server — shell + file-edit tools
+  # Workflows and personas
   buzz-persona        # Agent persona packs
   buzz-workflow       # YAML-as-code workflow engine (evalexpr conditions)
-  # Clients + interop
-  buzz-pair-relay     # Ephemeral sidecar relay for NIP-AB device pairing
-  buzz-pairing-cli    # CLI for NIP-AB device pairing interop testing
-  git-sign-nostr      # Sign git objects with a Nostr key
-  git-credential-nostr # Git credential helper for Nostr-authed push/fetch
   # Tooling + shared
   buzz-cli            # Agent-first CLI
   buzz-sdk            # Typed Nostr event builders
   buzz-admin          # Operator CLI for relay administration
   buzz-ws-client      # Shared NIP-42 WebSocket client (connect, auth, publish)
   buzz-test-client    # Integration test client and E2E test suite
-  sprig               # All-in-one harness bundling ACP, agent, and dev MCP
 
 app/                  # Creaton app: phone-first React web app (@creaton/app), served by the relay
 packages/creaton-core # Shared app logic (@creaton/core)

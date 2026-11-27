@@ -63,8 +63,6 @@ jobs:
               - 'docker-compose.yml'
               - 'docker-compose.ci.yml'
               - 'scripts/run-tests.sh'
-              - 'scripts/model-capabilities.json'
-              - 'scripts/normative-corpus.json'
               - 'Justfile'
             app:
               - 'app/**'

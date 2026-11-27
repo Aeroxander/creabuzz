@@ -4,8 +4,7 @@
 //! not talk to relays or filesystems. Callers wire it to a transport and a
 //! key source.
 //!
-//! Shared by `buzz-cli` (`buzz mem …`) and `buzz-acp` (core injection
-//! at session creation).
+//! Shared by `buzz-cli` (`buzz mem …`) and other agent-side callers.
 
 use hmac::digest::KeyInit;
 use hmac::{Hmac, Mac};
