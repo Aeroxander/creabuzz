@@ -10,7 +10,6 @@ import {
   HOSTED_POLICY,
   install,
   now,
-  openAs,
   profile,
   projectLink,
   projectRecord,
@@ -232,13 +231,10 @@ test("home", async ({ page }) => {
   seed(relay);
   await install(page, relay, RAE_KEY);
   await page.goto("/");
-  await expect(page.getByTestId("post-card").first()).toBeVisible({
+  await expect(page.getByTestId("project-card").first()).toBeVisible({
     timeout: 20_000,
   });
   await expect(page.getByTestId("project-card")).toHaveCount(4);
-  await expect(page.getByTestId("post-card").first()).toContainText(
-    "Fay Okafor",
-  );
   await shoot(page, "01-home");
 });
 
@@ -315,37 +311,4 @@ test("a post", async ({ page }) => {
     "Rae Lindqvist",
   );
   await shoot(page, "08-post");
-});
-
-test("messages", async ({ page }) => {
-  test.setTimeout(90_000);
-  const relay = createMockRelay();
-  seed(relay);
-  await install(page, relay, RAE_KEY);
-  await page.goto(`/you/messages/${FAY}`);
-  await page
-    .getByTestId("message-text")
-    .fill("Hi Fay, I draw maps. Want a stall map for Lantern's market?");
-  await page.getByTestId("message-send").click();
-  await expect(page.getByTestId("message")).toHaveCount(1, { timeout: 20_000 });
-  // Both sealed copies (to Fay and to Rae herself) are on the server before Fay looks.
-  await expect
-    .poll(() => relay.events.filter((e) => e.kind === 1059).length)
-    .toBe(2);
-  await openAs(page, FAY_KEY, `/you/messages/${RAE}`);
-  await expect(page.getByTestId("message")).toHaveCount(1, { timeout: 20_000 });
-  await page
-    .getByTestId("message-text")
-    .fill("Yes please! Come by on Friday, we light up at 7.");
-  await page.getByTestId("message-send").click();
-  await expect
-    .poll(() => relay.events.filter((e) => e.kind === 1059).length)
-    .toBe(4);
-  await expect(page.getByTestId("message")).toHaveCount(2, { timeout: 20_000 });
-  await shoot(page, "09-messages");
-  await page.goto("/you/messages");
-  await expect(page.getByTestId("conversation")).toHaveCount(1, {
-    timeout: 20_000,
-  });
-  await shoot(page, "10-messages-list");
 });

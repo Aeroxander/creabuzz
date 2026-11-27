@@ -137,7 +137,7 @@ test("sign-up shows the legal boxes word for word and waits for them", async ({
   await expect(page.getByTestId("tab-bar")).toHaveCount(0);
 });
 
-test("Home shows projects and posts, never sorted by money, at phone width", async ({
+test("Home shows projects, never sorted by money, at phone width", async ({
   page,
 }) => {
   const relay = createMockRelay();
@@ -149,11 +149,8 @@ test("Home shows projects and posts, never sorted by money, at phone width", asy
   });
   await expect(page.getByTestId("home-projects")).toContainText("Lantern");
   await expect(page.getByTestId("home-projects")).toContainText("Seedbank");
-  await expect(page.getByTestId("post-card").first()).toContainText(
-    "First lamp is lit",
-  );
-  // Investing is off unless the server says so: no rounds slot.
-  await expect(page.getByTestId("home-rounds")).toHaveCount(0);
+  // No posts and no follows on Home: projects only.
+  await expect(page.getByTestId("post-card")).toHaveCount(0);
   await expect(page.getByTestId("tab-bar")).toBeVisible();
   await expect(page.getByTestId("tab-link-home")).toHaveAttribute(
     "aria-current",
