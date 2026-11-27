@@ -58,7 +58,6 @@ pub mod product_feedback;
 /// Work taken on (kind 37019) and project focus (kind 37020): envelope checks.
 pub mod project_structure;
 #[allow(dead_code, missing_docs)]
-pub mod push_lease;
 #[cfg(test)]
 #[path = "read_gate_tests.rs"]
 mod read_gate_postgres_tests;

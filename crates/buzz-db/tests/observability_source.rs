@@ -579,7 +579,6 @@ fn p0_pool_acquisitions_use_typed_operation_pairs_without_other() {
         ),
         ("event", event),
         ("git_repo", include_str!("../src/store/git_repo.rs")),
-        ("push", include_str!("../src/store/push.rs")),
         ("replica_fence", replica_fence),
         ("reaction", include_str!("../src/store/reaction.rs")),
         ("relay_invite", include_str!("../src/store/relay_invite.rs")),
@@ -703,19 +702,6 @@ fn event_write_paths_include_tenant_local_chokepoint_calls() {
         "NIP-43 membership publication must include a tenant-local chokepoint call"
     );
 
-    let push = include_str!("../src/store/push.rs");
-    let accept_lease = push
-        .split_once("pub async fn accept_lease_event(\n")
-        .expect("push store must expose accept_lease_event")
-        .1
-        .split_once("fn constraint_acceptance_outcome")
-        .expect("accept_lease_event must precede constraint outcome mapping")
-        .0;
-    assert!(
-        has_any_tenant_local_chokepoint(accept_lease),
-        "push lease source-event writes must include a tenant-local chokepoint call"
-    );
-
     let reaction = include_str!("../src/store/reaction.rs");
     let insert_reaction = reaction
         .split_once("pub async fn insert_reaction_event_with_thread_metadata(\n")
@@ -800,19 +786,6 @@ fn legacy_compatibility_metrics_remain_pinned_to_the_preexisting_event_write_ent
     assert!(
         publish_snapshot.contains(COMMUNITY_CHOKEPOINT_LEGACY_MARKER),
         "NIP-43 membership publication must preserve the legacy compatibility population"
-    );
-
-    let push = include_str!("../src/store/push.rs");
-    let accept_lease = push
-        .split_once("pub async fn accept_lease_event(\n")
-        .expect("push store must expose accept_lease_event")
-        .1
-        .split_once("fn constraint_acceptance_outcome")
-        .expect("accept_lease_event must precede constraint outcome mapping")
-        .0;
-    assert!(
-        accept_lease.contains(COMMUNITY_CHOKEPOINT_LEGACY_MARKER),
-        "push lease acceptance must preserve the legacy compatibility population"
     );
 
     let event = include_str!("../src/store/event.rs");

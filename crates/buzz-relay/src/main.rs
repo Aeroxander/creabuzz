@@ -398,7 +398,6 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
         metrics_port = config.metrics_port,
         max_frame_bytes = config.max_frame_bytes,
         audit_enabled = config.audit_enabled,
-        push_enabled = config.push_enabled,
         "Config loaded"
     );
 
@@ -423,7 +422,6 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
     )?;
     boot.finish();
     metrics::gauge!("buzz_audit_enabled").set(if config.audit_enabled { 1.0 } else { 0.0 });
-    metrics::gauge!("buzz_push_enabled").set(if config.push_enabled { 1.0 } else { 0.0 });
     info!(
         port = config.metrics_port,
         idle_timeout_secs = usage_idle_timeout_secs,
@@ -1184,18 +1182,6 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
     match buzz_relay::web_push::sender::spawn(Arc::clone(&state)) {
         Some(_) => info!("web push on"),
         None => info!("web push off (BUZZ_WEB_PUSH_* not set)"),
-    }
-
-    // NIP-PL matcher and worker are enabled as one unit behind the explicit
-    // deployment opt-in. The gateway URL alone never enables push.
-    if state.config.push_enabled {
-        tokio::spawn(buzz_relay::push_runtime::run_matcher(Arc::clone(&state)));
-        tokio::spawn(buzz_relay::push_runtime::run_delivery_worker(Arc::clone(
-            &state,
-        )));
-        info!("NIP-PL push matcher and delivery worker started");
-    } else {
-        info!("NIP-PL push disabled by BUZZ_PUSH_ENABLED");
     }
 
     // Admin outbox delivery worker — drives `relay_admin_outbox` rows.

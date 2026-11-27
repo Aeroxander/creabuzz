@@ -66,7 +66,7 @@ pub(crate) use runtime::{
 pub use store::{
     admin_moderation, allowlist, artifact, board_moderation, budget, channel, channel_members,
     community, deletion, dm, event, feed, git_repo, home_moderation, moderation, org_graph,
-    partition, product_feedback, push, reaction, relay_admin_actions, relay_invite, relay_members,
+    partition, product_feedback, reaction, relay_admin_actions, relay_invite, relay_members,
     reminder, replaceable, storage_accounting, thread, usage, user, workflow,
 };
 

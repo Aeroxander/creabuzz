@@ -71,18 +71,12 @@ pub struct RelayInfo {
     /// Draft/extension protocol identifiers supported by this relay.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub supported_extensions: Option<Vec<String>>,
-    /// NIP-PL executor descriptor. Present only when push delivery is configured.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub push: Option<serde_json::Value>,
     /// URL of the relay software repository.
     pub software: String,
     /// Relay software version string.
     pub version: String,
     /// Protocol and resource limits advertised to clients.
     pub limitation: Option<RelayLimitation>,
-    /// Public WebSocket URL of the dedicated NIP-AB device-pairing relay.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pairing_relay_url: Option<String>,
     /// Relay's own signing pubkey (NIP-11 `self` field, NIP-43).
     #[serde(rename = "self", skip_serializing_if = "Option::is_none")]
     pub relay_self: Option<String>,
@@ -197,7 +191,6 @@ impl RelayInfo {
         icon: Option<&str>,
         flags: RelayCapabilityFlags,
         max_message_length: usize,
-        pairing_relay_url: Option<&str>,
     ) -> Self {
         let RelayCapabilityFlags {
             advertise_nip43,
@@ -256,11 +249,9 @@ impl RelayInfo {
             contact: None,
             supported_nips,
             supported_extensions: Some(supported_extensions),
-            push: None,
             software: "https://github.com/block/buzz".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             limitation: Some(relay_limitation(max_message_length, advertise_fi)),
-            pairing_relay_url: pairing_relay_url.map(str::to_string),
             relay_self: relay_self.map(|s| s.to_string()),
             federated_identity,
         }
@@ -277,48 +268,6 @@ pub async fn relay_info_handler(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     axum::response::Json(nip11_document(&state, raw_host).await)
-}
-
-fn push_descriptor(
-    push_configured: bool,
-    relay_url: &str,
-    executor_key_id: &str,
-    relay_keypair: &nostr::Keys,
-    tenant_host: Option<&str>,
-) -> Option<serde_json::Value> {
-    let host = tenant_host?;
-    push_configured.then_some(())?;
-    let scheme = if relay_url.starts_with("wss://") {
-        "wss"
-    } else {
-        "ws"
-    };
-    Some(serde_json::json!({
-        "origin": format!("{scheme}://{host}"),
-        "keys": [{
-            "id": executor_key_id,
-            "pubkey": relay_keypair.public_key().to_hex(),
-            "current": true
-        }],
-        "app_profiles": [{"id": "buzz-ios-dogfood", "transport": "apns"}],
-        "push_kinds": crate::handlers::push_lease::PUSH_KINDS,
-        "h_grammar": "uuid-v4-lowercase",
-        "class_support": {"apns": ["default"]},
-        "limitation": {
-            "max_lease_ttl": 2592000,
-            "max_leases_per_pubkey": 16,
-            "max_subscriptions_per_lease": 16,
-            "max_kinds": 16,
-            "max_authors": 20,
-            "max_h": 50,
-            "max_tag_values": 20,
-            "max_ignore": 8,
-            "max_content_len": 65536,
-            "max_plaintext_len": 32768,
-            "max_endpoint_len": 4096,
-            "max_string_len": 512
-        }
-    }))
 }
 
 /// Builds the served NIP-11 document for a request arriving on `raw_host`.
@@ -340,7 +289,6 @@ pub(crate) async fn nip11_document(state: &crate::state::AppState, raw_host: &st
             advertise_fi,
         },
         state.config.max_frame_bytes,
-        state.config.pairing_relay_url.as_deref(),
     );
     info.investing = state.config.investing;
     info.web_push = state
@@ -372,26 +320,6 @@ pub(crate) async fn nip11_document(state: &crate::state::AppState, raw_host: &st
         }
         info.example_project =
             crate::share_preview::example_project(state, tenant.community()).await;
-    }
-    let tenant_host = if state.config.push_enabled {
-        crate::tenant::bind_community(&state.db, raw_host)
-            .await
-            .ok()
-            .map(|tenant| tenant.host().to_owned())
-    } else {
-        None
-    };
-    if let Some(push) = push_descriptor(
-        state.config.push_enabled,
-        &state.config.relay_url,
-        &state.config.push_executor_key_id,
-        &state.relay_keypair,
-        tenant_host.as_deref(),
-    ) {
-        info.supported_extensions
-            .get_or_insert_default()
-            .push("nip-pl".to_string());
-        info.push = Some(push);
     }
     info
 }
@@ -462,7 +390,6 @@ const _RELAY_INFO_BUILD_STATIC_INPUT_FENCE: fn(
     Option<&str>,
     RelayCapabilityFlags,
     usize,
-    Option<&str>,
 ) -> RelayInfo = RelayInfo::build;
 
 #[cfg(test)]
@@ -491,22 +418,6 @@ mod postgres_tests {
     }
 
     use super::*;
-
-    #[test]
-    fn push_descriptor_is_gated_by_gateway_configuration_and_tenant_binding() {
-        let keys = nostr::Keys::generate();
-        assert!(
-            push_descriptor(false, "ws://relay", "key", &keys, Some("tenant.example")).is_none()
-        );
-        assert!(push_descriptor(true, "ws://relay", "key", &keys, None).is_none());
-        let descriptor = push_descriptor(true, "ws://relay", "key", &keys, Some("tenant.example"))
-            .expect("configured push descriptor");
-        assert_eq!(descriptor["origin"], "ws://tenant.example");
-        assert_eq!(
-            descriptor["push_kinds"],
-            serde_json::json!(crate::handlers::push_lease::PUSH_KINDS)
-        );
-    }
 
     #[test]
     fn supported_nips_includes_nip23_and_nip33() {
@@ -563,36 +474,8 @@ mod postgres_tests {
             None,
             RelayCapabilityFlags::default(),
             DEFAULT_MAX_FRAME_BYTES,
-            None,
         );
         assert_eq!(info.software, "https://github.com/block/buzz");
-    }
-
-    #[test]
-    fn configured_pairing_relay_is_advertised_and_unset_value_is_omitted() {
-        let info = RelayInfo::build(
-            None,
-            None,
-            RelayCapabilityFlags::default(),
-            DEFAULT_MAX_FRAME_BYTES,
-            Some("wss://pairing.buzz.xyz"),
-        );
-        let json = serde_json::to_value(&info).expect("serialize");
-        assert_eq!(
-            json.get("pairing_relay_url")
-                .and_then(|value| value.as_str()),
-            Some("wss://pairing.buzz.xyz")
-        );
-
-        let info = RelayInfo::build(
-            None,
-            None,
-            RelayCapabilityFlags::default(),
-            DEFAULT_MAX_FRAME_BYTES,
-            None,
-        );
-        let json = serde_json::to_value(&info).expect("serialize");
-        assert!(json.get("pairing_relay_url").is_none());
     }
 
     /// The information document says who may join this community, so a person (or a client) can tell "invite only"
@@ -688,7 +571,6 @@ mod postgres_tests {
             Some("data:image/webp;base64,UklGRg=="),
             RelayCapabilityFlags::default(),
             DEFAULT_MAX_FRAME_BYTES,
-            None,
         );
         assert_eq!(
             info.icon.as_deref(),
@@ -706,7 +588,6 @@ mod postgres_tests {
                 icon,
                 RelayCapabilityFlags::default(),
                 DEFAULT_MAX_FRAME_BYTES,
-                None,
             );
             assert!(info.icon.is_none());
             let json = serde_json::to_value(&info).expect("serialize");
@@ -727,7 +608,7 @@ mod postgres_tests {
 
     #[test]
     fn max_message_length_uses_configured_frame_limit() {
-        let info = RelayInfo::build(None, None, RelayCapabilityFlags::default(), 262_144, None);
+        let info = RelayInfo::build(None, None, RelayCapabilityFlags::default(), 262_144);
         let limitation = info.limitation.expect("limitation");
         assert_eq!(limitation.max_message_length, Some(262_144));
     }
@@ -763,7 +644,6 @@ mod postgres_tests {
             None,
             RelayCapabilityFlags::default(),
             DEFAULT_MAX_FRAME_BYTES,
-            None,
         );
         assert!(info.relay_self.is_none());
         assert!(!info.supported_nips.contains(&NIP_RELAY_MEMBERSHIP));
@@ -782,7 +662,6 @@ mod postgres_tests {
             None,
             RelayCapabilityFlags::default(),
             DEFAULT_MAX_FRAME_BYTES,
-            None,
         );
         assert_eq!(info.relay_self.as_deref(), Some(pk));
         assert!(!info.supported_nips.contains(&NIP_RELAY_MEMBERSHIP));
@@ -800,7 +679,6 @@ mod postgres_tests {
                 advertise_fi: false,
             },
             DEFAULT_MAX_FRAME_BYTES,
-            None,
         );
         assert_eq!(info.relay_self.as_deref(), Some(pk));
         assert!(info.supported_nips.contains(&NIP_RELAY_MEMBERSHIP));
@@ -820,7 +698,6 @@ mod postgres_tests {
                 advertise_fi: false,
             },
             DEFAULT_MAX_FRAME_BYTES,
-            None,
         );
     }
 }

@@ -334,8 +334,6 @@ pub struct Config {
     pub db_read_pool_size: Option<u32>,
     /// Public WebSocket URL of this relay, advertised in NIP-11.
     pub relay_url: String,
-    /// Public WebSocket URL of the dedicated device-pairing relay, when configured.
-    pub pairing_relay_url: Option<String>,
     /// Maximum number of concurrent WebSocket connections.
     pub max_connections: usize,
     /// Maximum number of concurrently executing message handlers.
@@ -536,18 +534,6 @@ pub struct Config {
     /// Used to authenticate internal policy endpoint requests.
     pub git_hook_hmac_secret: String,
 
-    /// Whether NIP-PL push discovery, lease acceptance, matching, and delivery
-    /// are enabled for this deployment. Defaults to false.
-    pub push_enabled: bool,
-    /// Descriptor key identifier accepted in kind:30350 `exec` tags.
-    pub push_executor_key_id: String,
-    /// Exact HTTP(S) gateway endpoint used to sign and submit APNs delivery capabilities.
-    /// Required while push is enabled. An explicitly empty setting is allowed
-    /// only while push is disabled.
-    pub push_gateway_delivery_url: Option<url::Url>,
-    /// Hard timeout for one push gateway delivery request.
-    pub push_gateway_timeout: Duration,
-
     /// Optional relay-hosted policy shown on join surfaces. Disabled when no
     /// documents or age attestation are configured.
     pub join_policy: Option<JoinPolicyConfig>,
@@ -665,29 +651,6 @@ fn rate_limit_config_from_env() -> Result<buzz_auth::RateLimitConfig, ConfigErro
             defaults.agent_platform_messages_per_min,
         )?,
     })
-}
-
-fn parse_push_gateway_delivery_url(raw: &str) -> Result<url::Url, ConfigError> {
-    let url = url::Url::parse(raw.trim()).map_err(|e| {
-        ConfigError::InvalidValue(format!(
-            "BUZZ_PUSH_GATEWAY_DELIVERY_URL is not a valid URL: {e}"
-        ))
-    })?;
-    if !matches!(url.scheme(), "http" | "https")
-        || url.host().is_none()
-        || (url.scheme() == "https" && url.port().is_some())
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.path() != "/v1/deliveries/apns"
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(ConfigError::InvalidValue(
-            "BUZZ_PUSH_GATEWAY_DELIVERY_URL must be an exact HTTP(S) /v1/deliveries/apns URL without credentials, query, or fragment; explicit ports are supported only for HTTP"
-                .to_string(),
-        ));
-    }
-    Ok(url)
 }
 
 fn parse_bool(name: &str, default: bool) -> Result<bool, ConfigError> {
@@ -842,25 +805,6 @@ impl Config {
 
         let relay_url =
             std::env::var("RELAY_URL").unwrap_or_else(|_| "ws://localhost:3000".to_string());
-
-        let pairing_relay_url = std::env::var("BUZZ_PAIRING_RELAY_URL")
-            .ok()
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-            .map(|value| {
-                let parsed = url::Url::parse(&value).map_err(|e| {
-                    ConfigError::InvalidValue(format!(
-                        "BUZZ_PAIRING_RELAY_URL must be a valid ws:// or wss:// URL: {e}"
-                    ))
-                })?;
-                if !matches!(parsed.scheme(), "ws" | "wss") || parsed.host_str().is_none() {
-                    return Err(ConfigError::InvalidValue(
-                        "BUZZ_PAIRING_RELAY_URL must be a valid ws:// or wss:// URL".to_string(),
-                    ));
-                }
-                Ok(value)
-            })
-            .transpose()?;
 
         let max_connections = std::env::var("BUZZ_MAX_CONNECTIONS")
             .ok()
@@ -1327,50 +1271,6 @@ impl Config {
                 let secret: [u8; 32] = rand::random();
                 hex::encode(secret)
             });
-        let push_enabled = parse_bool("BUZZ_PUSH_ENABLED", false)?;
-        let push_executor_key_id =
-            std::env::var("BUZZ_PUSH_EXECUTOR_KEY_ID").unwrap_or_else(|_| "relay-v1".to_string());
-        if push_executor_key_id.is_empty() || push_executor_key_id.len() > 64 {
-            return Err(ConfigError::InvalidValue(
-                "BUZZ_PUSH_EXECUTOR_KEY_ID must contain 1..=64 bytes".to_string(),
-            ));
-        }
-        let push_gateway_delivery_url = match std::env::var("BUZZ_PUSH_GATEWAY_DELIVERY_URL") {
-            Ok(raw) if raw.trim().is_empty() && push_enabled => {
-                return Err(ConfigError::InvalidValue(
-                    "BUZZ_PUSH_GATEWAY_DELIVERY_URL must not be empty when BUZZ_PUSH_ENABLED=true"
-                        .to_string(),
-                ));
-            }
-            Ok(raw) if raw.trim().is_empty() => None,
-            Ok(raw) => Some(parse_push_gateway_delivery_url(&raw)?),
-            Err(std::env::VarError::NotPresent) if push_enabled => {
-                return Err(ConfigError::InvalidValue(
-                    "BUZZ_PUSH_GATEWAY_DELIVERY_URL must be configured when BUZZ_PUSH_ENABLED=true"
-                        .to_string(),
-                ));
-            }
-            Err(std::env::VarError::NotPresent) => None,
-            Err(error) => {
-                return Err(ConfigError::InvalidValue(format!(
-                    "BUZZ_PUSH_GATEWAY_DELIVERY_URL must be valid UTF-8: {error}"
-                )));
-            }
-        };
-        let push_gateway_timeout_millis = match std::env::var("BUZZ_PUSH_GATEWAY_TIMEOUT_MS") {
-            Ok(raw) => raw
-                .parse::<u64>()
-                .ok()
-                .filter(|millis| (100..=10_000).contains(millis))
-                .ok_or_else(|| {
-                    ConfigError::InvalidValue(
-                        "BUZZ_PUSH_GATEWAY_TIMEOUT_MS must be an integer in 100..=10000"
-                            .to_string(),
-                    )
-                })?,
-            Err(_) => 2_000,
-        };
-        let push_gateway_timeout = Duration::from_millis(push_gateway_timeout_millis);
         const MAX_POLICY_MARKDOWN_BYTES: usize = 256 * 1024;
         let read_policy_markdown = |name: &str| -> Result<Option<String>, ConfigError> {
             let value = std::env::var(name)
@@ -1488,7 +1388,6 @@ impl Config {
             db_pool_size,
             db_read_pool_size,
             relay_url,
-            pairing_relay_url,
             max_connections,
             max_concurrent_handlers,
             send_buffer_size,
@@ -1536,10 +1435,6 @@ impl Config {
             git_max_repos_per_pubkey,
             git_max_concurrent_ops,
             git_hook_hmac_secret,
-            push_enabled,
-            push_executor_key_id,
-            push_gateway_delivery_url,
-            push_gateway_timeout,
             join_policy,
             web_dir,
             serve_git_web_gui,
@@ -2976,158 +2871,10 @@ mod tests {
     }
 
     #[test]
-    fn push_is_opt_in_and_gateway_is_required_when_enabled() {
-        let _guards = env_guards();
-        let previous_enabled = std::env::var_os("BUZZ_PUSH_ENABLED");
-        let previous = std::env::var_os("BUZZ_PUSH_GATEWAY_DELIVERY_URL");
-        std::env::remove_var("BUZZ_PUSH_ENABLED");
-        std::env::remove_var("BUZZ_PUSH_GATEWAY_DELIVERY_URL");
-        let config = Config::from_env().expect("default config");
-        assert!(!config.push_enabled);
-        assert!(config.push_gateway_delivery_url.is_none());
-
-        std::env::set_var("BUZZ_PUSH_ENABLED", "true");
-        let result = Config::from_env();
-        assert!(matches!(
-            result,
-            Err(ConfigError::InvalidValue(ref message))
-                if message.contains("must be configured")
-        ));
-
-        std::env::set_var(
-            "BUZZ_PUSH_GATEWAY_DELIVERY_URL",
-            "https://push.example/v1/deliveries/apns",
-        );
-        let config = Config::from_env().expect("enabled push config");
-        assert!(config.push_enabled);
-        assert_eq!(
-            config
-                .push_gateway_delivery_url
-                .as_ref()
-                .map(url::Url::as_str),
-            Some("https://push.example/v1/deliveries/apns")
-        );
-
-        std::env::set_var("BUZZ_PUSH_GATEWAY_DELIVERY_URL", "");
-        let result = Config::from_env();
-        assert!(matches!(
-            result,
-            Err(ConfigError::InvalidValue(ref message))
-                if message.contains("must not be empty")
-        ));
-
-        std::env::set_var("BUZZ_PUSH_ENABLED", "false");
-        let config = Config::from_env().expect("disabled push config");
-        assert!(config.push_gateway_delivery_url.is_none());
-
-        if let Some(value) = previous_enabled {
-            std::env::set_var("BUZZ_PUSH_ENABLED", value);
-        } else {
-            std::env::remove_var("BUZZ_PUSH_ENABLED");
-        }
-        if let Some(value) = previous {
-            std::env::set_var("BUZZ_PUSH_GATEWAY_DELIVERY_URL", value);
-        } else {
-            std::env::remove_var("BUZZ_PUSH_GATEWAY_DELIVERY_URL");
-        }
-    }
-
-    #[test]
-    fn invalid_push_enabled_value_is_rejected() {
-        let _guards = env_guards();
-        let previous = std::env::var_os("BUZZ_PUSH_ENABLED");
-        std::env::set_var("BUZZ_PUSH_ENABLED", "sometimes");
-        let result = Config::from_env();
-        if let Some(value) = previous {
-            std::env::set_var("BUZZ_PUSH_ENABLED", value);
-        } else {
-            std::env::remove_var("BUZZ_PUSH_ENABLED");
-        }
-        assert!(matches!(
-            result,
-            Err(ConfigError::InvalidValue(ref message))
-                if message.contains("BUZZ_PUSH_ENABLED")
-        ));
-    }
-
-    #[test]
-    fn push_gateway_url_is_exact_and_fail_closed() {
-        assert!(parse_push_gateway_delivery_url("https://push.example/v1/deliveries/apns").is_ok());
-        let delivery_url = "http://push.example:8080/v1/deliveries/apns";
-        assert_eq!(
-            parse_push_gateway_delivery_url(delivery_url)
-                .unwrap()
-                .as_str(),
-            delivery_url
-        );
-        assert!(parse_push_gateway_delivery_url("http://push-gateway/v1/deliveries/apns").is_ok());
-        for invalid in [
-            "ftp://push.example/v1/deliveries/apns",
-            "http://push-gateway:8080/v1/deliveries/apns?token=x",
-            "http://user@push-gateway:8080/v1/deliveries/apns",
-            "http://push-gateway:8080/v1/deliveries/apns#fragment",
-            "https://push.example:8443/v1/deliveries/apns",
-            "https://push.example/v1/deliveries/apns/",
-            "https://push.example/v1/deliveries/apns?token=x",
-            "https://user@push.example/v1/deliveries/apns",
-        ] {
-            assert!(
-                parse_push_gateway_delivery_url(invalid).is_err(),
-                "{invalid}"
-            );
-        }
-    }
-
-    #[test]
-    fn invalid_push_gateway_timeout_is_not_silently_defaulted() {
-        let _guards = env_guards();
-        std::env::set_var("BUZZ_PUSH_GATEWAY_TIMEOUT_MS", "99");
-        let result = Config::from_env();
-        std::env::remove_var("BUZZ_PUSH_GATEWAY_TIMEOUT_MS");
-        assert!(matches!(
-            result,
-            Err(ConfigError::InvalidValue(ref message))
-                if message.contains("BUZZ_PUSH_GATEWAY_TIMEOUT_MS")
-        ));
-    }
-
-    #[test]
-    fn invalid_push_executor_key_id_is_rejected() {
-        let _guards = env_guards();
-        std::env::set_var("BUZZ_PUSH_EXECUTOR_KEY_ID", "");
-        let result = Config::from_env();
-        std::env::remove_var("BUZZ_PUSH_EXECUTOR_KEY_ID");
-        assert!(matches!(
-            result,
-            Err(ConfigError::InvalidValue(ref message))
-                if message.contains("BUZZ_PUSH_EXECUTOR_KEY_ID")
-        ));
-    }
-
-    #[test]
     fn invalid_bind_addr_returns_error() {
         assert!(matches!(
             parse_bind_addr("not-an-addr"),
             Err(ConfigError::InvalidBindAddr(_))
-        ));
-    }
-
-    #[test]
-    fn pairing_relay_url_accepts_websocket_urls_and_rejects_http() {
-        let _guards = env_guards();
-        std::env::set_var("BUZZ_PAIRING_RELAY_URL", "wss://pairing.buzz.xyz");
-        let config = Config::from_env().expect("config");
-        assert_eq!(
-            config.pairing_relay_url.as_deref(),
-            Some("wss://pairing.buzz.xyz")
-        );
-
-        std::env::set_var("BUZZ_PAIRING_RELAY_URL", "https://pairing.buzz.xyz");
-        let result = Config::from_env();
-        std::env::remove_var("BUZZ_PAIRING_RELAY_URL");
-        assert!(matches!(
-            result,
-            Err(ConfigError::InvalidValue(ref msg)) if msg.contains("BUZZ_PAIRING_RELAY_URL")
         ));
     }
 

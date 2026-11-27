@@ -1098,7 +1098,7 @@ async fn handle_ephemeral_event(
         let stored_event = StoredEvent::new(event.clone(), Some(ch_id));
         fan_out_event_to_local_subscribers(&state, conn.tenant.community(), &stored_event).await;
     } else {
-        // Channel-less ephemeral events (e.g., NIP-AB pairing kind:24134).
+        // Channel-less ephemeral events.
         //
         // Sentinel pattern: we use `Uuid::nil()` (all-zeros UUID) as a
         // "global channel" routing key in Redis pub/sub. This lets other relay

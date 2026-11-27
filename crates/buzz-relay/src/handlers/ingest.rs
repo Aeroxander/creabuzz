@@ -491,15 +491,6 @@ fn map_relay_admin_error(error: super::relay_admin::RelayAdminError) -> IngestEr
     }
 }
 
-fn map_push_accept_error(error: super::push_lease::AcceptError) -> IngestError {
-    match error {
-        super::push_lease::AcceptError::Validation(reason) => {
-            IngestError::Rejected(format!("invalid: {reason}"))
-        }
-        super::push_lease::AcceptError::Internal(reason) => IngestError::Internal(reason),
-    }
-}
-
 /// Determine the required scope for a given event kind.
 ///
 /// Returns `Err` for unknown kinds — the relay rejects them.
@@ -513,10 +504,7 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         | KIND_POLL_RESPONSE => Ok(Scope::MessagesWrite),
         KIND_CONTACT_LIST | KIND_READ_STATE | KIND_USER_STATUS | KIND_AGENT_ENGRAM
         | KIND_EVENT_REMINDER | KIND_PERSONA | KIND_TEAM | KIND_MANAGED_AGENT
-        | KIND_PRIVATE_MANAGED_AGENT | KIND_TEAM_CATALOG | KIND_SKILL
-        | super::push_lease::KIND_PUSH_LEASE => {
-            Ok(Scope::UsersWrite)
-        }
+        | KIND_PRIVATE_MANAGED_AGENT | KIND_TEAM_CATALOG | KIND_SKILL => Ok(Scope::UsersWrite),
         // NIP-AM: agent turn metrics are agent-authored global events (encrypted to owner).
         KIND_AGENT_TURN_METRIC => Ok(Scope::MessagesWrite),
         // NIP-56 reports are ordinary member writes into the mod-only queue.
@@ -952,8 +940,6 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             | KIND_TEAM_STRATEGY
             | KIND_TEAM_RUN
             | KIND_TEAM_TURN
-            // NIP-PL leases are author-owned, addressable global state.
-            | super::push_lease::KIND_PUSH_LEASE
     )
 }
 
@@ -5331,54 +5317,6 @@ async fn ingest_event_inner(
         }
     }
 
-    if kind_u32 == super::push_lease::KIND_PUSH_LEASE {
-        let outcome = super::push_lease::accept(tenant, state, &event, now)
-            .await
-            .map_err(map_push_accept_error)?;
-        match outcome {
-            buzz_db::push::AcceptLeaseOutcome::Accepted => {}
-            buzz_db::push::AcceptLeaseOutcome::StaleEvent => {
-                return Err(IngestError::Rejected("invalid: stale replacement".into()));
-            }
-            buzz_db::push::AcceptLeaseOutcome::StaleGeneration => {
-                return Err(IngestError::Rejected("invalid: stale generation".into()));
-            }
-            buzz_db::push::AcceptLeaseOutcome::EndpointAlreadyLeased => {
-                return Err(IngestError::Rejected(
-                    "invalid: endpoint already leased".into(),
-                ));
-            }
-            buzz_db::push::AcceptLeaseOutcome::LeaseQuotaExceeded => {
-                return Err(IngestError::Rejected(
-                    "invalid: lease quota exceeded".into(),
-                ));
-            }
-            buzz_db::push::AcceptLeaseOutcome::SourceEventCollision => {
-                return Err(IngestError::Rejected(
-                    "invalid: source event collision".into(),
-                ));
-            }
-            buzz_db::push::AcceptLeaseOutcome::ConstraintViolation => {
-                return Err(IngestError::Rejected(
-                    "invalid: lease constraint violation".into(),
-                ));
-            }
-        };
-        emit(
-            tracer,
-            TraceAction::WriteInsertGlobal {
-                msg_id: msg_id_label(event.id.as_bytes()),
-                claimed_community: claimed_community_from_event(&event),
-            },
-            state_for_request(tenant, auth.pubkey()),
-        );
-        return Ok(IngestResult {
-            event_id: event_id_hex,
-            accepted: true,
-            message: String::new(),
-        });
-    }
-
     let tenant_media_base =
         crate::api::media::media_base_url_for_tenant(&state.config.relay_url, tenant.host());
     if kind_u32 == KIND_STREAM_MESSAGE {
@@ -6370,27 +6308,6 @@ mod postgres_tests {
         match result.map_err(map_rejection).unwrap_err() {
             IngestError::Rejected(message) => assert_eq!(message, rejection),
             _ => panic!("expected rejected ingest error"),
-        }
-    }
-
-    #[test]
-    fn push_infrastructure_failures_are_internal_not_protocol_invalid() {
-        match map_push_accept_error(crate::handlers::push_lease::AcceptError::Internal(
-            "gateway unavailable".to_string(),
-        )) {
-            IngestError::Internal(message) => {
-                assert_eq!(message, "gateway unavailable");
-                assert!(!message.starts_with("invalid:"));
-            }
-            _ => panic!("infrastructure failure became a protocol rejection"),
-        }
-        match map_push_accept_error(crate::handlers::push_lease::AcceptError::Validation(
-            "unknown executor key".to_string(),
-        )) {
-            IngestError::Rejected(message) => {
-                assert_eq!(message, "invalid: unknown executor key")
-            }
-            _ => panic!("validation failure did not become a protocol rejection"),
         }
     }
 

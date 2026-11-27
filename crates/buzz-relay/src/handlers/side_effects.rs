@@ -2736,10 +2736,6 @@ pub(crate) async fn handle_a_tag_deletion(
     let d_tag = parts[2];
 
     match kind_num {
-        // kind:30350 revocation is exclusively a higher-generation inactive replacement.
-        super::push_lease::KIND_PUSH_LEASE => {
-            tracing::debug!(d_tag, "NIP-09 deletion ignored for push lease");
-        }
         buzz_core::kind::KIND_WORKFLOW_DEF => {
             // Workflow deletion belongs to the atomic persistence path in ingest.
             return Err(anyhow::anyhow!(
@@ -2956,13 +2952,6 @@ async fn handle_standard_deletion_event(
             tracing::debug!(
                 target_id = %hex::encode(&target_id),
                 "NIP-09 deletion ignored: target is itself a deletion"
-            );
-            continue;
-        }
-        if u32::from(target_event.event.kind.as_u16()) == super::push_lease::KIND_PUSH_LEASE {
-            tracing::debug!(
-                target_id = %hex::encode(&target_id),
-                "NIP-09 deletion ignored for push lease"
             );
             continue;
         }

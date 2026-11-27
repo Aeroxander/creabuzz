@@ -130,8 +130,7 @@ fn may_set_workspace_profile(
 /// The category is part of the security contract, not cosmetics: a ban must
 /// surface as `blocked:` / HTTP 403 (like every other durable-restriction
 /// refusal), and a restriction-lookup outage must surface as a 500 rather than
-/// a client-side 400 that reads as "your request was malformed". Mirrors
-/// [`super::push_lease::AcceptError`] and its `map_push_accept_error` seam.
+/// a client-side 400 that reads as "your request was malformed".
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum RelayAdminError {
     /// Sender is under a durable community ban — `blocked:` / HTTP 403.

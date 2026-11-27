@@ -33,9 +33,7 @@ and `contracts/pot` are as they were on `v6.5`.
   journeys and a real-phone join and leave test (see below).
 - Rust crates: 19 were removed in a second commit (the agent harness `buzz-acp`, `buzz-agent`, `sprig`, `buzz-dev-mcp`
   and `git-*-nostr`; the fleet crates; the iOS push gateway; the device-pairing crates; and orphans). 23 remain.
-  Inside the kept crates, the relay still holds code for the removed pieces: the delivery client for the push gateway
-  (`push_runtime.rs`, `BUZZ_PUSH_GATEWAY_DELIVERY_URL`), `BUZZ_PAIRING_RELAY_URL` and the `pairing_relay_url` field in the
-  server's public description, `audio/` (huddle audio), and `buzz-persona`'s `buzz-agent` runtime branch.
+  Inside the kept crates, the relay still holds code for the removed pieces: `audio/` (huddle audio) and `buzz-persona`'s `buzz-agent` runtime branch.
 - Old launchpad code inside `packages/creaton-core/src/launchpad` stays until its tests are rewritten to stand alone.
 
 ## Known gaps after the cut

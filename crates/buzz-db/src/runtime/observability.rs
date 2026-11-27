@@ -181,7 +181,6 @@ pub(crate) const POOL_ACQUIRE_RAW_SERIES_PER_POD: usize = POOL_ACQUIRE_VALID_PAI
 pub(crate) enum LockType {
     Replacement,
     Membership,
-    PushGate,
     Deletion,
     MigrationSchemaSafety,
     PartitionMaintenance,
@@ -189,10 +188,9 @@ pub(crate) enum LockType {
 
 impl LockType {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 6] = [
+    pub(crate) const ALL: [Self; 5] = [
         Self::Replacement,
         Self::Membership,
-        Self::PushGate,
         Self::Deletion,
         Self::MigrationSchemaSafety,
         Self::PartitionMaintenance,
@@ -202,7 +200,6 @@ impl LockType {
         match self {
             Self::Replacement => "replacement",
             Self::Membership => "membership",
-            Self::PushGate => "push_gate",
             Self::Deletion => "deletion",
             Self::MigrationSchemaSafety => "migration_schema_safety",
             Self::PartitionMaintenance => "partition_maintenance",
@@ -247,7 +244,6 @@ pub(crate) enum TransactionOperation {
     ReplaceParameterizedEvent,
     ReplaceAddressableEvent,
     PublishNip43MembershipLocked,
-    AcceptPushLeaseEvent,
     BeginCommunityDeletionQuiescing,
     FenceCommunityDeletion,
     CommunityArchiveFence,
@@ -256,11 +252,10 @@ pub(crate) enum TransactionOperation {
 
 impl TransactionOperation {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 8] = [
+    pub(crate) const ALL: [Self; 7] = [
         Self::ReplaceParameterizedEvent,
         Self::ReplaceAddressableEvent,
         Self::PublishNip43MembershipLocked,
-        Self::AcceptPushLeaseEvent,
         Self::BeginCommunityDeletionQuiescing,
         Self::FenceCommunityDeletion,
         Self::CommunityArchiveFence,
@@ -272,7 +267,6 @@ impl TransactionOperation {
             Self::ReplaceParameterizedEvent => "replace_parameterized_event",
             Self::ReplaceAddressableEvent => "replace_addressable_event",
             Self::PublishNip43MembershipLocked => "publish_nip43_membership_locked",
-            Self::AcceptPushLeaseEvent => "accept_push_lease_event",
             Self::BeginCommunityDeletionQuiescing => "begin_community_deletion_quiescing",
             Self::FenceCommunityDeletion => "fence_community_deletion",
             Self::CommunityArchiveFence => "community_archive_fence",
@@ -289,7 +283,6 @@ impl TransactionOperation {
             Self::ReplaceParameterizedEvent
             | Self::ReplaceAddressableEvent
             | Self::PublishNip43MembershipLocked
-            | Self::AcceptPushLeaseEvent
             | Self::BeginCommunityDeletionQuiescing
             | Self::FenceCommunityDeletion => true,
             Self::CommunityArchiveFence | Self::InactiveCommunityFence => false,
@@ -300,8 +293,7 @@ impl TransactionOperation {
         match self {
             Self::ReplaceParameterizedEvent
             | Self::ReplaceAddressableEvent
-            | Self::PublishNip43MembershipLocked
-            | Self::AcceptPushLeaseEvent => WriterOperation::EventWrite,
+            | Self::PublishNip43MembershipLocked => WriterOperation::EventWrite,
             Self::BeginCommunityDeletionQuiescing
             | Self::FenceCommunityDeletion
             | Self::CommunityArchiveFence
@@ -671,7 +663,6 @@ mod tests {
             [
                 "replacement",
                 "membership",
-                "push_gate",
                 "deletion",
                 "migration_schema_safety",
                 "partition_maintenance",
@@ -687,7 +678,6 @@ mod tests {
                 "replace_parameterized_event",
                 "replace_addressable_event",
                 "publish_nip43_membership_locked",
-                "accept_push_lease_event",
                 "begin_community_deletion_quiescing",
                 "fence_community_deletion",
                 "community_archive_fence",
@@ -707,7 +697,7 @@ mod tests {
             .await;
         assert_eq!(success, Ok("committed"));
 
-        let error = TransactionTimer::start(TransactionOperation::AcceptPushLeaseEvent)
+        let error = TransactionTimer::start(TransactionOperation::ReplaceAddressableEvent)
             .observe(async { Err::<(), _>("rollback") })
             .await;
         assert_eq!(error, Err("rollback"));
@@ -728,7 +718,7 @@ mod tests {
 
         for (operation, outcome) in [
             ("replace_parameterized_event", "success"),
-            ("accept_push_lease_event", "error"),
+            ("replace_addressable_event", "error"),
         ] {
             assert!(keys.contains(&(
                 "buzz_db_transaction_duration_seconds".to_owned(),
@@ -774,7 +764,7 @@ mod tests {
                 .await;
         assert!(committed.is_ok());
         let rolled_back: Result<(), ()> =
-            TransactionTimer::start(TransactionOperation::AcceptPushLeaseEvent)
+            TransactionTimer::start(TransactionOperation::ReplaceAddressableEvent)
                 .observe(async { Err(()) })
                 .await;
         assert!(rolled_back.is_err());
@@ -827,7 +817,7 @@ mod tests {
             (
                 "buzz_db_transaction_duration_seconds",
                 [
-                    ("operation", "accept_push_lease_event"),
+                    ("operation", "replace_addressable_event"),
                     ("outcome", "error"),
                 ],
             ),
