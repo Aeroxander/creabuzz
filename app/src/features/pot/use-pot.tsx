@@ -6,6 +6,7 @@
 import type { ReadCall } from "@creaton/core/pot/pot-reads.ts";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useState } from "react";
+import { useAccount } from "../../lib/account";
 import { potNetwork } from "../../lib/pot-network";
 import { Button } from "../../ui/button";
 import {
@@ -23,6 +24,7 @@ import {
 import {
   isAccountMismatch,
   type MoneyWallet,
+  senderAvailability,
   senderKind,
 } from "../money/wallet";
 
@@ -110,14 +112,21 @@ export interface Ready {
 export function WalletGate({
   chainId,
   what,
+  signedOut,
   children,
 }: {
   chainId: number;
   /** What it is needed for, said after "to": "back this project". */
   what: string;
+  /**
+   * Shown in place of "open this page in a browser with a wallet" to someone with no account here on a phone that signs
+   * up with a passkey: signing up is the way forward, so the screen can offer it. A wallet browser never sees it.
+   */
+  signedOut?: ReactNode;
   children: (ready: Ready) => ReactNode;
 }) {
   const pot = usePotWallet(chainId);
+  const { pubkey } = useAccount();
   const connect = useConnectWallet();
   const queryClient = useQueryClient();
   const [problem, setProblem] = useState<string | null>(null);
@@ -129,6 +138,15 @@ export function WalletGate({
         {BUILD_WORDS[fits]}
       </p>
     );
+  const now = senderAvailability(pot.wallet);
+  if (
+    signedOut &&
+    !pubkey &&
+    senderKind(pot.wallet) === "passkey" &&
+    !now.ok &&
+    now.reason === "no-passkey"
+  )
+    return <>{signedOut}</>;
   if (!pot.wallet.isAvailable())
     return (
       <p className="text-sm text-muted" data-testid="pot-no-wallet">

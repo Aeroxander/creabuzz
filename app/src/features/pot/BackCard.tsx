@@ -3,12 +3,14 @@
  * words when it is shut (and what to do), and an amount under the smallest says what the smallest is. Nothing is sent from
  * here: the sheet's press sends, with the sender the person chose.
  */
-import { useId, useState } from "react";
+import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { Field } from "../../ui/field";
 import { parseDollarAmount } from "../money/calls";
 import type { ProjectNumbers } from "../money/numbers";
+import { markBackAfterSignUp, takeBackAfterSignUp } from "./back-after-sign-up";
 import { BackSheet } from "./BackSheet";
 import { doorShutWords, smallDollarsText } from "./pot-words";
 import { recordFitsBuild, type Ready, WalletGate } from "./use-pot";
@@ -23,19 +25,45 @@ function amountWords(
   return `The smallest amount is ${smallDollarsText(min)} ${min === 1_000_000n ? "dollar" : "dollars"}.`;
 }
 
+function sessionStore(): Storage | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The Back box. `ready` is null for someone with no account yet: Back keeps the amount and goes to sign-up, which comes back
+ * to this page; `ready` is set once they have one, and the amount they kept opens the sheet by itself.
+ */
 function BackForm({
   numbers,
   projectName,
   ready,
+  onSignUp,
 }: {
   numbers: ProjectNumbers;
   projectName: string;
-  ready: Ready;
+  ready: Ready | null;
+  onSignUp?: (text: string) => void;
 }) {
   const [text, setText] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
   const [amount, setAmount] = useState<bigint | null>(null);
   const min = numbers.limits.minJoin;
+  const resumed = useRef(false);
+  // An amount typed before signing up opens the sheet once the account is ready (it is used up the first time).
+  useEffect(() => {
+    if (!ready || resumed.current) return;
+    resumed.current = true;
+    const kept = takeBackAfterSignUp(sessionStore(), numbers.key);
+    if (kept === null) return;
+    setText(kept);
+    const parsed = parseDollarAmount(kept, min);
+    if (parsed.ok) setAmount(parsed.raw);
+    else setProblem(amountWords(parsed.reason, min));
+  }, [ready, min, numbers.key]);
   return (
     <>
       {/* The box and its press in one row, so Back is in the first screen of a phone. */}
@@ -47,6 +75,7 @@ function BackForm({
           const parsed = parseDollarAmount(text, min);
           if (!parsed.ok) return setProblem(amountWords(parsed.reason, min));
           setProblem(null);
+          if (!ready) return onSignUp?.(text);
           setAmount(parsed.raw);
         }}
       >
@@ -70,16 +99,41 @@ function BackForm({
           </Button>
         </div>
       </form>
-      <BackSheet
-        amount={amount}
-        numbers={numbers}
-        onClose={() => {
-          setAmount(null);
-        }}
-        projectName={projectName}
-        ready={ready}
-      />
+      {ready ? (
+        <BackSheet
+          amount={amount}
+          numbers={numbers}
+          onClose={() => {
+            setAmount(null);
+          }}
+          projectName={projectName}
+          ready={ready}
+        />
+      ) : null}
     </>
+  );
+}
+
+/** The Back box for someone with no account: the same box, and Back is their way to sign up and come back to this amount. */
+function SignedOutBack({
+  numbers,
+  projectName,
+}: {
+  numbers: ProjectNumbers;
+  projectName: string;
+}) {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  return (
+    <BackForm
+      numbers={numbers}
+      onSignUp={(text) => {
+        markBackAfterSignUp(sessionStore(), numbers.key, text);
+        void navigate({ to: "/welcome", search: { next: pathname } });
+      }}
+      projectName={projectName}
+      ready={null}
+    />
   );
 }
 
@@ -119,7 +173,13 @@ export function BackCard({
           </p>
         </div>
       ) : (
-        <WalletGate chainId={numbers.chainId} what="back this project">
+        <WalletGate
+          chainId={numbers.chainId}
+          signedOut={
+            <SignedOutBack numbers={numbers} projectName={projectName} />
+          }
+          what="back this project"
+        >
           {(ready) => (
             <BackForm
               numbers={numbers}

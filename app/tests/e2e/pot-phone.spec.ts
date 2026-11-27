@@ -117,8 +117,21 @@ run(
           () => (window as unknown as { __prompts: number }).__prompts,
         );
 
+      // Signed out on the project, with no wallet: the Back box is there (no "open this in a browser with a wallet" dead end),
+      // and Back, with no "Ask to join", goes to sign-up and returns to this project with the same amount.
+      await page.goto(`${ORIGIN}${pageOf(project.label)}`);
+      await expect(page.getByTestId("backing-box")).toBeVisible({
+        timeout: 30_000,
+      });
+      await expect(page.getByTestId("pot-no-wallet")).toHaveCount(0);
+      await page.getByTestId("backing-amount").fill("25");
+      await page.getByTestId("backing-review").click();
+      await page.waitForURL(/\/welcome\?next=/, { timeout: 20_000 });
+      expect(new URL(page.url()).searchParams.get("next")).toBe(
+        pageOf(project.label),
+      );
+
       // Sign up with a passkey (no wallet in this browser).
-      await page.goto(`${ORIGIN}/welcome`);
       await page
         .getByTestId("onboarding-name")
         .fill("Mira Okafor", { timeout: 20_000 });
@@ -127,6 +140,18 @@ run(
         timeout: 20_000,
       });
       await page.keyboard.press("Escape");
+      await page.waitForURL(`${ORIGIN}${pageOf(project.label)}`, {
+        timeout: 20_000,
+      });
+      // Back on the same project with the same amount: the sheet is open on it, nothing typed again.
+      await expect(page.getByTestId("backing-amount")).toHaveValue("25", {
+        timeout: 30_000,
+      });
+      await expect(page.getByTestId("back-sheet")).toBeVisible({
+        timeout: 30_000,
+      });
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("back-sheet")).toBeHidden();
       await page.goto(`${ORIGIN}/you`);
       await expect(page.getByTestId("sender-passkey-words")).toContainText(
         "only key to the money in this account",
