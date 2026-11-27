@@ -52,7 +52,7 @@
 # the outcome. Never runs cargo: the relay must already be built (`cargo build -p buzz-relay`).
 #
 # Needs: anvil, cast, forge (FOUNDRY_BIN or PATH), psql and redis-cli, a Postgres and a Redis (started here when they are not
-# running; `docker compose up -d postgres redis` gives the defaults below), node with web/node_modules (the checker's tools), pnpm,
+# running; `docker compose up -d postgres redis` gives the defaults below), node with app/node_modules (the checker's tools), pnpm,
 # jq, openssl, python3, curl, Playwright's Chromium (the one app/ already uses; this script installs nothing), and a built relay.
 # The tools are checked first and every missing one is named with how to get it (docs/next-version/TRY-IT.md, part 1). Works on
 # Linux and macOS (`timeout` and `hostname -I` are not needed). Uses anvil's well-known development accounts only; every amount
@@ -115,7 +115,7 @@ command -v python3 >/dev/null 2>&1 || lack "python3 is missing: on a Mac 'brew i
 command -v curl >/dev/null 2>&1 || lack "curl is missing: on a Mac 'brew install curl', on Ubuntu 'sudo apt install curl'."
 command -v node >/dev/null 2>&1 || lack "Node is missing: run '. ./bin/activate-hermit' in this folder, or install Node 22 from nodejs.org."
 command -v pnpm >/dev/null 2>&1 || lack "pnpm is missing: run '. ./bin/activate-hermit' in this folder, or 'npm install -g pnpm'."
-[[ -d app/node_modules && -d web/node_modules ]] || lack "The app's libraries are not installed: run 'pnpm install' in this folder (and 'git submodule update --init --recursive' once)."
+[[ -d app/node_modules ]] || lack "The app's libraries are not installed: run 'pnpm install' in this folder (and 'git submodule update --init --recursive' once)."
 [[ -x "${RELAY_BIN:-target/debug/buzz-relay}" && -x "${BUZZ_BIN:-target/debug/buzz}" ]] || lack "The server or the buzz command is not built: run 'cargo build -p buzz-relay -p buzz-cli' once (this script never builds)."
 [[ -f contracts/pot/out/Launcher.sol/Launcher.json ]] || lack "The contracts are not built: run 'scripts/ensure-solc.sh 0.8.37' and then 'forge build' in contracts/pot."
 [[ $missing -eq 0 ]] || exit 2

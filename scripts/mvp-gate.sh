@@ -1,34 +1,34 @@
 #!/usr/bin/env bash
 #
-# scripts/mvp-gate.sh — every end-to-end journey the launchpad has, one after another, with one verdict at the end.
+# scripts/mvp-gate.sh — every end-to-end journey the product has, one after another, with one verdict at the end.
 #
-# Each journey boots its own throwaway chain (and, for the economy one, a real server and database), builds the web app
-# against it, and plays a story in real browsers: a founder, contributors, reviewers and a backer. The social journey
-# (web-social-hosted-e2e) needs no chain: it runs the social suite on a real server set up as the pilot server is
-# (invite-only, contributor-only web app, the hosted request limits). This runs them all so "does the whole product still
-# work" is one command. The browser, contract and unit suites run separately (`just ci`); this is the part that needs a
-# chain or a real server.
+# Each journey boots its own throwaway chain and/or a real server and database, and plays a story against the real
+# contracts (contracts/pot) and the real relay: the app in a real browser, the server's chain reader, the phone path with a
+# passkey account, the holder room and seasons, web push alerts. This runs them all so "does the whole product still work"
+# is one command. The unit and browser suites run separately (`just ci`); this is the part that needs a chain or a real
+# server.
 #
-# ⚠️  DEV ONLY. Anvil's public dev keys, local chains, nothing else. Needs foundry; the economy and social journeys also
-# need Postgres and Redis (`just services`). The Sepolia-fork journey forks a public Sepolia node (SEPOLIA_RPC_URL to choose
-# one); a public node can drop a read, so a single failure there is worth one rerun before it is called a bug.
+# ⚠️  DEV ONLY. Anvil's public dev keys, local chains, nothing else. Needs foundry and the built contracts (`just pot-build`);
+# the journeys with a server also need Postgres and Redis (`just services`) and the built relay and command line.
 #
 # It only ever stops or deletes what it started. Each journey runs in its own process group, and when it ends (or this is
 # interrupted) that group, and nothing else, is stopped. It never kills by name or by port: anything already running
-# (another task's chain, a preview server on :4173) is left alone, and a journey that needs a port someone else holds is
+# (another task's chain, a preview server) is left alone, and a journey that needs a port someone else holds is
 # reported as blocked with who holds it. Anvil keeps scratch state on disk and leaves it behind when it is stopped; every
 # anvil a journey starts is pointed at a directory this run made (`--cache-path`), and that directory is all that is
 # removed. Nothing is ever deleted from anvil's shared default location: another run's state there is not ours to judge.
 #
 # Usage:  scripts/mvp-gate.sh [--pilot | --later] [--list] [journey ...]   (no journeys named: all of them)
-#           --pilot  only what the hosted contributor pilot depends on (the "Pilot" set below): run this green on the
-#                    build you host before inviting anyone (docs/v3-review/PILOT-RUNBOOK.md, step 10)
-#           --later  only the raise, milestone and optional-feature journeys, for after the pilot
+#           --pilot  only the journeys the product's core depends on (the "Pilot" set below): run this green on the
+#                    build you host before inviting anyone
+#           --later  only the other journeys: the chain reader, the phone path, the room and web push loops
 #           --list   print the journeys it would run, and run nothing
 #           --outside print the journey scripts no set runs, each with the reason, and run nothing
 #         A journey script (scripts/*-e2e.sh) in no set and with no reason is reported as a WARNING on standard error.
-#         In CI: .github/workflows/mvp-gate.yml (on the fork since 2026-11-01; docs/v3-review/MVP-GATE-CI.md).
+#         In CI: .github/workflows/mvp-gate.yml.
 # Env:   LOG_DIR (default: a temp directory; each journey's full log is kept there)
+#         JOURNEY_PORTS "journey:port ..." — ports a journey needs free before it starts (the shipped journeys all take free
+#                    ports; scripts/test-mvp-gate.sh uses this with stand-ins)
 #         KEEP_GATE_STATE=1 keeps the run's own scratch directory (its anvil state) instead of removing it
 #         JOURNEY_DIR where the journey scripts are (default: scripts; scripts/test-mvp-gate.sh points it at stand-ins)
 
@@ -76,78 +76,32 @@ finish() {
 trap finish EXIT
 trap 'exit 130' INT TERM
 
-# Not covered here, so the pilot runbook's hand checks are the only ones (docs/v3-review/PILOT-RUNBOOK.md, "Before it"):
-# a reviewer approving or objecting from a passkey account (the passkey journey's reviewers use a wallet), the passkey
-# name link checked by a real invite-only server (that journey stubs the server), and the image's own build (journeys
-# build the web app with vite directly; web/src/features/launchpad/lib/deploy-env-image.test.mjs keeps the image's
-# settings in step with the build check). Error reports reaching a collector
-# (web-error-report-e2e) and invite links (web-invite-only-e2e) are journeys here since 2026-10-31.
-# Still hand tests (docs/v3-review/MVP-GATE-CI.md, "Not covered"): the passkey name link (kind 37017) checked by a real
-# server (it needs a passkey account stack on a chain the server can reach; web-restricted-holder-e2e covers real-server
-# passkey sign-up and sign-in again only), and "Your work" read from a real server (web-passkey-contributor-e2e opens it
-# from the navigation and finds the awarded Shares, against a stubbed server).
-#
-# Pilot: what the hosted contributor pilot depends on. What a pilot member sees in the contributor-only build against a
-# stubbed server (web-pilot-e2e: no raise, sale or AI-helper screens, and what replaced them), the social suite as the
-# pilot server runs it, invite links (every pilot member joins by one), error reports reaching a collector, a contributor
-# project from the command line and from pages, from passkey accounts as the hosted image is built, work reviewed and
-# paid, and a holder who is muted or banned keeping their rights (web-restricted-holder-e2e, the tested fallback in
-# docs/v3-review/HOLDER-ACCESS-MODEL.md). With --pilot, web-contributor-e2e runs in its contributor-only mode
-# (PILOT_BUILD=1): the web app built as the hosted image builds it, with none of the optional features, so the pilot gate
-# plays what the pilot ships. Every other run builds it with the optional features on (bounties, payouts, remixes, the
-# court, CREATE).
-# real-loop-e2e is the product's own loop (docs/v3-review/DIRECTION.md): Quick Start, weekly updates and their promises,
-# help requests and offers, tasks with a finish line, the scorecard, Home and Work, in browsers and from the command line,
-# against a real server and its database, nothing mocked. It takes about six minutes on a laptop (five of them the
-# browsers) and is the only journey of the loop the pilot is measuring, so it is in this set.
+# Pilot: the product's core. The app against a real server and database with nothing mocked (Start, the week's update, a
+# stranger joining from a project's link), and the whole join-and-leave loop in a real browser against a real chain, the
+# real relay with its chain reader and the app built for that chain (a project from its start to a Take out, tasks and exit
+# notes, the holder room, seasons and web push).
 PILOT=(
-  web-pilot-e2e
-  web-social-hosted-e2e
-  web-invite-only-e2e
-  web-error-report-e2e
-  cli-no-raise-e2e
-  web-contributor-e2e
-  web-passkey-contributor-e2e
-  web-work-e2e
-  web-paid-work-e2e
-  web-restricted-holder-e2e
-  real-loop-e2e
+  app-real-loop-e2e
+  pot-full-loop
 )
-# Later: raises, milestone locks, the optional features and what the pilot server does not offer (investing is one: its
-# switch is off in the hosted image, so web-backing-e2e, against the real contracts, and web-investing-mock-e2e, the page
-# against a stand-in node, run here and not before the pilot). None of these is
-# reachable in the hosted build or on the pilot server (D137): money behind a post is a test-network feature,
-# a community of your own (self-serve) is off on the pilot server, and the Shares transfer-validator journey is
-# the LBAMM evaluation's (its lock-guard steps still run here, nightly).
+# Later: the loops that each prove one layer on its own. The contracts through `cast` (pot-chain-loop), the chain reader
+# against the contracts' own views (chain-loop-pot), the app's money calls on the real contracts (pot-app-loop), the phone
+# path with a passkey account (phone-loop, in Node; pot-app-phone-e2e, in a browser), the holder room and seasons over the
+# wire (room-loop), web push alerts (web-push-loop) and the server's query of work-check records (work-check-query-e2e).
 LATER=(
-  web-project-story-e2e
+  pot-chain-loop
+  chain-loop-pot
+  pot-app-loop
+  phone-loop
+  pot-app-phone-e2e
+  room-loop
+  web-push-loop
   work-check-query-e2e
-  v5-local-fixture
-  cli-milestone-e2e
-  web-record-e2e
-  web-milestone-e2e
-  web-dao-launch-e2e
-  web-challenge-e2e
-  web-dao-journey-e2e
-  web-economy-e2e
-  web-sepolia-fork-e2e
-  web-trading-e2e
-  secondary-keeper-e2e
-  web-post-bounty-e2e
-  web-self-serve-e2e
-  shares-erc20c-e2e
-  web-backing-e2e
-  web-investing-mock-e2e
 )
 # Journey scripts that are in neither set, each with the reason. A *-e2e.sh script in none of PILOT, LATER and this list
 # is reported as a warning on every run, so a new journey cannot quietly read as tested. scripts/test-mvp-gate.sh fails
 # while any script in scripts/ has no home.
-OUTSIDE=(
-  "web-social-e2e|the social suite itself: the gate runs it as web-social-hosted-e2e (HOSTED=1, as the pilot server runs)"
-  "web-decisions-e2e|raise-era (a launch-kit DAO); the contributor journeys open, vote and run decisions (DEPRECATION-2026-10-31.md #34)"
-  "web-discussion-e2e|raise-era (a launch-kit DAO); a project's Discussion tab is covered by web/tests/e2e/feed.spec.ts (DEPRECATION-2026-10-31.md #34)"
-  "web-passkey-wallet-e2e|a passkey account as a payment wallet against a stand-in chain; web-passkey-contributor-e2e covers passkey accounts on the pilot's screens (DEPRECATION-2026-10-31.md #34)"
-)
+OUTSIDE=()
 ALL=("${PILOT[@]}" "${LATER[@]}")
 
 # Every *-e2e.sh journey script in the journey folder that is in no set and has no reason above, one per line.
@@ -157,7 +111,7 @@ unhomed_journeys() {
     [[ -e "$path" ]] || continue
     name="$(basename "$path" .sh)"
     known=0
-    for entry in "${ALL[@]}" "${OUTSIDE[@]%%|*}"; do
+    for entry in "${ALL[@]}" ${OUTSIDE[@]+"${OUTSIDE[@]%%|*}"}; do
       [[ "$entry" == "$name" ]] && { known=1; break; }
     done
     [[ "$known" == "1" ]] || printf '%s\n' "$name"
@@ -165,13 +119,12 @@ unhomed_journeys() {
 }
 
 SET=("${ALL[@]}")
-PILOT_MODE=0
 LIST_ONLY=0
 LIST_OUTSIDE=0
 JOURNEYS=()
 for arg in "$@"; do
   case "$arg" in
-    --pilot) SET=("${PILOT[@]}"); PILOT_MODE=1 ;;
+    --pilot) SET=("${PILOT[@]}") ;;
     --later) SET=("${LATER[@]}") ;;
     --list) LIST_ONLY=1 ;;
     --outside) LIST_OUTSIDE=1 ;;
@@ -186,7 +139,7 @@ while IFS= read -r name; do
     "$name" >&2
 done < <(unhomed_journeys)
 if [[ "$LIST_OUTSIDE" == "1" ]]; then
-  for entry in "${OUTSIDE[@]}"; do printf '%s: %s\n' "${entry%%|*}" "${entry#*|}"; done
+  for entry in ${OUTSIDE[@]+"${OUTSIDE[@]}"}; do printf '%s: %s\n' "${entry%%|*}" "${entry#*|}"; done
   exit 0
 fi
 [[ ${#JOURNEYS[@]} -eq 0 ]] && JOURNEYS=("${SET[@]}")
@@ -195,28 +148,14 @@ if [[ "$LIST_ONLY" == "1" ]]; then
   exit 0
 fi
 
-# The ports a journey serves on, which must be free before it starts. The browser specs of most journeys are served from
-# :4173; the social journey's server is on :3199, the address the real-server specs and their seed scripts use.
+# The ports a journey needs free before it starts, from JOURNEY_PORTS ("journey:port ..."). The shipped journeys each take
+# free ports of their own, so none is named by default.
 journey_ports() {
-  case "$1" in
-    web-social-hosted-e2e) echo 3199 ;;
-    # A real server on a free port, and no preview server.
-    web-invite-only-e2e | web-self-serve-e2e | web-restricted-holder-e2e) ;;
-    # A chain and the command line only, no browser.
-    shares-erc20c-e2e) ;;
-    # The pilot build, from a folder of its own, against a stubbed server.
-    web-pilot-e2e) echo 4186 ;;
-    web-project-story-e2e) echo 4196 ;;
-    # A real server on a free port, and no preview server.
-    real-loop-e2e) ;;
-    # Preview servers of their own: investing on and off (web-investing-mock-e2e), the pool journey (web-backing-e2e).
-    web-investing-mock-e2e) echo 4187 4188 ;;
-    web-backing-e2e) echo 4189 ;;
-    work-check-query-e2e) ;; # Allocates its own loopback ports; no fixed port dependency.
-    # A chain on a free port and the command line (the fixture's optional demo server is on :5173, set by V5_DEMO_WEB_PORT).
-    v5-local-fixture | secondary-keeper-e2e) ;;
-    *) echo 4173 ;;
-  esac
+  local entry
+  for entry in ${JOURNEY_PORTS:-}; do
+    [[ "${entry%%:*}" == "$1" ]] && echo "${entry#*:}"
+  done
+  return 0
 }
 
 # Who holds a port, as "pid command", or nothing when it is free.
@@ -247,12 +186,7 @@ for journey in "${JOURNEYS[@]}"; do
     printf '  Stop it yourself (kill %s) or run this journey when it is free. This runner does not stop other processes.\n' "${holder%% *}"
     continue
   fi
-  # --pilot runs web-contributor-e2e in the contributor-only build the hosted pilot ships (PILOT_BUILD=1; its spec reads
-  # E2E_PILOT_BUILD and plays only what that build offers). Any other run builds it with the optional features on,
-  # whatever the caller's shell says. scripts/test-mvp-gate.sh checks both.
-  pilot_build=()
-  [[ "$journey" == "web-contributor-e2e" && "$PILOT_MODE" == "1" ]] && pilot_build=(PILOT_BUILD=1)
-  env -u PILOT_BUILD ${pilot_build[@]+"${pilot_build[@]}"} "$script" >"$LOG_DIR/$journey.log" 2>&1 &
+  "$script" >"$LOG_DIR/$journey.log" 2>&1 &
   JOURNEY_PGID=$!
   wait "$JOURNEY_PGID"
   status=$?

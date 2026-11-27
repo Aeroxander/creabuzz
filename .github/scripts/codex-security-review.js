@@ -16,7 +16,7 @@ const CATEGORIES = new Set([
   "Cryptography",
   "Injection",
   "Agent/Workflow",
-  "Desktop/Mobile",
+  "Client",
   "Concurrency",
   "Reliability",
   "Supply Chain",

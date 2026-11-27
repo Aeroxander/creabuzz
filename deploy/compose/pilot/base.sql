@@ -1,13 +1,13 @@
 -- What the pilot commands (`./run.sh founders`, `due`, `daily`) read, as temporary views: they live only for the one
 -- psql session that runs them and change nothing in the database. Read before them (run.sh puts this file first).
 --
--- The rules mirror the web app's own, so a number here is the number a founder's page shows:
+-- The rules mirror the app's own, so a number here is the number a founder's page shows:
 --   * a project is a founder's newest project record (kind 37001, one per founder and short name);
 --   * a project's records are the update records (kind 47003) that name it in an `a` tag, and a deleted record is
---     ignored, as it is in the app (web/src/features/launchpad/lib/*.ts);
+--     ignored, as it is in the app (packages/creaton-core/src/project/*.ts);
 --   * a weekly update is one the founder signed that answers a prompt, makes or answers a promise, or carries the
---     dialog's own mark (`isWeeklyUpdateTags`, lib/weekly-update.ts);
---   * a promise stands as `promiseRecord` (lib/promises.ts) says: an answer counts only for a promise of an earlier
+--     dialog's own mark (`isWeeklyUpdateTags`, project/weekly-update.ts);
+--   * a promise stands as `promiseRecord` (project/promises.ts) says: an answer counts only for a promise of an earlier
 --     update, and when answers disagree the worse one is counted.
 -- Needs: psql variables `exclude` (comma-separated hex keys whose projects are the operator's own: left out of every
 -- number, because the pilot measures other people) and `asof` (the clock, in seconds since 1970).

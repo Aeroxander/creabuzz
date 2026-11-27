@@ -2,8 +2,8 @@
 #
 # Public Buzz relay image — published as ghcr.io/block/buzz:<tag>.
 #
-# Builds the `buzz-relay` binary (Rust 1.95) and the `buzz-web` static bundle
-# (pnpm + vite), then assembles them into a small debian-slim runtime with
+# Builds the `buzz-relay` binary (Rust 1.95) and the Creaton app's static bundle
+# (app/, pnpm + vite), then assembles them into a small debian-slim runtime with
 # `git` available (the relay shells out to git for repo hydrate / receive-pack
 # / upload-pack — see crates/buzz-relay/src/api/git).
 #
@@ -24,7 +24,7 @@ ARG EXTRA_CA_CERTS=
 
 # Optional npm registry for builds where the public registry is unreachable or
 # policy-blocked (e.g. a corporate mirror / Artifactory). Empty default = public
-# npmjs, so public CI builds are unaffected. Consumed by the web-builder stage.
+# npmjs, so public CI builds are unaffected. Consumed by the node-base stage.
 ARG NPM_REGISTRY=
 
 # ─── Stage 1: cargo-chef base ───────────────────────────────────────────────
@@ -87,8 +87,7 @@ RUN strip target/release/buzz-relay \
     && strip target/release/buzz-pair-relay
 
 # ─── Stage 4a: node, pnpm and the optional proxy CA / npm mirror ────────────
-# The set-up both bundles below start from (the old web app and the new Creaton
-# app). Nothing is built here.
+# The set-up the app bundle below starts from. Nothing is built here.
 FROM node:${NODE_VERSION}-${DEBIAN_VERSION}-slim AS node-base
 WORKDIR /build
 # Trust an optional corporate-proxy CA so corepack + pnpm can fetch over an
@@ -118,96 +117,8 @@ RUN if [ -n "${NPM_REGISTRY}" ]; then \
 ENV COREPACK_INTEGRITY_KEYS=${NPM_REGISTRY:+0}
 RUN corepack enable
 
-# ─── Stage 4b: web bundle (pnpm + vite) ─────────────────────────────────────
-# The old web app (web/) and the admin bundle: what the upstream image
-# (target `runtime`) serves. Independent of the Rust layers so a CSS change
-# doesn't bust Rust cache and vice versa. The Creaton image (target
-# `runtime-creaton`) does not use this stage; it serves the app below.
-FROM node-base AS web-builder
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY patches/ patches/
-# The web app's shared logic (@creaton/core) is a workspace package: install it
-# with the app (`buzz-web...` takes the app and its workspace dependencies).
-COPY packages/creaton-core/package.json packages/creaton-core/
-COPY web/package.json web/
-COPY admin-web/package.json admin-web/
-RUN pnpm install --frozen-lockfile --filter "buzz-web..." --filter buzz-admin-web
-COPY packages/creaton-core/ packages/creaton-core/
-COPY web/ web/
-COPY admin-web/ admin-web/
-# The web app's network settings (docs/sepolia-testnet.md). They are read when
-# the app is built and are public in the page. Unset is off: with none of them
-# the image serves the social app, with Sepolia as its network and nothing on
-# chain. Only these may be passed: the image is contributor-only (it sets
-# VITE_CONTRIBUTOR_ONLY=1 itself), so the raise's launch kit is not a build
-# argument here, nor are the mainnet switch, a local chain's currency and the
-# exchange; and web/scripts/check-deploy-env.mjs refuses settings that do not
-# fit together.
-#
-# The trial block (VITE_SECONDARY_MARKET_FACTORY, VITE_TRADING_TRIAL and
-# VITE_TEST_QUOTE_TOKENS, with the optional features after them) is for a
-# Sepolia trial build only. All of it is empty by default and trading stays
-# off: the weekly sale shows only when a market factory is named AND
-# VITE_TRADING_TRIAL=1, and a build with one without the other is refused.
-# A build for real pilot people leaves the whole block out.
-#
-# The investing block (VITE_INVESTING, VITE_BACKING_POOL_FACTORY, VITE_CONTRIBUTOR_KIT_V3 and VITE_BACKING_QUOTE_TOKEN) is
-# one switch, off by default. With VITE_INVESTING=1 and the three addresses named for the network, the page shows backing
-# on projects, in Home's feed and under You, in this contributor-only image too, and for those places only. A build with
-# the switch and a missing address, or an address and no switch, is refused (docs/v3-review/INVESTING-SWITCH.md).
-ARG VITE_LAUNCHPAD_CHAIN_ID=
-ARG VITE_CHAIN_RPC_URL=
-ARG VITE_CONTRIBUTOR_KITS=
-ARG VITE_HISTORY_FROM_BLOCKS=
-ARG VITE_SECONDARY_MARKET_FACTORY=
-ARG VITE_TRADING_TRIAL=
-ARG VITE_TEST_QUOTE_TOKENS=
-ARG VITE_INVESTING=
-ARG VITE_BACKING_POOL_FACTORY=
-ARG VITE_CONTRIBUTOR_KIT_V3=
-ARG VITE_BACKING_QUOTE_TOKEN=
-ARG VITE_WORK_BOUNTIES=
-ARG VITE_OPEN_BOUNTIES=
-ARG VITE_CREATE_TOKENS=
-ARG VITE_CREATE_FAUCETS=
-ARG VITE_COURTS=
-ARG VITE_PAYOUTS_FACTORIES=
-ARG VITE_REMIX_BONDS=
-ARG VITE_ZERODEV_PROJECT_ID=
-ARG VITE_ZERODEV_CHAIN_ID=
-ARG VITE_ZERODEV_API_KEY=
-ARG VITE_BUNDLER_URL=
-ARG VITE_ERROR_REPORT_URL=
-ARG VITE_APP_RELEASE=
-ARG VITE_RELAY_URL=
-ARG VITE_COMMUNITY_API_ORIGIN=
-ARG BUZZ_SOURCE_SHA=unknown
-# An empty argument reaches the build as no setting at all, and the release
-# defaults to the source revision.
-RUN set -eu; \
-    for name in VITE_LAUNCHPAD_CHAIN_ID VITE_CHAIN_RPC_URL VITE_CONTRIBUTOR_KITS \
-                VITE_HISTORY_FROM_BLOCKS VITE_SECONDARY_MARKET_FACTORY VITE_TRADING_TRIAL \
-                VITE_TEST_QUOTE_TOKENS VITE_INVESTING VITE_BACKING_POOL_FACTORY \
-                VITE_CONTRIBUTOR_KIT_V3 VITE_BACKING_QUOTE_TOKEN VITE_WORK_BOUNTIES VITE_OPEN_BOUNTIES \
-                VITE_CREATE_TOKENS VITE_CREATE_FAUCETS VITE_COURTS VITE_PAYOUTS_FACTORIES \
-                VITE_REMIX_BONDS VITE_ZERODEV_PROJECT_ID \
-                VITE_ZERODEV_CHAIN_ID VITE_ZERODEV_API_KEY VITE_BUNDLER_URL \
-                VITE_ERROR_REPORT_URL VITE_APP_RELEASE VITE_RELAY_URL VITE_COMMUNITY_API_ORIGIN; do \
-        eval "value=\${$name:-}"; \
-        if [ -z "$value" ]; then unset "$name"; fi; \
-    done; \
-    if [ -z "${VITE_APP_RELEASE:-}" ] && [ "$BUZZ_SOURCE_SHA" != "unknown" ]; then \
-        export VITE_APP_RELEASE="$BUZZ_SOURCE_SHA"; \
-    fi; \
-    # The image is contributor-only: it takes no raise kit, so it offers no way to start a sale either. Trading does not
-    # depend on this: it is switched on by its own two settings, empty above.
-    export VITE_CONTRIBUTOR_ONLY=1; \
-    node --experimental-strip-types web/scripts/check-deploy-env.mjs; \
-    pnpm -C web build && pnpm -C admin-web build
-
-# ─── Stage 4c: the Creaton app (pnpm + vite) ────────────────────────────────
-# The new phone-first app (app/, package @creaton/app): what the Creaton image (target `runtime-creaton`) serves, in place
-# of web/. Its network settings are read when it is built and are public in the page. Unset is off: with none of them the
+# ─── Stage 4b: the Creaton app (pnpm + vite) ────────────────────────────────
+# The phone-first app (app/, package @creaton/app): what the image serves. Its network settings are read when it is built and are public in the page. Unset is off: with none of them the
 # app shows no money screens. They are the app's own names (app/src/lib/pot-network.ts, features/money/passkey-sender.ts):
 #   VITE_CREATON_CHAIN_ID, VITE_CREATON_LAUNCHER, VITE_CREATON_DOLLAR   the test network and its contracts: the three values
 #                                                                      of contracts/pot/deployments/pot-<chain>.json
@@ -313,14 +224,14 @@ RUN apt-get update \
     && useradd  --system --uid 1000 --gid 1000 --home-dir /var/lib/buzz \
                 --create-home --shell /usr/sbin/nologin buzz
 
-# The web bundle is copied by the final targets below (runtime and runtime-debug carry the old web app and the admin
-# bundle; runtime-creaton carries the Creaton app), so a target does not build a bundle it does not ship.
+# The web bundle is copied by the final targets below. There is no admin bundle: the Creaton stack does not serve an admin
+# host.
 #
 # The invite landing page is always served from the bundled web UI. Repository
 # browser routes require the separate BUZZ_SERVE_GIT_WEB_GUI=true opt-in. The
 # admin bundle is inert until BUZZ_ADMIN_HOST is configured.
 ENV BUZZ_WEB_DIR=/srv/buzz/web \
-    BUZZ_ADMIN_WEB_DIR=/srv/buzz/admin-web
+    BUZZ_ADMIN_WEB_DIR=
 
 # 3000: app (WS + REST)  ·  8080: /_liveness, /_readiness  ·  9102: /metrics
 EXPOSE 3000 8080 9102
@@ -337,28 +248,19 @@ ENTRYPOINT ["/usr/local/bin/buzz-relay"]
 # Published under debug-* tags; runtime behavior otherwise matches the normal
 # image exactly.
 FROM runtime-base AS runtime-debug
-COPY --from=web-builder /build/web/dist                 /srv/buzz/web
-COPY --from=web-builder /build/admin-web/dist           /srv/buzz/admin-web
+COPY --from=app-builder /build/app/dist                 /srv/buzz/web
 COPY --from=builder /build/target/release/buzz-relay /usr/local/bin/buzz-relay
 COPY --from=builder /build/target/release/buzz-admin /usr/local/bin/buzz-admin
 COPY --from=builder /build/target/release/buzz-pair-relay /usr/local/bin/buzz-pair-relay
 
-# The Creaton image (deploy/compose/compose.creaton.yml builds it): the same stripped binaries with the Creaton app
-# (app/) as the web bundle, and no admin bundle (the Creaton stack does not serve an admin host; BUZZ_ADMIN_WEB_DIR is
-# emptied so a server that sets BUZZ_ADMIN_HOST later still starts). The old web app is not built for this target.
+# The Creaton image (deploy/compose/compose.creaton.yml builds it): the stripped binaries with the Creaton app (app/) as
+# the web bundle.
 FROM runtime-base AS runtime-creaton
 COPY --from=app-builder /build/app/dist                 /srv/buzz/web
-ENV BUZZ_ADMIN_WEB_DIR=
 COPY --from=stripped-binaries /build/target/release/buzz-relay /usr/local/bin/buzz-relay
 COPY --from=stripped-binaries /build/target/release/buzz-admin /usr/local/bin/buzz-admin
 COPY --from=stripped-binaries /build/target/release/buzz-pair-relay /usr/local/bin/buzz-pair-relay
 
-# Keep the stripped runtime as the final/default Dockerfile target so existing
-# `docker build .` callers and release tags retain their current behavior (the
-# old web app and the admin bundle). This stays the last stage on purpose.
-FROM runtime-base AS runtime
-COPY --from=web-builder /build/web/dist                 /srv/buzz/web
-COPY --from=web-builder /build/admin-web/dist           /srv/buzz/admin-web
-COPY --from=stripped-binaries /build/target/release/buzz-relay /usr/local/bin/buzz-relay
-COPY --from=stripped-binaries /build/target/release/buzz-admin /usr/local/bin/buzz-admin
-COPY --from=stripped-binaries /build/target/release/buzz-pair-relay /usr/local/bin/buzz-pair-relay
+# The final/default target, so a plain `docker build .` and the release tags build the Creaton image. This stays the last
+# stage on purpose.
+FROM runtime-creaton AS runtime

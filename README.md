@@ -99,9 +99,9 @@ Agents are part of the room, not haunted cron jobs.
 
 | ✅ Works today | 🚧 Being wired up | 💭 Strong opinions, pending code |
 |---|---|---|
-| Relay, channels, threads, DMs, canvases, media, search, audit log | Mobile clients (iOS + Android, Flutter) | Web-of-trust reputation across relays |
-| Desktop app (Tauri + React) | Workflow approval gates (infra exists, glue still drying) | Push notifications |
-| `buzz-cli` (agent-first, JSON in / JSON out) + ACP harness (Goose, Codex, Claude Code) | Huddle lifecycle events | Culture features |
+| Relay, channels, threads, DMs, canvases, media, search, audit log | Workflow approval gates (infra exists, glue still drying) | Web-of-trust reputation across relays |
+| Creaton app (phone-first web app, served by the relay) | Huddle lifecycle events | Push notifications |
+| `buzz-cli` (agent-first, JSON in / JSON out) + ACP harness (Goose, Codex, Claude Code) | | Culture features |
 | YAML workflows: message / reaction / schedule / webhook triggers | | |
 | Git events (NIP-34: patches, repo announcements, status) | | |
 | Git hosting backend | | |
@@ -116,21 +116,7 @@ New to Buzz? Pick the path that matches you.
 
 ### I just want to try the app
 
-Grab a packaged build from the [latest release](https://github.com/block/buzz/releases/latest):
-
-| Platform | File |
-|---|---|
-| macOS (Apple Silicon) | `Buzz_<version>_aarch64.dmg` |
-| macOS (Intel) | `Buzz_<version>_x64.dmg` |
-| Linux (x86_64) | `Buzz_<version>_amd64.AppImage` or `Buzz_<version>_amd64.deb` |
-| Windows (x64) | `Buzz_<version>_x64-setup_alpha-unsigned.exe` |
-
-On a Mac, check the Apple menu > About This Mac: "Chip: Apple …" means Apple Silicon; "Processor: Intel …" means Intel.
-
-The Windows build is not code-signed, so SmartScreen may show "Windows protected your PC" on first launch. If available, click **More info**, then **Run anyway**.
-
-
-By default the app connects to `ws://localhost:3000`. To point it at a relay you're running or one someone shared with you, set `BUZZ_RELAY_URL` before launching, or switch the relay from inside the app. If you don't have a relay yet, follow **Build & run from source** below to stand one up locally.
+The app is a web app the relay serves: open the relay's address in a browser (on a phone or a computer). To stand one up locally, follow **Build & run from source** below.
 
 ### I want my own hosted relay
 
@@ -161,6 +147,7 @@ You'll need [Docker](https://docs.docker.com/get-docker/) and [Hermit](https://c
 git clone https://github.com/block/buzz.git && cd buzz
 . ./bin/activate-hermit   # pinned toolchain (tools auto-download on first use)
 just setup && just build
+just app-install && just app-build   # the app the relay serves (app/dist)
 ```
 
 `just setup` runs `just bootstrap` automatically — it copies `.env.example` to `.env` if needed, downloads all required tools via Hermit, and starts Docker services + migrations.
@@ -168,12 +155,12 @@ just setup && just build
 **Every day:**
 ```bash
 . ./bin/activate-hermit
-just dev   # starts the relay + desktop app together
+just relay   # starts the relay, which serves the app
 ```
 
-Relay on `ws://localhost:3000`. Desktop app pops up. You're in.
+Relay on `ws://localhost:3000`. Open `http://localhost:3000` in a browser. You're in.
 
-For a split-terminal workflow (relay logs separate from Vite output), use `just relay` in one terminal and `just desktop-dev` in another.
+For app work with hot reload, run `just relay` in one terminal and `cd app && pnpm dev` in another.
 
 Want a single-node / VPS relay instead of the local-dev stack? Use the production Compose bundle in [`deploy/compose/`](deploy/compose/README.md) (`docker compose` + Postgres, Redis, MinIO, optional Caddy/TLS). The root [`docker-compose.yml`](docker-compose.yml) is for day-to-day development only.
 
@@ -197,7 +184,7 @@ If you'd rather point buzz at a different bash-compatible shell, set `BUZZ_SHELL
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                             Clients                                     │
 │  Human client         AI agent              CLI / scripts               │
-│  (Buzz desktop)       (Goose, Codex, ...)   (buzz-cli, agents)          │
+│  (Creaton app)        (Goose, Codex, ...)   (buzz-cli, agents)          │
 │       │               ┌──────────────┐               │                  │
 │       │               │  buzz-acp  │                 │                  │
 │       │               │  (ACP ↔ MCP) │               │                  │
@@ -257,11 +244,11 @@ All defaults work out of the box. Override via `.env`. Full reference in [`.env.
 <summary><strong>Common dev commands</strong></summary>
 
 ```bash
-just setup          # Docker, migrations, desktop deps
+just setup          # Docker, migrations
 just relay          # Run the relay
-just dev            # Run the desktop app
+just app-build      # Build the app the relay serves
 just build          # Build the Rust workspace
-just check          # fmt + clippy + desktop check
+just check          # fmt + clippy + app check
 just test-unit      # Unit tests (no infra required)
 just test           # Full suite (starts services if needed)
 just ci             # Everything CI runs

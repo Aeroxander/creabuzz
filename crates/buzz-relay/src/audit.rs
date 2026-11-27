@@ -868,22 +868,11 @@ mod postgres_tests {
         entry
     }
 
-    fn desktop_file(name: &str) -> String {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../desktop/src/features/org/lib")
-            .join(name);
-        std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("cannot read {} ({e})", path.display()))
-    }
-
-    /// The published envelope is the *exact* JSON `parseChainEntry` parses.
-    ///
-    /// Field set is extracted from the committed TS source at test time, so
-    /// drift on either side (a serde rename, a new TS requirement) reds this
-    /// test, and the round-tripped entry must still hash to the digest the
-    /// desktop recomputes.
+    /// The published envelope carries exactly the pinned field set, which is what
+    /// a verifier of the chain reads. A serde rename or a new field fails here,
+    /// and the round-tripped entry must still hash to the chain digest.
     #[test]
-    fn published_envelope_matches_the_ts_verifier_contract() {
+    fn published_envelope_has_the_pinned_field_set() {
         let entry = sample_published_entry(7);
         let content = audit_envelope_content(&entry).expect("envelope serializes");
         assert!(
@@ -896,35 +885,25 @@ mod postgres_tests {
 
         // 1. Field set: every `record.<field>` parseChainEntry reads must be a
         //    serde field of AuditEntry, and vice versa.
-        let ts = desktop_file("auditChain.ts");
-        let fn_start = ts
-            .find("export function parseChainEntry")
-            .expect("auditChain.ts must export parseChainEntry");
-        let fn_end = ts[fn_start..]
-            .find("\nexport ")
-            .map(|off| fn_start + off)
-            .unwrap_or(ts.len());
-        let body = &ts[fn_start..fn_end];
-        let mut ts_fields: HashSet<String> = HashSet::new();
-        let mut rest = body;
-        while let Some(pos) = rest.find("record.") {
-            rest = &rest[pos + "record.".len()..];
-            let len = rest
-                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-                .unwrap_or(rest.len());
-            if len > 0 {
-                ts_fields.insert(rest[..len].to_owned());
-            }
-        }
-        assert!(
-            !ts_fields.is_empty(),
-            "extraction must find record.<field> reads in parseChainEntry"
-        );
+        let ts_fields: HashSet<String> = [
+            "action",
+            "actor_pubkey",
+            "community_id",
+            "created_at",
+            "detail",
+            "hash",
+            "hash_version",
+            "object_id",
+            "prev_hash",
+            "seq",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
         let json_fields: HashSet<String> = object.keys().cloned().collect();
         assert_eq!(
             ts_fields, json_fields,
-            "the published envelope must expose exactly the fields parseChainEntry \
-             consumes — a serde rename or a new envelope field breaks the contract"
+            "the published envelope must expose exactly the pinned fields — a serde rename or a new envelope field breaks the contract"
         );
 
         // 2. Types the TS parser requires.

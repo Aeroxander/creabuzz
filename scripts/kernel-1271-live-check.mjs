@@ -11,38 +11,38 @@
  * Env: CHAIN_RPC_URL (default: the public Sepolia endpoint). Nothing secret is read.
  *
  * What it proves, with the PRODUCTION modules (`kernel-signature.ts`, `wallet-proof.ts`):
- *   1. the fixture passkey's Kernel account (the one `kernel033-live-check.mjs` deploys) accepts the attestation
+ *   1. the fixture passkey's Kernel account (a Kernel 0.3.3 account already deployed on Sepolia) accepts the attestation
  *      signature the app would publish;
  *   2. the same signature is refused for a different Nostr key, a different expiry, and a different account;
  *   3. a reader that resolves the record and asks the chain ends with the proof verified, and an account with no code
  *      (an ordinary address claiming a smart-account proof) ends with it invalid.
  *
  * TEST-ONLY ceremony: node has no `navigator.credentials`, so the WebAuthn ceremony is the pinned fixture P-256 key of
- * `contracts/test/kernel-sign.mjs` (obviously fake) through the same `getAssertion` seam the app's tests use.
+ * the key below (obviously fake) through the same `getAssertion` seam the app's tests use.
  */
 import { createHash, createPrivateKey, sign as ecdsaSign } from "node:crypto";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 
-// `nostr-tools` is a dependency of the web app, not of the repo root: resolve it from there.
-const webRequire = createRequire(new URL("../web/package.json", import.meta.url));
+// `nostr-tools` is a dependency of the app, not of the repo root: resolve it from there.
+const appRequire = createRequire(new URL("../app/package.json", import.meta.url));
 const nostrTools = await import(
-  pathToFileURL(webRequire.resolve("nostr-tools/pure")).href
+  pathToFileURL(appRequire.resolve("nostr-tools/pure")).href
 );
 const { finalizeEvent, getPublicKey } = nostrTools.default ?? nostrTools;
 
-import { createKernel033ChainRpc, getKernel033Sender } from "../web/src/features/identity/lib/kernel033.ts";
+import { createKernel033ChainRpc, getKernel033Sender } from "../packages/creaton-core/src/aa/kernel033.ts";
 import {
   isValidKernelSignature,
   signKernelHash,
-} from "../web/src/features/identity/lib/kernel-signature.ts";
-import { b64urlEncode } from "../web/src/features/identity/lib/passkey.ts";
+} from "../packages/creaton-core/src/aa/kernel-signature.ts";
+import { b64urlEncode } from "../packages/creaton-core/src/account/passkey.ts";
 import {
   newWalletAttestation,
   resolvePaymentWalletChecked,
   siweMessageHash,
   walletAttestationDigest,
-} from "../web/src/features/identity/lib/wallet-proof.ts";
+} from "../packages/creaton-core/src/account/wallet-proof.ts";
 
 const CHAIN_ID = 11155111;
 const RPC_URL = process.env.CHAIN_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com";
@@ -93,7 +93,7 @@ async function main() {
   console.log(`kernel 1271 live check on chain ${CHAIN_ID} (${new URL(RPC_URL).host})`);
   console.log(`  account ${account}  deployed: ${code.length > 2}`);
   if (code.length <= 2) {
-    console.error("The fixture account is not deployed on this chain; run scripts/kernel033-live-check.mjs first.");
+    console.error("The fixture account is not deployed on this chain (it lives on Sepolia).");
     process.exit(2);
   }
 

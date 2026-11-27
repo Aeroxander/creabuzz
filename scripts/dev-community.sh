@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# dev-community.sh — provision a local community so the web app can connect
+# dev-community.sh — provision a local community so the app can connect
 # =============================================================================
 # Usage: ./scripts/dev-community.sh [owner-pubkey-hex]
 #
@@ -63,4 +63,4 @@ else
   echo "[dev-community] no owner seeded (pass a pubkey: ./scripts/dev-community.sh <hex>)"
 fi
 
-echo "[dev-community] done — reload the web app."
+echo "[dev-community] done — reload the app."

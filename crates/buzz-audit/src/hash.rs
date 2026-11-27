@@ -357,81 +357,28 @@ mod tests {
         assert_eq!(canonical_json(&a).unwrap(), canonical_json(&b).unwrap());
     }
 
-    /// Cross-language digest binding: the v1 vector pinned in the desktop's
-    /// committed TypeScript verifier must equal what this crate computes.
-    ///
-    /// `desktop/src/features/org/lib/auditChain.test.mjs` documents that its
-    /// vectors were produced by this crate's `compute_hash` (the v1 fixture *is*
-    /// `sample_entry()` above, `hash.rs:125-139`). The desktop recomputes every
-    /// kind:48001 digest client-side from the published envelope, so if either
-    /// implementation drifts, `verifyChain` rejects a chain this crate still
-    /// appends — or worse, accepts one it would reject. This test reads the
-    /// pinned hex out of the TS file at test time and re-derives it here, so
-    /// *any* change to the TS vectors or to `compute_hash` reds until both are
-    /// reconciled deliberately.
+    /// The v1 digest of `sample_entry()` is pinned: v1 is the legacy preimage, kept
+    /// verifiable so a chain written under it still checks out. A change to
+    /// `compute_hash` that moves it fails here until reconciled on purpose;
+    /// `encoding_versions_have_stable_digests` covers the v2 output.
     #[test]
-    fn ts_pinned_vector_v1_matches_compute_hash() {
-        let ts_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../desktop/src/features/org/lib/auditChain.test.mjs");
-        let ts = std::fs::read_to_string(&ts_path)
-            .unwrap_or_else(|e| panic!("cannot read TS vector file {} ({e})", ts_path.display()));
-
-        // Isolate the v1 block: from `it("v1:` to the start of the v2 block.
-        let v1_start = ts
-            .find("it(\"v1:")
-            .expect("TS vector file must still pin a v1 vector");
-        let v1_end = ts[v1_start..]
-            .find("it(\"v2:")
-            .map(|off| v1_start + off)
-            .expect("TS vector file must still pin a v2 vector after v1");
-        let v1_block = &ts[v1_start..v1_end];
-
-        // The expected digest is the 64-hex-digit literal in that block.
-        let ts_digest = (0..v1_block.len())
-            .find_map(|i| {
-                let candidate = &v1_block[i..];
-                let len = candidate
-                    .find(|c: char| !c.is_ascii_hexdigit())
-                    .unwrap_or(candidate.len());
-                if len == 64 && candidate.is_char_boundary(len) {
-                    let hex = &candidate[..len];
-                    if hex
-                        .chars()
-                        .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
-                    {
-                        return Some(hex.to_owned());
-                    }
-                }
-                None
-            })
-            .expect("v1 block must contain a 64-hex-digit digest");
-
-        // Re-derive AS version 1: the TS block pins the legacy preimage
-        // (`sample_entry()` itself writes v2 today), and this test's job is to
-        // keep the historical encoding verifiable — `encoding_versions_have_
-        // stable_digests` covers the v2 output.
+    fn v1_vector_is_pinned() {
         let mut legacy = sample_entry();
         legacy.hash_version = 1;
-        let rust_digest: String = compute_hash(&legacy)
+        let digest: String = compute_hash(&legacy)
             .expect("sample_entry hashes")
             .iter()
             .map(|b| format!("{b:02x}"))
             .collect();
-
         assert_eq!(
-            rust_digest, ts_digest,
-            "Rust compute_hash and the TS verifier's pinned v1 vector diverged — \
-             the desktop would reject chains this crate appends"
+            digest, "5fd6c48ddbd39979bd7fcc94357d78b5fcffa0d1443a0cdda997ad7e22f4f2ce",
+            "the v1 preimage changed: chains written under it would no longer verify"
         );
     }
 
-    /// Golden vectors shared with `desktop/src/features/org/lib/auditChain.test.mjs`
-    /// ("computeChainHash — v2 TLV vectors from the crate's own compute_hash").
-    /// Both sides pin the same three digests: the TypeScript port and this crate
-    /// must build byte-identical v2 preimages, so changing the encoding reds one
-    /// of the two suites.
+    /// Golden v2 vectors: any change to the encoding moves a digest and fails here.
     #[test]
-    fn v2_tlv_vectors_match_the_typescript_port() {
+    fn v2_tlv_vectors_are_pinned() {
         fn fixture(
             seq: i64,
             action: AuditAction,
@@ -482,7 +429,7 @@ mod tests {
         ));
         assert_eq!(
             t1, "e12c899d941af9794679602ae83ef2ab1c8f029fe380349263a046a93374d580",
-            "t1: TLV genesis vector diverged from the TS port"
+            "t1: TLV genesis vector changed"
         );
 
         // t2 — chained: prev tag present, canonical key order, millisecond
@@ -498,7 +445,7 @@ mod tests {
         ));
         assert_eq!(
             t2, "304a04c13473d8610d063d726337a04c932520fb24bdfbd410e9e5228526de43",
-            "t2: TLV chained vector diverged from the TS port"
+            "t2: TLV chained vector changed"
         );
 
         // t3 — Some(empty) actor keeps its tag at zero length (omission is
@@ -514,7 +461,7 @@ mod tests {
         ));
         assert_eq!(
             t3, "4c53ce1289a8055c43dcf15424b0d5216a98de03aed64e04060aab6806f670fd",
-            "t3: TLV presence-tag vector diverged from the TS port"
+            "t3: TLV presence-tag vector changed"
         );
     }
 }

@@ -20,7 +20,7 @@
 # a Redis it had to start), drops its scratch database and removes its temporary files, whatever the outcome.
 #
 # Needs: anvil, cast, forge (FOUNDRY_BIN or PATH), psql, a Postgres and a Redis (started here when they are not running,
-# as scripts/run-tests.sh does), node with web/node_modules (nostr-tools), jq, openssl, python3, and a built relay
+# as scripts/run-tests.sh does), node with app/node_modules (nostr-tools), jq, openssl, python3, and a built relay
 # (`cargo build -p buzz-relay`). Uses anvil's well-known development keys only; every amount is play money.
 #
 # STEP4=1 turns both step 4 switches on in the deployment (the holder pause and the earlier backers' claim contract, over a two-row

@@ -17,7 +17,7 @@
 #
 # Requirements: a running Postgres and Redis (DATABASE_URL, REDIS_URL), psql,
 # python3, and the built binaries (built here if missing). Step 7 additionally
-# needs node with web/node_modules installed and is skipped when absent.
+# needs node with packages/creaton-core/node_modules installed and is skipped when absent.
 #
 # Usage:
 #   DATABASE_URL=postgres://buzz@127.0.0.1:5433/buzz REDIS_URL=redis://127.0.0.1:6379 \
@@ -56,9 +56,6 @@ cleanup() {
   # already-dead process would abort the trap and skip the rest of the cleanup.
   [[ -n "$RELAY_PID" ]] && kill "$RELAY_PID" 2>/dev/null || true
   [[ -n "$MOCK_PID" ]] && kill "$MOCK_PID" 2>/dev/null || true
-  # Backstop for the step-7 gateway script: a crash between its `cat >` and the
-  # inline `rm -f` must not leave web/.loop-gateway.mjs in the working tree.
-  rm -f "$REPO_ROOT/web/.loop-gateway.mjs"
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -87,7 +84,7 @@ BUZZ="$BIN/buzz"
 # LLM_ARGS expands below with the bash-3.2-safe `${arr[@]+"${arr[@]}"}` idiom:
 # a bare `"${arr[@]}"` aborts under `set -u` on bash 3.2 when the array is empty.
 LLM_ARGS=()
-if command -v node >/dev/null 2>&1 && [[ -d web/node_modules/@noble ]]; then
+if command -v node >/dev/null 2>&1 && [[ -d packages/creaton-core/node_modules/@noble ]]; then
   cat > "$WORK/mock_llm.py" <<'PY'
 import json, http.server, sys
 class H(http.server.BaseHTTPRequestHandler):
@@ -214,28 +211,10 @@ if [[ -n "$MOCK_PID" ]]; then
   sql "insert into relay_members (community_id, pubkey, role) values ('$CID','$LLM_PK','member') on conflict do nothing" >/dev/null
   expect_contains "the owner caps LLM spend at 1 cent a day" \
     "$(owner org budget create --id b-llm --subject "$LLM_PK" --window day --llm-cost-cents 1)" '"accepted":true'
-  cat > web/.loop-gateway.mjs <<JS
-import { schnorr } from '@noble/curves/secp256k1.js';
-import { sha256 } from '@noble/hashes/sha2.js';
-const hex = (b) => Buffer.from(b).toString('hex');
-const sk = Buffer.from('$LLM_SK', 'hex'); const pk = hex(schnorr.getPublicKey(sk));
-const url = 'http://${HOST}/llm/chat/completions'; const out = [];
-for (let i = 1; i <= 5; i++) {
-  const body = JSON.stringify({ messages: [{ role: 'user', content: 'hi ' + i }] });
-  const tags = [['u', url], ['method', 'POST'], ['payload', hex(sha256(new TextEncoder().encode(body)))]];
-  const created_at = Math.floor(Date.now() / 1000);
-  const id = hex(sha256(new TextEncoder().encode(JSON.stringify([0, pk, created_at, 27235, tags, '']))));
-  const sig = hex(schnorr.sign(Buffer.from(id, 'hex'), sk));
-  const ev = { id, pubkey: pk, created_at, kind: 27235, tags, content: '', sig };
-  const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Nostr ' + Buffer.from(JSON.stringify(ev)).toString('base64') }, body });
-  out.push(r.status);
-}
-console.log(out.join(','));
-JS
-  STATUSES="$(cd web && node .loop-gateway.mjs 2>&1 | tail -1)" || true; rm -f web/.loop-gateway.mjs
+  STATUSES="$(node scripts/loop-gateway.mjs "$LLM_SK" "$HOST" 2>&1 | tail -1)" || true
   expect_eq "4 calls served (250 milli-cents each) then the 1-cent budget refuses" "$STATUSES" "200,200,200,200,429"
 else
-  skip "needs node with web/node_modules (@noble) for NIP-98 signing"
+  skip "needs node with packages/creaton-core/node_modules (@noble) for NIP-98 signing"
 fi
 
 echo

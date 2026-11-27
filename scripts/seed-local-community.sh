@@ -3,7 +3,7 @@
 #
 # The relay intentionally fails closed when the request Host header is not in
 # `communities`. Local dev uses loopback hosts, so bootstrap must create those
-# rows after migrations before desktop/Tauri HTTP bridge calls can succeed.
+# rows after migrations before local clients (the app, the CLI) can connect.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,7 +49,7 @@ hosts = []
 if primary:
     hosts.append(primary)
 
-# Local desktop/dev tooling has historically used both localhost and 127.0.0.1,
+# Local dev tooling has historically used both localhost and 127.0.0.1,
 # and some HTTP clients can omit the default/non-default port in Host handling.
 # Under row-zero host binding these are distinct hosts, so seed loopback aliases
 # for local dev to avoid a fail-closed 404 when one side uses an alternate

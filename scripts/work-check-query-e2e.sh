@@ -56,7 +56,7 @@ done
 [[ -x ./bin/pgschema ]] || die "missing ./bin/pgschema"
 [[ -f schema/schema.sql ]] || die "missing schema/schema.sql"
 [[ -f scripts/reconcile-schema-after-pgschema.sql ]] || die "missing reconcile SQL"
-[[ -d web/node_modules/nostr-tools ]] || die "nostr-tools not installed under web/node_modules"
+[[ -d app/node_modules/nostr-tools ]] || die "nostr-tools not installed under app/node_modules"
 
 # ── 1. Unique names + scratch roots ─────────────────────────────────────────
 RUN_ID="$(uuidgen | tr -d '-')"
@@ -231,7 +231,7 @@ WC_E2E_MAIN="http://127.0.0.1:${MAIN_PORT}" \
 WC_E2E_ALT="http://localhost:${MAIN_PORT}" \
 WC_E2E_WS="ws://127.0.0.1:${MAIN_PORT}" \
 WC_NOISE_COUNT="${NOISE_COUNT}" \
-  WC_E2E_NODE_MODULES="${REPO_ROOT}/web/node_modules" \
+  WC_E2E_NODE_MODULES="${REPO_ROOT}/app/node_modules" \
   node --experimental-websocket --no-warnings \
     "${SCRIPT_DIR}/work-check-query-e2e.mjs" 2>&1 | tee "${LOG_DIR}/fixture.log"
 E2E_STATUS=${PIPESTATUS[0]}

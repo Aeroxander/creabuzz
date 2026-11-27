@@ -105,11 +105,6 @@ crate = "mesh-mixture-of-agents"
 expression = "MIT OR Apache-2.0"
 license-files = []
 
-[[licenses.clarify]]
-crate = "buzz-desktop"
-expression = "Apache-2.0"
-license-files = []
-
 [licenses.private]
 ignore = true
 

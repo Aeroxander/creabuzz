@@ -1,16 +1,10 @@
 # Build outputs
 target/
 **/target/
-desktop/src-tauri/target/
-
-# Native non-relay UI builds (not part of the public image)
-desktop/
-mobile/
 
 # Node artifacts (built inside the image; host outputs would invalidate cache)
 node_modules/
 **/node_modules/
-web/dist/
 # The Creaton app's host build and test output (the image builds the app itself; a stale one would only travel in the context)
 app/dist/
 app/test-results/
@@ -28,7 +22,7 @@ app/playwright-report/
 .claude/
 
 # Local environment / secrets — never want these in the build context, at any
-# depth (web/.env.local would otherwise be baked into the web app's build)
+# depth (app/.env.local would otherwise be baked into the app's build)
 .env
 .env.*
 **/.env

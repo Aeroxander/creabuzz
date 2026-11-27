@@ -4,8 +4,8 @@ import test from "node:test";
 
 import { findCopyViolations } from "./check-copy-core.mjs";
 
-// The scanner takes the compiler as an argument; borrow the web app's copy.
-const require = createRequire(new URL("../web/package.json", import.meta.url));
+// The scanner takes the compiler as an argument; borrow the app's copy.
+const require = createRequire(new URL("../app/package.json", import.meta.url));
 const ts = require("typescript");
 
 const scan = (text, name = "x.tsx") =>

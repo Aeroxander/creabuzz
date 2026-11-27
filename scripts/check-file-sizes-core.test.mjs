@@ -11,9 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { policy as desktopPolicy } from "../desktop/scripts/check-file-sizes.mjs";
-import { policy as mobilePolicy } from "../mobile/scripts/check-file-sizes.mjs";
-import { policy as webPolicy } from "../web/scripts/check-file-sizes.mjs";
+import { policy as appPolicy } from "../app/scripts/check-file-sizes.mjs";
 import {
   allowedLineCount,
   countLines,
@@ -55,12 +53,10 @@ function createEntrypointFixture({
     path.join(repoRoot, "scripts/check-file-sizes-core.mjs"),
     path.join(scriptsDir, "check-file-sizes-core.mjs"),
   );
-  for (const fileName of ["check-file-sizes.mjs", "file-size-policy.mjs"]) {
-    copyFileSync(
-      path.join(repoRoot, surface, "scripts", fileName),
-      path.join(surfaceScriptsDir, fileName),
-    );
-  }
+  copyFileSync(
+    path.join(repoRoot, surface, "scripts", "check-file-sizes.mjs"),
+    path.join(surfaceScriptsDir, "check-file-sizes.mjs"),
+  );
 
   git(repo, "init", "-b", "main");
   git(repo, "config", "user.name", "Test");
@@ -117,29 +113,12 @@ test("local base resolution uses the branch merge-base and fails without origin/
 
 const entrypointCases = [
   {
-    surface: "desktop",
+    surface: "app",
     files: [
-      { relativeFile: "src-tauri/src/oversized.rs", maxLines: 1500 },
-      { relativeFile: "src-tauri/crates/oversized.rs", maxLines: 1500 },
-      { relativeFile: "src/app/oversized.ts", maxLines: 1200 },
-      { relativeFile: "src/features/oversized.tsx", maxLines: 1200 },
-      { relativeFile: "src/shared/api/oversized.ts", maxLines: 1200 },
-      { relativeFile: "src/shared/context/oversized.tsx", maxLines: 1200 },
-      { relativeFile: "src/shared/lib/oversized.ts", maxLines: 1200 },
-      { relativeFile: "src/shared/ui/oversized.tsx", maxLines: 1200 },
-      { relativeFile: "src/shared/styles/oversized.css", maxLines: 1200 },
-    ],
-  },
-  {
-    surface: "mobile",
-    files: [{ relativeFile: "lib/oversized.dart", maxLines: 1200 }],
-  },
-  {
-    surface: "web",
-    files: [
-      { relativeFile: "src/app/oversized.ts", maxLines: 1000 },
-      { relativeFile: "src/features/oversized.tsx", maxLines: 1000 },
-      { relativeFile: "src/shared/api/oversized.ts", maxLines: 1000 },
+      { relativeFile: "src/oversized.ts", maxLines: 600 },
+      { relativeFile: "src/features/oversized.tsx", maxLines: 600 },
+      { relativeFile: "src/styles/oversized.css", maxLines: 600 },
+      { relativeFile: "tests/oversized.ts", maxLines: 1000 },
     ],
   },
 ];
@@ -201,26 +180,10 @@ test("counts empty, LF, and CRLF content with the existing semantics", () => {
 test("surface entrypoints expose the exact ordered production policies", () => {
   const policies = [
     [
-      desktopPolicy,
+      appPolicy,
       [
-        ["src-tauri/src", [".rs"], 1500],
-        ["src-tauri/crates", [".rs"], 1500],
-        ["src/app", [".ts", ".tsx"], 1200],
-        ["src/features", [".ts", ".tsx"], 1200],
-        ["src/shared/api", [".ts", ".tsx"], 1200],
-        ["src/shared/context", [".ts", ".tsx"], 1200],
-        ["src/shared/lib", [".ts", ".tsx"], 1200],
-        ["src/shared/ui", [".ts", ".tsx"], 1200],
-        ["src/shared/styles", [".css"], 1200],
-      ],
-    ],
-    [mobilePolicy, [["lib", [".dart"], 1200]]],
-    [
-      webPolicy,
-      [
-        ["src/app", [".ts", ".tsx"], 1000],
-        ["src/features", [".ts", ".tsx"], 1000],
-        ["src/shared/api", [".ts", ".tsx"], 1000],
+        ["src", [".ts", ".tsx", ".css"], 600],
+        ["tests", [".ts"], 1000],
       ],
     ],
   ];
@@ -292,15 +255,15 @@ test("a compliant file may not cross the ceiling", () => {
 test("parses modifications, deletions, and renames from Git's NUL format", () => {
   assert.deepEqual(
     parseChangedFiles(
-      "M\0desktop/src/a.ts\0D\0desktop/src/b.ts\0R100\0desktop/src/old.ts\0desktop/src/new.ts\0",
+      "M\0app/src/a.ts\0D\0app/src/b.ts\0R100\0app/src/old.ts\0app/src/new.ts\0",
     ),
     [
-      { status: "M", path: "desktop/src/a.ts" },
-      { status: "D", path: "desktop/src/b.ts" },
+      { status: "M", path: "app/src/a.ts" },
+      { status: "D", path: "app/src/b.ts" },
       {
         status: "R",
-        oldPath: "desktop/src/old.ts",
-        path: "desktop/src/new.ts",
+        oldPath: "app/src/old.ts",
+        path: "app/src/new.ts",
       },
     ],
   );

@@ -28,7 +28,7 @@ import path from "node:path";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const modulesDir =
   process.env.WC_E2E_NODE_MODULES ??
-  path.join(here, "..", "web", "node_modules");
+  path.join(here, "..", "app", "node_modules");
 const require = createRequire(path.join(modulesDir, "package.json"));
 const {
   finalizeEvent,

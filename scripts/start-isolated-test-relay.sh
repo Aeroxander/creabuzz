@@ -8,7 +8,7 @@
 # `buzz-harness` Compose project (docker-compose.harness.yml); the relay runs
 # in the foreground on override ports.
 #
-#   Topology (reuse this exact tuple for desktop parity runs):
+#   Topology (reuse this exact tuple for parity runs):
 #     compose project : buzz-harness
 #     postgres        : localhost:5471  (db=buzz, user=buzz, pass=buzz_dev)
 #     redis           : localhost:6471

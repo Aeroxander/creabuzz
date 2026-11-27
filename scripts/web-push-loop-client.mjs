@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const require = createRequire(path.join(here, "..", "web", "node_modules", "package.json"));
+const require = createRequire(path.join(here, "..", "app", "node_modules", "package.json"));
 const { finalizeEvent, generateSecretKey, getPublicKey } = require("nostr-tools");
 const { hexToBytes, bytesToHex } = require(path.join(here, "..", "packages", "creaton-core", "node_modules", "@noble", "hashes", "utils.js"));
 const proof = await import("../packages/creaton-core/src/account/wallet-proof.ts");

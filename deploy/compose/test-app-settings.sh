@@ -7,7 +7,6 @@
 #   - CREATON_DEPLOYMENTS_FILE fills in the chain id, Launcher and dollar from the deploy script's file, and a value set by hand
 #     wins; a file that is not a deployments file is refused;
 #   - the page's node is asked for its network and the Launcher's code: another network, no code and no answer are each refused;
-#   - the old web app (CREATON_IMAGE_TARGET=runtime) is left to its own checks and the app's settings are not read;
 #   - the compose file names every setting the Dockerfile's app stage takes, and builds the target the Dockerfile has.
 # Run it with: deploy/compose/test-app-settings.sh (just app-deploy-check does).
 set -euo pipefail
@@ -17,12 +16,9 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/creaton-app-settings.XXXXXX")"
 trap 'rm -rf "${TEST_DIR}"' EXIT
 
-# The copy of the compose folder sits two levels under TEST_DIR, as it does in the checkout, so that run.sh finds the web
-# app's settings check at ../../web.
+# The copy of the compose folder sits two levels under TEST_DIR, as it does in the checkout.
 COMPOSE_DIR="${TEST_DIR}/deploy/compose"
-command -v node >/dev/null 2>&1 || { echo "FAIL: node is not on PATH; the settings check needs Node.js 22.6 or newer" >&2; exit 1; }
 mkdir -p "${COMPOSE_DIR}" "${TEST_DIR}/bin"
-ln -s "${REPO_ROOT}/web" "${TEST_DIR}/web"
 cp "${SCRIPT_DIR}/run.sh" "${SCRIPT_DIR}/compose-env.sh" "${COMPOSE_DIR}/"
 cat >"${TEST_DIR}/bin/docker" <<'STUB'
 #!/usr/bin/env bash
@@ -150,12 +146,7 @@ build || fail "build refused a whole phone-account setting"
 grep -q "bundler https://bundler.example, fees asked at https://sponsor.example/sponsor" "${TEST_DIR}/out" ||
   fail "the build did not report the bundler and the sponsor"
 
-# 6. The old web app as the image's target: the app's settings are not read (a half-set one does not stop it).
-env_with "CREATON_IMAGE_TARGET=runtime" "VITE_CREATON_LAUNCHER=${LAUNCHER}"
-build || fail "build refused the app's half-set setting while the old web app is the target"
-grep -q "the VITE_CREATON_\* settings are not read" "${TEST_DIR}/out" || fail "build did not say the app's settings are not read"
-
-# 7. The compose file names every setting the Dockerfile's app stage takes, builds a target the Dockerfile has, and the
+# 6. The compose file names every setting the Dockerfile's app stage takes, builds a target the Dockerfile has, and the
 #    app stage and the server's list agree (an argument missing from either is dropped silently).
 for name in VITE_CREATON_CHAIN_ID VITE_CREATON_LAUNCHER VITE_CREATON_DOLLAR VITE_CREATON_RPC_URL \
             VITE_CREATON_PASSKEY_ACCOUNT VITE_CREATON_BUNDLER_URL VITE_CREATON_SPONSOR_URL; do
@@ -163,14 +154,14 @@ for name in VITE_CREATON_CHAIN_ID VITE_CREATON_LAUNCHER VITE_CREATON_DOLLAR VITE
   grep -q "^ARG ${name}=\$" "${REPO_ROOT}/Dockerfile" || fail "the Dockerfile has no ARG ${name}="
   grep -q "[ ]${name}[ ;]" "${REPO_ROOT}/Dockerfile" || fail "the Dockerfile's unset-if-empty loop does not name ${name}"
 done
-target="$(sed -nE 's/^ *target: \$\{CREATON_IMAGE_TARGET:-([a-z-]+)\}$/\1/p' "${SCRIPT_DIR}/compose.creaton.yml")"
+target="$(sed -nE 's/^ *target: ([a-z-]+)$/\1/p' "${SCRIPT_DIR}/compose.creaton.yml")"
 [[ -n "${target}" ]] || fail "compose.creaton.yml names no default target"
 grep -q "^FROM .* AS ${target}\$" "${REPO_ROOT}/Dockerfile" || fail "the Dockerfile has no stage ${target}"
 grep -q "^FROM .* AS runtime\$" "${REPO_ROOT}/Dockerfile" || fail "the Dockerfile has no stage runtime"
-# `runtime` stays the Dockerfile's last stage: docker build with no --target (and the published image) get the old web app.
+# `runtime` stays the Dockerfile's last stage: docker build with no --target (and the published image) get the Creaton app.
 [[ "$(grep '^FROM ' "${REPO_ROOT}/Dockerfile" | tail -n 1)" == *" AS runtime" ]] || fail "runtime is no longer the Dockerfile's last stage"
 
-# 8. A start with no built image is refused (compose would build it itself and skip the checks above) and does not call
+# 7. A start with no built image is refused (compose would build it itself and skip the checks above) and does not call
 #    compose up; with the image there it goes on to the usual checks.
 env_with
 : >"${DOCKER_LOG}"
@@ -182,5 +173,5 @@ if grep -q " up " "${DOCKER_LOG}"; then fail "compose up was called with no imag
 if grep -q "Build it first" "${TEST_DIR}/out"; then fail "start refused although the image is there"; fi
 
 echo "PASS: run.sh build checks the Creaton app's settings before compose is called (none set: no money screens; half-set, malformed,"
-echo "      keyed and CHANGE_ME settings refused), reads the deploy script's file, asks the page's node for its network and the Launcher,"
-echo "      leaves the old web app to its own checks; a start with no built image is refused; compose.creaton.yml and the Dockerfile agree on the app's settings and target"
+echo "      keyed and CHANGE_ME settings refused), reads the deploy script's file, asks the page's node for its network and the Launcher;"
+echo "      a start with no built image is refused; compose.creaton.yml and the Dockerfile agree on the app's settings and target"

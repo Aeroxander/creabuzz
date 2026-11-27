@@ -24,7 +24,7 @@
 # the stand-in, a Redis it had to start), drops its scratch database and removes its temporary files, whatever the outcome.
 #
 # Needs: anvil, cast, forge (FOUNDRY_BIN or PATH), psql, a Postgres and a Redis (started here when they are not running),
-# node 22 with web/node_modules and packages/creaton-core/node_modules, jq, openssl, python3, and built binaries
+# node 22 with app/node_modules and packages/creaton-core/node_modules, jq, openssl, python3, and built binaries
 # (`cargo build -p buzz-relay`). Uses anvil's well-known development keys only; every amount is play money. No real push
 # service, device or key is used.
 #

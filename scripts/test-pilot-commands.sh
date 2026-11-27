@@ -8,7 +8,7 @@
 # and runs the REAL run.sh and pilot/*.sql against it. Only `docker` is a stand-in: it hands the SQL that run.sh pipes into
 # the postgres container to the real psql, and answers `buzz-admin reports`. No relay, chain or browser needed; it needs
 # Postgres (the same one `just services` and the MVP gate's CI job start). The same queries were also run against the
-# records the real server journey writes (scripts/real-loop-e2e.sh, KEEP_DB=1): see docs/v3-review/PILOT-REPORT.md.
+# records the real server journey writes (scripts/app-real-loop-e2e.sh, KEEP_DB=1): see docs/v3-review/PILOT-REPORT.md.
 #
 # ⚠️  DEV ONLY. Uses its own database, dropped on exit.
 # Usage:  scripts/test-pilot-commands.sh
@@ -98,7 +98,7 @@ ev() {
 }
 # project <founder> <days ago> <slug> <name> [more tags]: the founder's project record
 project() { ev "$2" "$1" 37001 "[[\"d\",\"$3\"],[\"name\",\"$4\"]${5:+,$5}]" "" "$3"; }
-# The slug a project's records name, as the web app writes it.
+# The slug a project's records name, as the app writes it.
 coord() { echo "37001:$1:$2"; }
 
 # Alice: three weekly updates, the third after a late flag, promises answered, one answered twice (the worse counts), a

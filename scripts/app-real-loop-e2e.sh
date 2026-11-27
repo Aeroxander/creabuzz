@@ -8,7 +8,7 @@
 # project's link with the founder accepting (join.spec.ts), each counted against plan v2's press budgets. Nothing is
 # mocked: real signed records, the server's own checks, real Postgres reads.
 #
-# Copied from scripts/real-loop-e2e.sh, with one difference that matters on a shared machine: it never runs cargo. It
+# It never runs cargo, which matters on a shared machine. It
 # uses the relay already built at target/debug/buzz-relay (or RELAY_BIN) and stops with exit 2 when there is none.
 # The relay is hard-linked (or copied) into the run's own folder first, so a build replacing it mid-run changes nothing.
 #

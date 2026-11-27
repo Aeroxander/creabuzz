@@ -789,12 +789,12 @@ mod tests {
         assert!(!html.contains("<script>"), "{html}");
     }
 
-    /// The page the web app really ships: its generic card is replaced, and its
-    /// document policy and boot script survive. Editing `web/index.html` so the
+    /// The page the app really ships: its generic card is replaced, and its
+    /// document policy and entry script survive. Editing `app/index.html` so the
     /// injection no longer fits fails here.
     #[test]
     fn the_real_index_takes_a_preview() {
-        let real = include_str!("../../../web/index.html");
+        let real = include_str!("../../../app/index.html");
         let preview = compose("Nebula", "A weekly map.", "Publish 12 maps");
         let html = inject(
             real,
@@ -810,12 +810,12 @@ mod tests {
         assert!(html.contains("<title>Nebula on Creaton</title>"));
         assert!(!html.contains("<title>Creaton</title>"));
         assert!(
-            !html.contains("A community workspace"),
+            !html.contains("Start a project, post what you did each week"),
             "the generic text is gone"
         );
         for kept in [
             "http-equiv=\"Content-Security-Policy\"",
-            "src=\"/assets/theme-boot.js\"",
+            "src=\"/src/main.tsx\"",
             "name=\"theme-color\"",
             "<div id=\"root\"></div>",
         ] {

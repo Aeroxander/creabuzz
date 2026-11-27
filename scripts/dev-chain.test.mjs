@@ -54,17 +54,8 @@ test("dry-run prints the ordered plan and touches no state", () => {
     assert.match(out, /dry run — nothing started, nothing deployed/);
     assert.match(out, /NOT RUNNING/);
 
-    // The eight steps, in execution order — dropping or reordering one fails.
-    const steps = [
-      "1. anvil",
-      "2. apptoken infra",
-      "3. org dao",
-      "4. currency",
-      "5. cca",
-      "6. launch kit",
-      "7. fund",
-      "8. accounts",
-    ];
+    // The steps, in execution order — dropping or reordering one fails.
+    const steps = ["1. anvil", "2. pot", "3. accounts"];
     let cursor = -1;
     for (const step of steps) {
       const at = out.indexOf(step);
@@ -72,15 +63,9 @@ test("dry-run prints the ordered plan and touches no state", () => {
       cursor = at;
     }
 
-    // Idempotency guards are part of the plan, not folklore.
-    assert.match(out, /idempotent/);
+    // The idempotency guards are part of the plan, not folklore.
     assert.match(out, /skipped: a dev anvil already answers/);
-    assert.match(out, /names an OrgBinding that answers summoner\(\)/);
-    assert.match(out, /names a token that still says/);
-    assert.match(out, /code there already matches the build output/);
-    assert.match(out, /names a kit that still points at this summoner and factory/);
-    // The optional test-network features are part of the plan too, after the kits (DEV_CHAIN_ALL=1 prints their settings).
-    assert.match(out, /6e\. optional features/);
+    assert.match(out, /names a Launcher that still has code/);
 
     // Dev accounts: right roles, right (derived) addresses, keys labeled.
     assert.match(out, /DEV-ONLY ACCOUNTS/);
@@ -156,7 +141,7 @@ test("up fails honestly when the RPC port is already occupied", async () => {
     const output = `${result.stdout}\n${result.stderr}`;
     assert.match(output, /something is already listening/);
     assert.match(output, /dev-chain didn't start/);
-    assert.match(output, /anvil with the infra loaded/);
+    assert.match(output, /anvil with the contracts loaded/);
     assert.match(output, /just dev-chain-status/);
     // It refused instead of adopting the foreign service: no pid file, and
     // the listener is still the process that owns the port.

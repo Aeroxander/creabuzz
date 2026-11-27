@@ -94,11 +94,11 @@ async function select(paths, pullRequest = false, apiStatus = 200) {
     commit("PR documentation or code");
     const head = git("rev-parse", "HEAD").toString().trim();
     git("checkout", "-qb", "upstream", base);
-    const upstreamPath = "desktop/src/upstream-only.ts";
+    const upstreamPath = "app/src/upstream-only.ts";
     mkdirSync(dirname(join(repo, upstreamPath)), { recursive: true });
     writeFileSync(join(repo, upstreamPath), "upstream change\n");
     git("add", upstreamPath);
-    commit("Unrelated upstream desktop change");
+    commit("Unrelated upstream app change");
     git(
       "-c",
       "user.name=CI fixture",
@@ -181,7 +181,7 @@ async function select(paths, pullRequest = false, apiStatus = 200) {
   const rawOutputs = Object.fromEntries(
     [
       ...readFileSync(output, "utf8").matchAll(
-        /^(rust|desktop|desktop-rust|web|mobile)<<([^\n]+)\n(true|false)\n\2/gm,
+        /^(rust|app|pot)<<([^\n]+)\n(true|false)\n\2/gm,
       ),
     ].map(([, key, , value]) => [key, value]),
   );
@@ -208,46 +208,34 @@ async function select(paths, pullRequest = false, apiStatus = 200) {
   );
 }
 const scenarios = [
-  [
-    "mobile source and tests",
-    [
-      "mobile/lib/features/age_gate/age_signal_provider.dart",
-      "mobile/test/features/age_gate/age_signal_provider_test.dart",
-    ],
-    ["mobile"],
-  ],
-  ["mobile lockfile", ["mobile/pubspec.lock"], ["mobile"]],
-  ["mobile release script", ["scripts/mobile-release.sh"], ["mobile"]],
-  // The web job also runs knip, which checks desktop/src for duplicates (knip.jsonc).
-  ["desktop", ["desktop/src/main.tsx"], ["desktop", "web"]],
-  ["Tauri", ["desktop/src-tauri/src/main.rs"], ["desktop", "desktop-rust"]],
+  ["app source", ["app/src/main.tsx"], ["app"]],
+  ["app Markdown", ["app/README.md"], ["app"]],
+  ["shared package", ["packages/creaton-core/src/index.ts"], ["app"]],
+  ["pnpm lockfile", ["pnpm-lock.yaml"], ["app"]],
+  ["deploy bundle", ["deploy/compose/test-app-settings.sh"], ["app"]],
+  ["pot contract", ["contracts/pot/src/Pot.sol"], ["pot"]],
+  ["pot contract test", ["contracts/pot/test/Pot.t.sol"], ["pot"]],
+  ["contract library pin", ["contracts/lib/forge-std/src/Test.sol"], ["pot"]],
+  ["solc installer", ["scripts/ensure-solc.sh"], ["pot"]],
+  ["pot loop script", ["scripts/pot-app-loop.sh"], ["pot"]],
   ["relay", ["crates/buzz-relay/src/main.rs"], ["rust"]],
   ["migration", ["migrations/123.sql"], ["rust"]],
-  [
-    "shared workflow",
-    [".github/workflows/ci.yml"],
-    ["desktop", "mobile", "rust"],
-  ],
-  [
-    "desktop workflow",
-    [".github/workflows/_ci-desktop.yml"],
-    ["desktop", "mobile", "rust"],
-  ],
-  ["Justfile", ["Justfile"], ["desktop", "rust"]],
-  ["CI apt retry", ["scripts/ci-apt-retry.sh"], ["desktop", "rust"]],
+  ["shared workflow", [".github/workflows/ci.yml"], ["app", "pot", "rust"]],
+  ["app workflow", [".github/workflows/_ci-app.yml"], ["app", "pot", "rust"]],
+  ["contracts workflow", [".github/workflows/_ci-contracts.yml"], ["pot", "rust"]],
+  ["Justfile", ["Justfile"], ["app", "pot", "rust"]],
   ["integration services", ["docker-compose.yml"], ["rust"]],
   ["CI integration images", ["docker-compose.ci.yml"], ["rust"]],
   [
-    "mixed mobile and relay",
-    ["mobile/lib/main.dart", "crates/buzz-core/src/lib.rs"],
-    ["rust", "mobile"],
+    "mixed app and relay",
+    ["app/src/main.tsx", "crates/buzz-core/src/lib.rs"],
+    ["app", "rust"],
   ],
   [
-    "mixed mobile and desktop",
-    ["mobile/lib/main.dart", "desktop/src/main.tsx"],
-    ["desktop", "mobile", "web"],
+    "mixed app and pot",
+    ["app/src/main.tsx", "contracts/pot/src/Pot.sol"],
+    ["app", "pot"],
   ],
-  ["web", ["web/src/main.tsx"], ["web"]],
   ["documentation", ["README.md"], []],
   [
     "incident documentation",
@@ -260,37 +248,29 @@ const scenarios = [
     [],
   ],
   ["crate Markdown", ["crates/buzz-cli/README.md"], ["rust"]],
-  ["desktop Markdown", ["desktop/README.md"], ["desktop"]],
-  [
-    "Tauri Markdown",
-    ["desktop/src-tauri/README.md"],
-    ["desktop", "desktop-rust"],
-  ],
-  ["web Markdown", ["web/docs/design.md"], ["web"]],
-  ["mobile Markdown", ["mobile/test/README.md"], ["mobile"]],
+  ["pot Markdown", ["contracts/pot/README.md"], ["pot"]],
   ["schema Markdown", ["schema/README.md"], ["rust"]],
   ["migration Markdown", ["migrations/README.md"], ["rust"]],
   [
-    "mixed documentation and desktop",
-    ["VISION_MOBILE.md", "docs/mobile/design.md", "desktop/src/main.tsx"],
-    ["desktop", "web"],
+    "mixed documentation and app",
+    ["VISION_MOBILE.md", "docs/mobile/design.md", "app/src/main.tsx"],
+    ["app"],
   ],
   [
     "mixed documentation and relay",
-    ["docs/desktop/design.md", "crates/buzz-relay/src/lib.rs"],
+    ["docs/design.md", "crates/buzz-relay/src/lib.rs"],
     ["rust"],
   ],
   ["embedded ACP prompt", ["crates/buzz-acp/src/base_prompt.md"], ["rust"]],
-  [
-    "embedded Tauri skill",
-    ["desktop/src-tauri/src/managed_agents/nest_skill.md"],
-    ["desktop", "desktop-rust"],
-  ],
+  // Removed surfaces select nothing: no suite runs for a path that no longer has one.
+  ["removed desktop path", ["desktop/src/main.tsx"], []],
+  ["removed web path", ["web/src/main.tsx"], []],
+  ["removed mobile path", ["mobile/lib/main.dart"], []],
 ];
 for (const [name, paths, expected] of scenarios) {
   test(`real paths-filter: ${name}`, async () => {
     const outputs = await select(paths);
-    assert.equal(Object.keys(outputs).length, 5);
+    assert.equal(Object.keys(outputs).length, 3);
     assert.deepEqual(
       Object.keys(outputs)
         .filter((key) => outputs[key] === "true")
@@ -307,19 +287,19 @@ for (const [name, paths, expected] of [
     [],
   ],
   [
-    "mixed mobile and Markdown",
-    ["VISION_MOBILE.md", "mobile/lib/main.dart"],
-    ["mobile"],
+    "mixed app and Markdown",
+    ["CONTEXT.md", "app/src/main.tsx"],
+    ["app"],
   ],
   [
-    "mixed desktop and Markdown",
-    ["CONTEXT.md", "desktop/src/main.tsx"],
-    ["desktop", "web"],
+    "mixed pot and Markdown",
+    ["VISION_MOBILE.md", "contracts/pot/src/Pot.sol"],
+    ["pot"],
   ],
 ]) {
   test(`PR file list ignores newer base changes: ${name}`, async () => {
     const outputs = await select(paths, true);
-    assert.equal(Object.keys(outputs).length, 5);
+    assert.equal(Object.keys(outputs).length, 3);
     assert.deepEqual(
       Object.keys(outputs)
         .filter((key) => outputs[key] === "true")
@@ -331,7 +311,7 @@ for (const [name, paths, expected] of [
 
 test("workflow consumes guarded selection outputs", () => {
   const outputs = workflow.match(/ {4}outputs:\n([\s\S]*?) {4}steps:/)[1];
-  for (const key of ["rust", "desktop", "desktop-rust", "web", "mobile"]) {
+  for (const key of ["rust", "app", "pot"]) {
     assert.ok(outputs.includes(`steps.selection.outputs.${key}`));
   }
   assert.match(
@@ -345,7 +325,7 @@ for (const count of [2999, 3000, 3001]) {
       { length: Math.min(count, 3000) },
       (_, i) => `docs/file-${i}.md`,
     );
-    if (count > 3000) paths.push("desktop/src/omitted-by-api.ts");
+    if (count > 3000) paths.push("app/src/omitted-by-api.ts");
     const outputs = await select(paths, true);
     for (const value of Object.values(outputs)) {
       assert.equal(value, count >= 3000 ? "true" : "false");

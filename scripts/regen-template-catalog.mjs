@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Bundles the project templates (templates/<id>/) for the web app:
+// Bundles the project templates (templates/<id>/) for the app:
 //
 //   node scripts/regen-template-catalog.mjs           # rewrite the generated files
 //   node scripts/regen-template-catalog.mjs --check   # fail when they are stale
@@ -15,7 +15,7 @@
 //     every template with every file it names (loaded when someone picks one)
 //
 // Both are @generated; never edit by hand. `--check` is the drift gate (wired
-// into the web `pnpm check`): editing a template without regenerating, or
+// into the app's check): editing a template without regenerating, or
 // hand-editing a generated file, fails it.
 
 import { createHash } from "node:crypto";

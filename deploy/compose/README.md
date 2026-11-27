@@ -69,9 +69,8 @@ server as well as changing its registry.
 
 The upstream image (`ghcr.io/block/buzz`) serves Buzz: it has neither the Creaton app nor Creaton's database
 migrations. A Creaton server builds its own image from this checkout, through `compose.creaton.yml`. The image carries
-the new phone-first app (`app/`, built by the Dockerfile's `app-builder` stage into target `runtime-creaton`), not the old
-web app (`web/`); `CREATON_IMAGE_TARGET=runtime` in `.env` builds the old one instead, for someone who still runs it. To put
-the app on a public test network (Sepolia), follow
+the phone-first app (`app/`, built by the Dockerfile's `app-builder` stage into target `runtime-creaton`, which is also
+the default target `runtime`). To put the app on a public test network (Sepolia), follow
 [docs/next-version/DEPLOY-TEST-NETWORK.md](../../docs/next-version/DEPLOY-TEST-NETWORK.md), step by step.
 
 ```bash
@@ -92,22 +91,10 @@ $EDITOR .env               # every CHANGE_ME; the Creaton part says what each se
   script wrote, and `run.sh` takes the chain id, Launcher and dollar from it; a value set by hand wins. Changing any
   `VITE_*` setting means `./run.sh build` and then `./run.sh restart`: they are read when the app is built, and `restart`
   alone keeps serving the old page.
-- The image has no admin bundle: the Creaton stack does not serve an admin host (the old web app's Moderation list is
-  `./run.sh reports` here). `BUZZ_ADMIN_WEB_DIR` is empty in this image, so a server that sets `BUZZ_ADMIN_HOST` still starts.
-- **The old web app** (`CREATON_IMAGE_TARGET=runtime`): the settings below that mention contributor projects, the weekly-sale
-  trial block, investing, the `VITE_ZERODEV_*` lines and `VITE_CONTRIBUTOR_ONLY` belong to it, not to the new app. Its build
-  prints what that web app will offer and stops on settings that do not fit together (`web/scripts/check-deploy-env.mjs`);
-  `./run.sh build` runs that check on every build and says so. Contributor-only is one build setting,
-  `VITE_CONTRIBUTOR_ONLY=1`, which the repository's `Dockerfile` sets for the old web app's build
-  (`raisesOffered()` in `web/src/features/launchpad/lib/raises-offered.ts`; `docs/v3-review/STATUS.md`, "The hosted
-  build"). It is contributor-only, and its people act from passkey accounts alone, so with contributor projects on the build
-  stops unless `VITE_ZERODEV_PROJECT_ID` (a UUID) and `VITE_ZERODEV_CHAIN_ID` are set. Its contributor projects need the
-  addresses `scripts/sepolia-deploy.sh --broadcast` prints (`docs/sepolia-testnet.md`); with them `./run.sh build` first asks
-  `VITE_CHAIN_RPC_URL` which network it is on and for the contributor kit's history from `VITE_HISTORY_FROM_BLOCKS`, and
-  stops with the reason when it is on another network, does not answer, or refuses that history. A node that takes only a
-  small range is allowed (the page reads in pages); section 3 of `docs/sepolia-testnet.md` says how to check that its range
-  lasts. Any `VITE_*` value still holding `CHANGE_ME` stops the build, for either app. The server's secrets may still be
-  `CHANGE_ME` at a first build; `start` refuses those.
+- The image has no admin bundle: the Creaton stack does not serve an admin host (`./run.sh reports` lists the reports
+  passed on to the owner). `BUZZ_ADMIN_WEB_DIR` is empty in this image, so a server that sets `BUZZ_ADMIN_HOST` still starts.
+- Any `VITE_*` value still holding `CHANGE_ME` stops the build. The server's secrets may still be `CHANGE_ME` at a first
+  build; `start` refuses those.
 - The server turns on read state (`BUZZ_V1_ENABLED`, unread markers) and the app's page routes (`BUZZ_WEB_SPA=full`),
   and shows the terms and privacy note named by `BUZZ_TERMS_FILE` and `BUZZ_PRIVACY_FILE` at sign-up. `run.sh` refuses
   a policy file that still has a draft's `[placeholders]`.
@@ -152,22 +139,6 @@ $EDITOR .env               # every CHANGE_ME; the Creaton part says what each se
 - Taking down a post and its pictures, illegal content, and a person's request to see or delete their data:
   [docs/operator-takedown-and-data-requests.md](../../docs/operator-takedown-and-data-requests.md).
 
-### The weekly-sale trial block (old web app only)
-
-Trading is off in this image unless `.env` sets both `VITE_SECONDARY_MARKET_FACTORY` and `VITE_TRADING_TRIAL=1`; the block
-in `.env.creaton.example` (and everything after it: `VITE_TEST_QUOTE_TOKENS`, the work and open bounties, test CREATE and
-its faucet, the court, payouts and remix bonds) is for a Sepolia trial build only, and a build for real pilot people leaves
-all of it out. `./run.sh build` and `./run.sh upgrade` run the web app's settings check (`web/scripts/check-deploy-env.mjs`,
-with Node.js 22.6 or newer on the machine; without it they say so and the image's own build runs the check) and refuse a
-half-set block before Docker starts. The image stays contributor-only. `docs/sepolia-testnet.md` ("Trading") has the steps.
-
-### The investing switch (old web app only)
-
-Investing is off unless `.env` sets `VITE_INVESTING=1` together with `VITE_BACKING_POOL_FACTORY`, `VITE_CONTRIBUTOR_KIT_V3` and
-`VITE_BACKING_QUOTE_TOKEN`; the lines are in `.env.creaton.example`. The settings check refuses a half-set block before Docker
-starts, as it does for trading. The image stays contributor-only, and the switch turns on the backing surfaces only. The steps
-after the contracts are deployed are in `docs/v3-review/INVESTING-SWITCH.md`.
-
 ### AI helpers (optional, no rebuild)
 
 The AI work check, the check-note draft and the newcomer interviewer call the server's own `/llm/chat/completions`, which
@@ -180,7 +151,7 @@ BUZZ_LLM_API_KEY=<the provider's key>
 BUZZ_LLM_MODEL=<the model name to use>
 ```
 
-Set `BUZZ_LLM_MODEL`: the hosted web build sends no model name, so this one is used. Each call costs the owner money: set a
+Set `BUZZ_LLM_MODEL`: the hosted web app sends no model name, so this one is used. Each call costs the owner money: set a
 spending cap at the provider too. The server also caps its own use so a busy day cannot run up the bill: each account
 gets `BUZZ_LLM_MAX_CALLS_PER_DAY` calls a day (default 500), and the whole community gets `BUZZ_LLM_MAX_CALLS_PER_DAY_TOTAL`
 (default 2000); both reset at midnight UTC. When a cap is reached the person sees a plain sentence saying what ran out and
@@ -193,7 +164,7 @@ key as one you can replace.
 
 A project's link (`/p/<project>-<founder>` and `/launchpad/<project>`) shows the project's name, pitch and main goal, with
 the Creaton card as the image, when it is pasted into a chat app. The server writes these into the page itself, so nothing
-needs setting: the image is part of the web build (`web/public/assets/share-card.png`) and the proxy only has to pass the
+needs setting: the image is served from the web bundle (`/assets/share-card.png`) and the proxy only has to pass the
 `Host` and `X-Forwarded-Proto` headers, which Caddy does. A preview shows only what a signed-out visitor could already read:
 on a server where people must be members to read (invite-only) the link shows the plain Creaton page, unless public
 records are on (next section); and so does a project that is removed, not listed, or whose founder is muted or banned.
@@ -383,7 +354,7 @@ on your own computer, and the rehearsal below.
 
 ## Uptime check (from outside, with an alert on your phone)
 
-Nothing on the server tells you when the server is down: the error reports (`VITE_ERROR_REPORT_URL`) come from people's
+Nothing on the server tells you when the server is down: the error reports come from people's
 browsers and need people. Set up one external monitor before inviting anyone, from a service that checks from outside your
 network and sends push notifications to your phone (for example UptimeRobot's free plan: HTTPS checks every 5 minutes, a
 phone app with push alerts; check the plan's current limits yourself). The two checks below cost nothing and say different

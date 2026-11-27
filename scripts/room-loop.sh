@@ -15,7 +15,7 @@
 # it had to start), drops its scratch database and removes its temporary files, whatever the outcome.
 #
 # Needs: anvil, cast, forge (FOUNDRY_BIN or PATH), psql, a Postgres and a Redis (started here when they are not running),
-# node 22 with web/node_modules and packages/creaton-core/node_modules, jq, openssl, python3, and built binaries
+# node 22 with app/node_modules and packages/creaton-core/node_modules, jq, openssl, python3, and built binaries
 # (`cargo build -p buzz-relay -p buzz-cli`). Uses anvil's well-known development keys only; every amount is play money.
 #
 # Env: POSTGRES_ADMIN_URL (default postgres://buzz:buzz_dev@127.0.0.1:5432/postgres), REDIS_URL, RELAY_BIN, BUZZ_BIN,

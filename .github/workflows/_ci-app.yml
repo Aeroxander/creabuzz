@@ -11,25 +11,21 @@ on:
     outputs:
       app_result:
         value: ${{ jobs.results.outputs.app_result }}
-      pot_result:
-        value: ${{ jobs.results.outputs.pot_result }}
       pot_loops_result:
         value: ${{ jobs.results.outputs.pot_loops_result }}
 
-# The new phone-first app (app/) and the money contracts it talks to (contracts/pot). Before this lane no workflow ran the
-# app's checks, its tests, its build with the bundle budget, the pot contracts' tests or the loops that join them
-# (`web` ran web/ and packages/creaton-core only; `contracts` ran forge in contracts/ only).
+# The phone-first app (app/) and the money contracts it talks to (contracts/pot).
 #   App          Biome, tsc, the copy / rem-only text / file size guards, the unused-exports scan, the deploy bundle's check of
 #                the app's settings, the unit tests, the build with its first-load budget (just app-check, app-deploy-check,
 #                app-test, app-build).
-#   Pot          contracts/pot's build and its whole forge suite (just pot-build, pot-test).
 #   Pot loops    the loops that need no server: the app's own money calls against the real contracts on a local chain
 #                (scripts/pot-app-loop.sh) and the whole loop with cast (scripts/pot-chain-loop.sh). The full loop with a relay,
 #                Postgres, Redis and a browser (scripts/pot-full-loop.sh) is too heavy for a pull request: .github/workflows/
 #                mvp-gate.yml runs it nightly and by hand.
+# contracts/pot's own build and forge suite run in _ci-contracts.yml.
 env:
   CARGO_TERM_COLOR: always
-  # contracts/pot is not linted on build (the lane for contracts/ does the same): its warnings are not the gate.
+  # contracts/pot is not linted on build: its warnings are not the gate.
   FOUNDRY_LINT_LINT_ON_BUILD: "false"
 
 jobs:
@@ -56,9 +52,8 @@ jobs:
           key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: pnpm-${{ runner.os }}-
       - name: Install dependencies
-        # A full install, as the web lane does: the unused-exports scan (knip) reads the root knip.jsonc, which loads the
-        # web and desktop configs too, and those need their own modules. The filtered `just app-install` is enough for the
-        # loops job below, which does not run knip.
+        # A full install: the unused-exports scan (knip) reads the root knip.jsonc and needs every workspace's modules.
+        # The filtered `just app-install` is enough for the loops job below, which does not run knip.
         run: pnpm install --frozen-lockfile
       - name: App lint, types, copy and size guards, unused exports
         run: just app-check
@@ -74,32 +69,6 @@ jobs:
         with:
           path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
           key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
-
-  pot:
-    name: Pot contracts
-    runs-on: ubuntu-latest
-    # `forge test` runs the fuzz (1,000 runs) and invariant (256 runs of 200 steps) suites: minutes on a laptop, longer cold.
-    timeout-minutes: 60
-    if: github.event_name == 'push' || inputs.pot
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          # contracts/pot/lib is a link to contracts/lib (forge-std and OpenZeppelin 5).
-          submodules: recursive
-      - uses: cashapp/activate-hermit@cea9af7913204a965fd488637a8d1811bba2e616 # v1
-      - name: Install Foundry
-        run: |
-          curl -sSfL https://github.com/foundry-rs/foundry/releases/download/stable/foundry_stable_linux_amd64.tar.gz | tar xz -C "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-      - name: Install the pinned solc
-        # contracts/pot/foundry.toml pins solc 0.8.37, which some forge releases do not know: install it where forge looks.
-        run: scripts/ensure-solc.sh 0.8.37
-      - name: forge build
-        run: just pot-build
-      - name: forge test
-        run: just pot-test
 
   pot-loops:
     name: Pot loops
@@ -141,13 +110,12 @@ jobs:
   results:
     name: Results
     if: ${{ always() }}
-    needs: [app, pot, pot-loops]
+    needs: [app, pot-loops]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
     outputs:
       app_result: ${{ needs.app.result }}
-      pot_result: ${{ needs.pot.result }}
       pot_loops_result: ${{ needs.pot-loops.result }}
     steps:
       - run: echo "Captured app job results"

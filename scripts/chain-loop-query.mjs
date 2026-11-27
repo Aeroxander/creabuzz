@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const require = createRequire(path.join(here, "..", "web", "node_modules", "package.json"));
+const require = createRequire(path.join(here, "..", "app", "node_modules", "package.json"));
 const { finalizeEvent, generateSecretKey } = require("nostr-tools");
 
 const KIND_PROJECT_NUMBERS = 39009;
