@@ -59,20 +59,13 @@ function Header({ project }: { project: Project }) {
 function StartedBy({
   project,
   founderName,
-  founderPicture,
 }: {
   project: Project;
   founderName: string;
-  founderPicture: string | null;
 }) {
   return (
     <div className="flex items-center gap-2.5 px-1 text-sm">
-      <Avatar
-        name={founderName}
-        picture={founderPicture}
-        pubkey={project.author}
-        size="sm"
-      />
+      <Avatar name={founderName} pubkey={project.author} size="sm" />
       <span>
         Started by <span className="font-semibold">{founderName}</span>{" "}
         <span className="text-muted">{relativeTime(project.startedAt)}</span>
@@ -173,7 +166,6 @@ export function ProjectTop({
   now,
   investing,
   founderName,
-  founderPicture,
 }: {
   project: Project;
   /** The project's numbers; null while they are read, when there are none, or when investing is off. */
@@ -182,7 +174,6 @@ export function ProjectTop({
   /** Whether the server offers investing: everything below the header is drawn only then. */
   investing: boolean;
   founderName: string;
-  founderPicture: string | null;
 }) {
   const [shareOpen, setShareOpen] = useState(false);
   const [shareSeen, setShareSeen] = useState(false);
@@ -197,11 +188,7 @@ export function ProjectTop({
     <div className="flex flex-col gap-3" data-testid="project-top">
       <Header project={project} />
       {investing ? null : (
-        <StartedBy
-          founderName={founderName}
-          founderPicture={founderPicture}
-          project={project}
-        />
+        <StartedBy founderName={founderName} project={project} />
       )}
       {investing ? (
         <>
@@ -252,11 +239,7 @@ export function ProjectTop({
               Share
             </Button>
           </div>
-          <StartedBy
-            founderName={founderName}
-            founderPicture={founderPicture}
-            project={project}
-          />
+          <StartedBy founderName={founderName} project={project} />
           {numbers ? <TopFacts now={now} numbers={numbers} /> : null}
           {numbers ? <Details now={now} numbers={numbers} /> : null}
           <ChunkBoundary quiet>

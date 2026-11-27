@@ -42,12 +42,3 @@ export function nameOf(
 ): string {
   return personName(profiles?.[pubkey]);
 }
-
-/** The person's picture, when it is a web address. */
-export function pictureOf(
-  profiles: Record<string, ProfileMetadata> | undefined,
-  pubkey: string,
-): string | null {
-  const picture = profiles?.[pubkey]?.picture?.trim();
-  return picture && /^https:\/\//.test(picture) ? picture : null;
-}

@@ -2,16 +2,13 @@ import { readFailureWords } from "@creaton/core/client/readable-error.ts";
 import { lazy, Suspense, useState } from "react";
 import { BackHeader } from "../../app/BackHeader";
 import { useAccount } from "../../lib/account";
-import { useFollowProject, useFollows } from "../../lib/follows";
-import { nameOf, pictureOf, useProfiles } from "../../lib/profiles";
+import { nameOf, useProfiles } from "../../lib/profiles";
 import { investingOn } from "../../lib/server";
-import { useRequireAccount } from "../../lib/use-require-account";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { ChunkBoundary } from "../../ui/chunk-boundary";
 import { EmptyState } from "../../ui/empty-state";
 import { Tabs } from "../../ui/tabs";
-import { useToast } from "../../ui/toast";
 import {
   chainKeyOfProject,
   useProjectNumbers,
@@ -127,14 +124,9 @@ function ProjectView({
       className="screen mx-auto flex max-w-lg flex-col gap-4"
       data-testid="project-page"
     >
-      <BackHeader
-        action={<FollowButton coordinate={project.coordinate} />}
-        heading={false}
-        title="Project"
-      />
+      <BackHeader heading={false} title="Project" />
       <ProjectTop
         founderName={founderName}
-        founderPicture={pictureOf(profiles, project.author)}
         investing={investing}
         now={now}
         numbers={numbers}
@@ -248,32 +240,5 @@ function ProjectView({
         value={tab}
       />
     </main>
-  );
-}
-
-function FollowButton({ coordinate }: { coordinate: string }) {
-  const follows = useFollows().data;
-  const follow = useFollowProject();
-  const requireAccount = useRequireAccount();
-  const toast = useToast();
-  const following = follows?.projects.has(coordinate) ?? false;
-  return (
-    <Button
-      aria-pressed={following}
-      data-testid="project-follow"
-      disabled={follow.isPending}
-      onClick={() =>
-        requireAccount(() =>
-          follow.mutate(
-            { coordinate, follow: !following },
-            { onError: (error) => toast(error.message, "problem") },
-          ),
-        )
-      }
-      size="sm"
-      variant="secondary"
-    >
-      {following ? "Following" : "Follow"}
-    </Button>
   );
 }

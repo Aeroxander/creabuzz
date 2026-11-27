@@ -1,7 +1,6 @@
 import { TEAM_ROLE_WORDS } from "@creaton/core/project/team.ts";
 import type { ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
-import { nameOf, pictureOf, type ProfileMetadata } from "../../lib/profiles";
+import { nameOf, type ProfileMetadata } from "../../lib/profiles";
 import { Avatar } from "../../ui/avatar";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
@@ -34,19 +33,9 @@ function Person({
   const name = nameOf(profiles, pubkey);
   return (
     <li className="flex items-center gap-3 py-2" data-testid="person">
-      <Avatar
-        name={name}
-        picture={pictureOf(profiles, pubkey)}
-        pubkey={pubkey}
-      />
+      <Avatar name={name} pubkey={pubkey} />
       <div className="min-w-0 flex-1">
-        <Link
-          className="-my-1.5 block truncate py-1.5 font-semibold hover:underline"
-          params={{ pubkey }}
-          to="/u/$pubkey"
-        >
-          {name}
-        </Link>
+        <p className="truncate font-semibold">{name}</p>
         <p className="truncate text-xs text-muted">{line}</p>
       </div>
       {action}

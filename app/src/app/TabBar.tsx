@@ -16,12 +16,7 @@ const TABS: readonly Tab[] = [
     to: "/",
     label: "Home",
     icon: House,
-    owns: (p) =>
-      p === "/" ||
-      p.startsWith("/p/") ||
-      p.startsWith("/post/") ||
-      p.startsWith("/u/") ||
-      p.startsWith("/tag/"),
+    owns: (p) => p === "/" || p.startsWith("/p/"),
   },
   { to: "/start", label: "Start", icon: Plus, owns: (p) => p === "/start" },
   {

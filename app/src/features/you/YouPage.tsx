@@ -6,13 +6,12 @@ import {
 } from "@creaton/core/account/passkey-identity.ts";
 import { forgetIdentity } from "@creaton/core/client/identity.ts";
 import { Link } from "@tanstack/react-router";
-import { Bookmark, ChevronRight, EyeOff, KeyRound, LogOut } from "lucide-react";
+import { KeyRound, LogOut } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
 import { ScreenHeader } from "../../app/BackHeader";
 import { useAccount } from "../../lib/account";
 import { nameOf, useProfiles } from "../../lib/profiles";
 import { saveProfile } from "../../lib/profile-save";
-import { useMutes } from "../../lib/mutes";
 import { investingOn } from "../../lib/server";
 import { Button, ButtonLink } from "../../ui/button";
 import { EmptyState } from "../../ui/empty-state";
@@ -23,11 +22,7 @@ import { useToast } from "../../ui/toast";
 import { BACKED_UP_KEY, RecoveryKeyPanel } from "../account/RecoveryKeyPanel";
 import { ProjectCard } from "../home/ProjectCard";
 import { SenderChoice } from "../money/SenderChoice";
-import { ProfileHead } from "../profile/ProfilePage";
-import { HiddenSheet } from "../room/HiddenSheet";
-import { NOT_SAVED } from "../room/room-words";
-import { forgetAllHiddenPictures } from "../pictures/hidden-pictures";
-import { forgetAllReported } from "../safety/reported";
+import { ProfileHead } from "../profile/ProfileHead";
 import { useProjectsBy } from "../profile/use-own-projects";
 
 // What this account holds across projects (money calls and ABIs load only where investing is on).
@@ -62,8 +57,8 @@ function SignedOut() {
         testId="you-signed-out"
         title="Make your account"
       >
-        Follow projects, post, send messages and ask to join a team. It takes a
-        name and a tap.
+        Back a project, start one, or ask to join a team. It takes a name and a
+        tap.
       </EmptyState>
     </main>
   );
@@ -93,15 +88,6 @@ function SignedIn({ me }: { me: string }) {
         title="You"
       />
       <ProfileHead level="h2" pubkey={me} />
-      <Link
-        className="glass glass-text flex min-h-14 items-center gap-3 rounded-2xl px-4"
-        data-testid="you-saved"
-        to="/you/saved"
-      >
-        <Bookmark aria-hidden="true" className="text-mint-ink" size={20} />
-        <span className="flex-1 font-semibold">Saved posts</span>
-        <ChevronRight aria-hidden="true" className="text-muted" size={20} />
-      </Link>
       {investingOn() ? (
         <Suspense fallback={null}>
           <YourSharesList />
@@ -216,30 +202,8 @@ function EditProfileSheet({
 function AccountTab() {
   const [showKey, setShowKey] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const [hiddenOpen, setHiddenOpen] = useState(false);
-  const mutes = useMutes();
-  const toast = useToast();
   return (
     <div className="flex flex-col gap-3" data-testid="account-tab">
-      <Button
-        block
-        data-testid="you-hidden"
-        onClick={() => setHiddenOpen(true)}
-        variant="secondary"
-      >
-        <EyeOff aria-hidden="true" size={18} />
-        {mutes.ready ? `Hidden people (${mutes.muted.size})` : "Hidden people"}
-      </Button>
-      <HiddenSheet
-        hidden={[...mutes.muted]}
-        onOpenChange={setHiddenOpen}
-        onShowAgain={(pubkey) =>
-          void mutes.showAgain(pubkey).catch(() => toast(NOT_SAVED, "problem"))
-        }
-        open={hiddenOpen}
-        pending={mutes.pending}
-        unknown={mutes.failed}
-      />
       <Button block onClick={() => setShowKey(true)} variant="secondary">
         <KeyRound aria-hidden="true" size={18} />
         Save your recovery key
@@ -278,8 +242,6 @@ function AccountTab() {
               clearPasskeySession();
               if (hasPasskeyIdentity()) removePasskeyIdentity();
               forgetIdentity();
-              forgetAllReported();
-              forgetAllHiddenPictures();
               try {
                 localStorage.removeItem(BACKED_UP_KEY);
               } catch {

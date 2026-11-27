@@ -1,7 +1,6 @@
 import { lazy, type ComponentProps, Suspense, useState } from "react";
 
-// The writing box carries the picture work (drawing again, cleaning, sending), which the first screen does not need: it loads
-// the first time the box is opened.
+// The writing box loads the first time it is opened.
 const ComposerSheet = lazy(() =>
   import("./Composer").then((m) => ({ default: m.ComposerSheet })),
 );

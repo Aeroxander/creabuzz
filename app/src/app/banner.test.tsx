@@ -55,10 +55,6 @@ const SHELL_DRAWS: Record<string, 0 | 1> = {
   "/start": 1,
   "/week": 1,
   "/you": 1,
-  "/you/saved": 1,
-  "/tag/$tag": 1,
-  "/post/$id": 1,
-  "/u/$pubkey": 1,
   "/welcome": 0,
 };
 
@@ -171,11 +167,6 @@ describe("the banner on every sheet that shows money", () => {
     "features/account/RecoveryKeySheet.tsx": "a secret key, no money",
     "features/account/TermsAgainHost.tsx": "the terms, no money",
     "features/posts/Composer.tsx": "a post, no money",
-    "features/room/HiddenSheet.tsx": "the people you hide, no money",
-    "features/room/PostMenu.tsx": "a list of presses on a post, no money",
-    "features/room/RoomSheets.tsx": "the report form, no money",
-    "features/safety/PostMore.tsx":
-      "the question before deleting a post, no money",
     "features/tasks/PostTaskSheet.tsx": "the old task board: not mounted",
     "features/tasks/TaskCard.tsx": "the old task board: not mounted",
     "features/week/WeeklySheet.tsx": "the weekly note, no money",

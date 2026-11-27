@@ -18,22 +18,6 @@ const SignUpPage = lazyRouteComponent(
   () => import("../features/account/SignUpPage"),
   "SignUpPage",
 );
-const PostPage = lazyRouteComponent(
-  () => import("../features/posts/PostPage"),
-  "PostPage",
-);
-const ProfilePage = lazyRouteComponent(
-  () => import("../features/profile/ProfilePage"),
-  "ProfilePage",
-);
-const SavedPage = lazyRouteComponent(
-  () => import("../features/saved/SavedPage"),
-  "SavedPage",
-);
-const TopicPage = lazyRouteComponent(
-  () => import("../features/tags/TopicPage"),
-  "TopicPage",
-);
 const StartPage = lazyRouteComponent(
   () => import("../features/start/StartPage"),
   "StartPage",
@@ -84,37 +68,6 @@ const you = createRoute({
   path: "/you",
   component: YouPage,
 });
-/** Every post under one topic (`#lamps`). */
-const topic = createRoute({
-  getParentRoute: () => root,
-  path: "/tag/$tag",
-  component: function TopicRoute() {
-    const { tag } = topic.useParams();
-    return <TopicPage key={tag} tag={tag} />;
-  },
-});
-/** The posts this person saved. */
-const saved = createRoute({
-  getParentRoute: () => root,
-  path: "/you/saved",
-  component: SavedPage,
-});
-const post = createRoute({
-  getParentRoute: () => root,
-  path: "/post/$id",
-  component: function PostRoute() {
-    const { id } = post.useParams();
-    return <PostPage id={id} key={id} />;
-  },
-});
-const person = createRoute({
-  getParentRoute: () => root,
-  path: "/u/$pubkey",
-  component: function PersonRoute() {
-    const { pubkey } = person.useParams();
-    return <ProfilePage key={pubkey} pubkey={pubkey} />;
-  },
-});
 const welcome = createRoute({
   getParentRoute: () => root,
   path: "/welcome",
@@ -138,10 +91,6 @@ export function createAppRouter() {
     start,
     week,
     you,
-    saved,
-    topic,
-    post,
-    person,
     welcome,
   ]);
   return createRouter({

@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { cn } from "./cn";
 
 const SIZES = {
@@ -7,7 +6,7 @@ const SIZES = {
   lg: "h-16 w-16 text-xl",
 };
 
-/** A stable hue for a person, so the same person always has the same colour when they have no picture. */
+/** A stable hue for a person, so the same person always has the same colour. */
 export function hueOf(key: string): number {
   let hash = 0;
   for (let i = 0; i < key.length; i += 1)
@@ -25,25 +24,22 @@ export function initialsOf(name: string): string {
 }
 
 /**
- * A person's picture, or their initials on their colour. Decorative by default: the name next to it is what a screen
- * reader reads, so it is not read twice.
+ * A person's initials on their colour. No picture is ever fetched from a web address, so drawing a name never tells a
+ * stranger's server that someone looked. Decorative: the name next to it is what a screen reader reads, so it is not read
+ * twice.
  */
 export function Avatar({
   name,
   pubkey,
-  picture,
   size = "md",
   className,
 }: {
   name: string;
   pubkey: string;
-  picture?: string | null;
   size?: keyof typeof SIZES;
   className?: string;
 }) {
-  const [broken, setBroken] = useState(false);
   const hue = hueOf(pubkey);
-  const showPicture = Boolean(picture) && !broken;
   return (
     <span
       aria-hidden="true"
@@ -53,26 +49,11 @@ export function Avatar({
         className,
       )}
       data-testid="avatar"
-      style={
-        showPicture
-          ? undefined
-          : {
-              background: `linear-gradient(160deg, hsl(${hue} 55% 40%), hsl(${(hue + 40) % 360} 55% 28%))`,
-            }
-      }
+      style={{
+        background: `linear-gradient(160deg, hsl(${hue} 55% 40%), hsl(${(hue + 40) % 360} 55% 28%))`,
+      }}
     >
-      {showPicture ? (
-        <img
-          alt=""
-          className="h-full w-full object-cover"
-          loading="lazy"
-          onError={() => setBroken(true)}
-          referrerPolicy="no-referrer"
-          src={picture ?? undefined}
-        />
-      ) : (
-        initialsOf(name)
-      )}
+      {initialsOf(name)}
     </span>
   );
 }

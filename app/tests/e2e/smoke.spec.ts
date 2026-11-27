@@ -225,19 +225,6 @@ test("with investing on, the four tabs fit at 360, and a project that is not on 
   await expectNoSidewaysScroll(page, "Project, investing on, 360");
 });
 
-test("a post opens with its comments", async ({ page }) => {
-  const relay = createMockRelay();
-  const { post } = seed(relay);
-  await install(page, relay, READER_KEY);
-  await page.goto(`/post/${post.id}`);
-  await expect(page.getByTestId("post-focus")).toContainText(
-    "First lamp is lit",
-    { timeout: 20_000 },
-  );
-  await expect(page.getByTestId("comment")).toContainText("Which stall?");
-  await expectAtMostOneGreen(page, "Post");
-});
-
 test("You shows projects and the account, signed in", async ({ page }) => {
   const relay = createMockRelay();
   seed(relay);

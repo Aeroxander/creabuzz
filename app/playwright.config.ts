@@ -28,12 +28,7 @@ export default defineConfig({
         "**/join.spec.ts",
         "**/a11y.spec.ts",
         "**/passkey.spec.ts",
-        // Topics, saved posts, hidden people and reports (the mock server, 360 wide).
-        "**/bookmarks.spec.ts",
-        "**/mutes.spec.ts",
-        "**/report.spec.ts",
-        // Pictures in posts, editing and deleting, reposts and quotes, and the recovery key (the mock server).
-        "**/pictures.spec.ts",
+        // The recovery key (the mock server, 360 wide).
         "**/recovery-key.spec.ts",
         // The pot contracts on a real local chain (they start their own anvil; skipped without one).
         "**/pot-*.spec.ts",

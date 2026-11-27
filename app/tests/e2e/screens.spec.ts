@@ -300,15 +300,3 @@ test("sign-up", async ({ page }) => {
   await page.getByTestId("onboarding-name").fill("Nia Newcomer");
   await shoot(page, "07-sign-up");
 });
-
-test("a post", async ({ page }) => {
-  const relay = createMockRelay();
-  const { post } = seed(relay);
-  await install(page, relay, RAE_KEY);
-  await page.goto(`/post/${post.id}`);
-  await expect(page.getByTestId("comment")).toHaveCount(2, { timeout: 20_000 });
-  await expect(page.getByTestId("comment").first()).toContainText(
-    "Rae Lindqvist",
-  );
-  await shoot(page, "08-post");
-});

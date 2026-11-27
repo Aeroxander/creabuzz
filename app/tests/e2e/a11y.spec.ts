@@ -50,21 +50,6 @@ function seed(relay: Relay) {
       now() - DAY,
     ),
   );
-  const post = event(1, FOUNDER, "First lamp is lit.", [], now() - 3600);
-  relay.seed(post);
-  relay.seed(
-    event(
-      1,
-      READER,
-      "Which stall?",
-      [
-        ["e", post.id, "", "root"],
-        ["p", FOUNDER],
-      ],
-      now() - 600,
-    ),
-  );
-  return { post };
 }
 
 /** Let reads settle so a skeleton is not what is measured, then measure. */
@@ -88,7 +73,7 @@ for (const size of WIDTHS)
       await page.setViewportSize(size);
       await page.emulateMedia({ colorScheme: scheme });
       const relay = createMockRelay();
-      const { post } = seed(relay);
+      seed(relay);
       await install(page, relay, READER_KEY, {
         investing: true,
         relaySelf: RELAY,
@@ -113,11 +98,7 @@ for (const size of WIDTHS)
       await page.getByTestId("tab-bar").waitFor({ timeout: 20_000 });
       await check(page, `You, ${label}`);
 
-      for (const [name, path] of [
-        ["Start", "/start"],
-        ["Post", `/post/${post.id}`],
-        ["Profile", `/u/${FOUNDER}`],
-      ] as const) {
+      for (const [name, path] of [["Start", "/start"]] as const) {
         await page.goto(path);
         await page.locator("main").waitFor({ timeout: 20_000 });
         await check(page, `${name}, ${label}`);
