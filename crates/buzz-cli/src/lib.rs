@@ -78,91 +78,16 @@ Options:
 /// for `-h`, which is what gives the two depths: `-h` keeps the group-level
 /// summary, `--help` shows every subcommand under every group.
 fn build_command() -> clap::Command {
-    build_command_with(raise_commands_enabled())
+    build_command_with()
 }
 
-/// [`build_command`] with the raise-era launchpad surface shown or hidden.
-/// Taking the switch as an argument keeps tests off the process environment.
-fn build_command_with(raise_commands: bool) -> clap::Command {
-    let mut cmd = Cli::command();
-    if raise_commands {
-        cmd = cmd.mut_subcommand("launchpad", |launchpad| {
-            let launchpad = RAISE_SUBCOMMANDS.iter().fold(launchpad, |lp, name| {
-                lp.mut_subcommand(*name, |sub| sub.hide(false))
-            });
-            launchpad.mut_subcommand("curate", |curate| {
-                RAISE_CURATE_ARGS
-                    .iter()
-                    .fold(curate, |c, arg| c.mut_arg(*arg, |a| a.hide(false)))
-            })
-        });
-    }
+fn build_command_with() -> clap::Command {
+    let cmd = Cli::command();
     let groups = help_tree::render(&cmd, 1);
     let full = help_tree::render(&cmd, usize::MAX);
     cmd.help_template(ROOT_HELP_TEMPLATE)
         .after_help(format!("Commands:\n{groups}"))
         .after_long_help(format!("Commands:\n{full}"))
-}
-
-/// Set to `1` to bring back the raise-era launchpad commands (token minting,
-/// auction bids, milestone claims and verdicts, raise fields on `curate`,
-/// `futarchy-budget` proposals). The product offers no raise (D137), so they
-/// stay out of `--help` and refuse to run without it; development journeys
-/// that still exercise the frozen raise contracts set it.
-pub const ENV_DEV_RAISE_COMMANDS: &str = "BUZZ_DEV_RAISE_COMMANDS";
-
-/// `buzz launchpad` subcommands that only serve a raise.
-const RAISE_SUBCOMMANDS: [&str; 5] = [
-    "mint-token",
-    "compose-bid",
-    "record-bid",
-    "record-claim",
-    "record-verdict",
-];
-
-/// `buzz launchpad curate` flags that only describe a raise.
-const RAISE_CURATE_ARGS: [&str; 4] = ["currency", "floor-price", "required-raised", "auction"];
-
-fn raise_commands_enabled() -> bool {
-    std::env::var(ENV_DEV_RAISE_COMMANDS).is_ok_and(|v| v == "1")
-}
-
-/// Refuse a raise-era launchpad command unless the development switch is on.
-fn check_raise_gate(cmd: &Cmd, enabled: bool) -> Result<(), CliError> {
-    if enabled {
-        return Ok(());
-    }
-    let Cmd::Launchpad(sub) = cmd else {
-        return Ok(());
-    };
-    let what = match sub {
-        LaunchpadCmd::MintToken { .. } => "launchpad mint-token",
-        LaunchpadCmd::ComposeBid { .. } => "launchpad compose-bid",
-        LaunchpadCmd::RecordBid { .. } => "launchpad record-bid",
-        LaunchpadCmd::RecordClaim { .. } => "launchpad record-claim",
-        LaunchpadCmd::RecordVerdict { .. } => "launchpad record-verdict",
-        LaunchpadCmd::Curate {
-            currency,
-            floor_price,
-            required_raised,
-            auction,
-            ..
-        } if currency.is_some()
-            || floor_price.is_some()
-            || required_raised.is_some()
-            || auction.is_some() =>
-        {
-            "launchpad curate with fundraising fields"
-        }
-        LaunchpadCmd::RecordProposal { kind, .. } if kind == "futarchy-budget" => {
-            "launchpad record-proposal --kind futarchy-budget"
-        }
-        _ => return Ok(()),
-    };
-    Err(CliError::Usage(format!(
-        "`buzz {what}` belongs to fundraising, which is not offered; \
-         set {ENV_DEV_RAISE_COMMANDS}=1 to use it in development"
-    )))
 }
 
 fn parse_args<I, S>(args: I) -> Result<Cli, clap::Error>
@@ -307,9 +232,6 @@ enum Cmd {
     /// Manage your custom emoji set (workspace palette is the union of all members' sets)
     #[command(subcommand)]
     Emoji(EmojiCmd),
-    /// Search and share GIFs via the relay's KLIPY proxy
-    #[command(subcommand)]
-    Gifs(GifsCmd),
     /// List, open, and manage direct messages
     #[command(subcommand)]
     Dms(DmsCmd),
@@ -331,30 +253,15 @@ enum Cmd {
     /// Announce and discover git repositories (NIP-34)
     #[command(subcommand)]
     Repos(ReposCmd),
-    /// Create and manage multi-repo projects (NIP-MP)
-    #[command(subcommand)]
-    Projects(ProjectsCmd),
     /// Discover and manage DAO launches (NIP-LP)
     #[command(subcommand)]
     Launchpad(LaunchpadCmd),
-    /// Send, get, list, and set status on git patches (NIP-34)
-    #[command(subcommand)]
-    Patches(PatchesCmd),
-    /// Create, get, list, and set status on git issues (NIP-34)
-    #[command(subcommand)]
-    Issues(IssuesCmd),
-    /// Open, update, list, and set status on git pull requests (NIP-34)
-    #[command(subcommand)]
-    Pr(PrCmd),
     /// Upload and download relay Blossom media
     #[command(subcommand)]
     Media(MediaCmd),
     /// Upload files to the relay's Blossom store
     #[command(subcommand)]
     Upload(UploadCmd),
-    /// Agent engram management — persistent memory per NIP-AE
-    #[command(subcommand)]
-    Mem(MemCmd),
     /// Persona pack operations (local, no relay connection needed)
     #[command(subcommand)]
     Pack(PackCmd),
@@ -364,12 +271,6 @@ enum Cmd {
     /// Community org graph — roles, grants, and budgets (NIP-ORG)
     #[command(subcommand)]
     Org(OrgCmd),
-    /// The trustgraph scoring operator — score roots + gate rotation (NIP-LP 37006)
-    #[command(subcommand)]
-    Trustgraph(TrustgraphCmd),
-    /// Agent Wiki — agent-maintained knowledge base (kind:44002)
-    #[command(subcommand)]
-    Agwiki(AgwikiCmd),
     /// Organizational diagnostic — the Phase 4 instrument (OA.md §6)
     ///
     /// Runs the differentiated instrument over the recent signed event
@@ -384,9 +285,6 @@ enum Cmd {
         #[arg(long)]
         limit: Option<u32>,
     },
-    /// Self-organizing agent teams — teamwork strategies and runs (arXiv 2609.22682)
-    #[command(subcommand)]
-    Team(TeamCmd),
     /// Project templates — turn an empty community into a working project
     #[command(subcommand)]
     Templates(TemplatesCmd),
@@ -1019,31 +917,6 @@ pub enum EmojiCmd {
 }
 
 #[derive(Subcommand)]
-pub enum GifsCmd {
-    /// Search or browse trending GIFs via the relay's KLIPY proxy.
-    ///
-    /// Omitting --query returns trending GIFs. The output is a JSON array of
-    /// GIF objects; paste the `cdn_url` field directly into
-    /// `buzz messages send --content` to share a GIF.
-    Search {
-        /// Search text; omit or leave empty for trending
-        #[arg(long)]
-        query: Option<String>,
-        /// BCP 47 locale for provider results (default: $LANG or en_US)
-        #[arg(long)]
-        locale: Option<String>,
-    },
-    /// Report a selected GIF to the provider so it enters your Recents.
-    ///
-    /// The slug is the provider identifier in the search result objects.
-    Share {
-        /// Provider GIF slug from a search result
-        #[arg(long)]
-        slug: String,
-    },
-}
-
-#[derive(Subcommand)]
 pub enum DmsCmd {
     /// List direct message conversations
     List {
@@ -1456,38 +1329,6 @@ pub enum ReposCmd {
     /// Manage branch and tag protection rules on one of your repositories.
     #[command(subcommand)]
     Protect(ReposProtectCmd),
-    /// Inspect or change the relay-hosted repository's default branch.
-    #[command(subcommand)]
-    DefaultBranch(ReposDefaultBranchCmd),
-}
-
-/// Commands for the authoritative Git default branch, not announcement metadata.
-#[derive(Subcommand)]
-pub enum ReposDefaultBranchCmd {
-    /// Read the default branch and observed manifest version.
-    Get {
-        /// Repository identifier.
-        #[arg(long)]
-        id: String,
-        /// Repository owner (64-char hex). Defaults to your signing identity.
-        #[arg(long)]
-        owner: Option<String>,
-    },
-    /// Select an existing branch without moving or deleting any refs.
-    Set {
-        /// Repository identifier.
-        #[arg(long)]
-        id: String,
-        /// Repository owner (64-char hex). Defaults to your signing identity.
-        #[arg(long)]
-        owner: Option<String>,
-        /// Short branch name, e.g. main or release/v1 (not refs/heads/main).
-        #[arg(long)]
-        branch: String,
-        /// Manifest digest returned by get. Omit to read it before updating.
-        #[arg(long)]
-        expected_manifest: Option<String>,
-    },
 }
 
 /// Commands for inspecting and changing repository protection rules.
@@ -1542,85 +1383,8 @@ pub enum RepoPushRole {
     Member,
 }
 
-/// Visibility of a multi-repo project listing.
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
-pub enum ProjectVisibility {
-    /// Project appears in public listings (default).
-    Listed,
-    /// Project is hidden from public listings.
-    Unlisted,
-}
-
-impl ProjectVisibility {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            ProjectVisibility::Listed => "listed",
-            ProjectVisibility::Unlisted => "unlisted",
-        }
-    }
-}
-
 #[derive(Subcommand)]
 pub enum LaunchpadCmd {
-    /// Open a majeur proposal on a bound DAO (chain-local, opt-in via
-    /// BUZZ_EVM_*; prints the proposal id for `vote`/`process`)
-    Propose {
-        /// Bound DAO address (`0x…`)
-        #[arg(long)]
-        dao: String,
-        /// Operation: 0 = CALL (fixed governance policy)
-        #[arg(long, default_value_t = 0)]
-        op: u8,
-        /// Target of the operation (`0x…`)
-        #[arg(long)]
-        to: String,
-        /// ETH value of the operation (decimal; default 0)
-        #[arg(long, default_value = "0")]
-        value: String,
-        /// 0x calldata of the proposed operation
-        #[arg(long)]
-        data: String,
-        /// Caller-chosen nonce (0x + 64 hex); part of the proposal id
-        #[arg(long)]
-        nonce: String,
-    },
-    /// Cast a majeur vote (for | against | abstain)
-    Vote(commands::launchpad_gov::VoteArgs),
-    /// Queue a proposal once its support has held for the lane's time (anyone may)
-    Queue {
-        /// Bound DAO address (`0x…`)
-        #[arg(long)]
-        dao: String,
-        /// Proposal id (0x + 64 hex)
-        #[arg(long)]
-        id: String,
-    },
-    /// Execute a passed proposal after votes + timelock
-    Process {
-        /// Bound DAO address (`0x…`)
-        #[arg(long)]
-        dao: String,
-        /// Operation: 0 = CALL (fixed governance policy)
-        #[arg(long, default_value_t = 0)]
-        op: u8,
-        /// Target of the operation (`0x…`)
-        #[arg(long)]
-        to: String,
-        /// ETH value of the operation (decimal; default 0)
-        #[arg(long, default_value = "0")]
-        value: String,
-        /// 0x calldata of the operation
-        #[arg(long)]
-        data: String,
-        /// The same nonce `propose` used
-        #[arg(long)]
-        nonce: String,
-    },
-    /// The contributor path: mandate, project, claim, reviewers, payout, award
-    Work {
-        #[command(subcommand)]
-        step: commands::launchpad_work::WorkCmd,
-    },
     /// Tasks with a finish line, from the helper's side: mine, next, list, show, open, offer, accept, hand in
     /// (with reported numbers), ask for more time, give up. Every read prints stable JSON
     /// (`"schema": "creaton.tasks.v1"`)
@@ -1781,773 +1545,6 @@ Example:\n  buzz launchpad start --name 'Star Atlas' --goal 'Publish the norther
         #[arg(long = "sandbox-supervisor")]
         sandbox_supervisor: String,
     },
-    /// Read a proposal's state (the D6 quorum-math input)
-    ProposalState {
-        /// Bound DAO address (`0x…`)
-        #[arg(long)]
-        dao: String,
-        /// Proposal id (0x + 64 hex)
-        #[arg(long)]
-        id: String,
-    },
-    /// List launches (NIP-LP kind:37001 directory)
-    List {
-        /// Maximum number of results
-        #[arg(long)]
-        limit: Option<u32>,
-    },
-    /// Show a launch with mirrors and effective stage
-    Show {
-        /// Launch id (slug)
-        id: String,
-        /// Founder pubkey (64-char hex). Defaults to the current identity.
-        #[arg(long)]
-        author: Option<String>,
-    },
-    /// Publish a launch record (NIP-LP kind:37001)
-    Curate {
-        /// Launch id (slug): ^[a-z0-9][a-z0-9_-]{0,63}$
-        id: String,
-        /// Display name
-        #[arg(long)]
-        name: String,
-        /// One-paragraph pitch
-        #[arg(long, default_value = "")]
-        pitch: String,
-        /// Numeric chain id (e.g. 11155111)
-        #[arg(long)]
-        chain: Option<String>,
-        /// Raise currency (0x address, e.g. USDC)
-        #[arg(long, hide = true)]
-        currency: Option<String>,
-        /// Floor price in smallest currency units
-        #[arg(long, name = "floor-price", hide = true)]
-        floor_price: Option<String>,
-        /// Graduation threshold in smallest currency units
-        #[arg(long, name = "required-raised", hide = true)]
-        required_raised: Option<String>,
-        /// Auction contract (0x address)
-        #[arg(long, hide = true)]
-        auction: Option<String>,
-        /// Token contract (0x address)
-        #[arg(long)]
-        token: Option<String>,
-        /// Treasury contract (0x address)
-        #[arg(long)]
-        treasury: Option<String>,
-        /// Admission track: `curated` (default) or `community`
-        #[arg(long, default_value = "curated")]
-        admission: String,
-    },
-    /// Delete own launch (signer-self tombstone)
-    Delete {
-        /// Launch id (slug)
-        id: String,
-    },
-    /// Mint a ProjectToken via forge script (dev-local chains by default)
-    #[command(name = "mint-token", hide = true)]
-    MintToken {
-        /// Token name (1–64 chars)
-        #[arg(long)]
-        name: String,
-        /// Token symbol (1–16 chars)
-        #[arg(long)]
-        symbol: String,
-        /// Total supply in whole tokens (18 decimals)
-        #[arg(long)]
-        supply: String,
-        /// Treasury recipient (0x address, receives full supply)
-        #[arg(long)]
-        treasury: String,
-        /// JSON-RPC endpoint (default local Anvil)
-        #[arg(long, default_value = "http://127.0.0.1:8545")]
-        rpc_url: String,
-        /// Deployer private key (default Anvil key 0 — dev only)
-        #[arg(
-            long,
-            default_value = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-        )]
-        private_key: String,
-        /// Contracts workspace dir
-        #[arg(long, default_value = "contracts")]
-        contracts_dir: String,
-        /// CREATE2 salt (default: unix time, always unique)
-        #[arg(long)]
-        salt: Option<String>,
-        /// Initial paired reserve in ETH (default 0.1; native pairing requires nonzero)
-        #[arg(long, name = "paired-deposit-eth", default_value = "0.1")]
-        paired_deposit_eth: String,
-        /// Allow public-network deploys
-        #[arg(long, name = "i-know-what-i-am-doing", default_value_t = false)]
-        i_know_what_i_am_doing: bool,
-    },
-    /// Compose an unsigned bid transaction (submitBid + Permit2 approve)
-    #[command(name = "compose-bid", hide = true)]
-    ComposeBid {
-        /// Launch id (slug)
-        id: String,
-        /// Author the envelope as an agent (sets the agent marker; the
-        /// mirror, when recorded, carries NIP-OA attestation from
-        /// BUZZ_AUTH_TAG)
-        #[arg(long)]
-        as_agent: bool,
-        /// Auction contract (0x address)
-        #[arg(long)]
-        auction: String,
-        /// Raise currency (0x address; omitted for native coin)
-        #[arg(long)]
-        currency: Option<String>,
-        /// Bid budget in smallest currency units
-        #[arg(long)]
-        budget: String,
-        /// Max price in smallest currency units per token (Q96 *before* snap)
-        #[arg(long, name = "max-price")]
-        max_price: String,
-        /// Tick spacing as the auction configures it (Q96)
-        #[arg(long, name = "tick-spacing")]
-        tick_spacing: String,
-        /// Current clearing price (Q96); pass --skip-clearing to compose blind
-        #[arg(long, name = "clearing-price")]
-        clearing_price: Option<String>,
-        /// Keep the max price even if it is below the clearing price
-        #[arg(long)]
-        skip_clearing: bool,
-        /// Launch floor price (Q96) — the previous-tick hint
-        #[arg(long, name = "floor-price")]
-        floor_price: String,
-        /// Chain id in the tx envelope (metadata only, no signing)
-        #[arg(long, name = "chain-id", default_value = "11155111")]
-        chain_id: String,
-        /// Bidder address (0x address; tokens/refunds settle there)
-        #[arg(long, default_value = "0x1111111111111111111111111111111111111111")]
-        owner: String,
-        /// Permit2 approve deadline as unix seconds (default +1h)
-        #[arg(long)]
-        deadline: Option<u64>,
-    },
-    /// Mirror an onchain bid into the launch feed (advisory)
-    #[command(name = "record-bid", hide = true)]
-    RecordBid {
-        /// Launch id (slug)
-        id: String,
-        /// Founder pubkey (64-char hex). Defaults to the current identity.
-        #[arg(long)]
-        author: Option<String>,
-        /// Auction bucket id
-        #[arg(long, default_value = "bucket-0")]
-        bucket: String,
-        /// Bid budget in smallest currency units
-        #[arg(long)]
-        budget: Option<String>,
-        /// Bid max price
-        #[arg(long, name = "max-price")]
-        max_price: Option<String>,
-        /// Bid transaction hash (0x + 64 hex)
-        #[arg(long)]
-        tx: Option<String>,
-    },
-    /// Publish a founder update (NIP-LP kind:47003)
-    #[command(name = "post-update")]
-    PostUpdate {
-        /// Launch id (slug)
-        id: String,
-        /// Update title
-        #[arg(long)]
-        title: String,
-        /// Update body (markdown)
-        #[arg(long)]
-        body: String,
-    },
-    /// Mirror a proposal record (plain or signal)
-    #[command(name = "record-proposal")]
-    RecordProposal {
-        /// Launch id (slug)
-        id: String,
-        /// Proposal title
-        #[arg(long)]
-        title: String,
-        /// Proposal kind
-        #[arg(long, default_value = "plain")]
-        kind: String,
-        /// Linked git issue coordinate
-        #[arg(long)]
-        issue: Option<String>,
-        /// Onchain proposal id
-        #[arg(long, name = "proposal-id")]
-        proposal_id: Option<String>,
-    },
-    /// Mirror a chain-state receipt (advisory — chain is authoritative)
-    #[command(name = "record-receipt")]
-    RecordReceipt {
-        /// Launch id (slug)
-        id: String,
-        /// Receipt table (e.g. sweep, claim, unlock, graduate)
-        #[arg(long)]
-        table: String,
-        /// Chain transaction hash
-        #[arg(long)]
-        tx: String,
-    },
-    /// Record a milestone claim (47005, table = claim)
-    #[command(name = "record-claim", hide = true)]
-    RecordClaim {
-        /// Launch id (slug)
-        id: String,
-        /// Milestone claim id (any stable hex/slug; must match onchain claimId)
-        #[arg(long, name = "claim-id")]
-        claim_id: String,
-        /// Evidence hash binding the claim to its content (Nostr/Blossom)
-        #[arg(long, name = "evidence-hash")]
-        evidence_hash: String,
-        /// Tx hash of the onchain claim that settled this milestone (0x + 64 hex)
-        #[arg(long)]
-        tx: String,
-    },
-    /// Record a verifier verdict on a claim (47005, table = verdict)
-    #[command(name = "record-verdict", hide = true)]
-    RecordVerdict {
-        /// Launch id (slug)
-        id: String,
-        /// Milestone claim id
-        #[arg(long, name = "claim-id")]
-        claim_id: String,
-        /// approve | reject
-        #[arg(long)]
-        verdict: String,
-        /// Tx hash of the onchain attestation (0x + 64 hex)
-        #[arg(long)]
-        tx: String,
-    },
-    /// Discovery-plane deployment records (kind:37018)
-    #[command(name = "deployment")]
-    Deployment {
-        #[command(subcommand)]
-        cmd: DeploymentCmd,
-    },
-}
-
-/// `buzz launchpad deployment …` — kind:37018 records that answer "where is
-/// the Summoner" from signed events alone.
-///
-/// The deployer authors these, never the relay: `DeployOrgDao.s.sol` writes
-/// `deployments/org-dao-<chainid>.json` and prints the `record` command below.
-#[derive(Subcommand)]
-pub enum DeploymentCmd {
-    /// Publish one kind:37018 record per role in a deployments manifest
-    ///
-    /// Reads the manifest the forge script wrote (`--file`) and publishes one
-    /// record per role with `d = <chainId>:<role>`. Idempotent through NIP-33:
-    /// a re-run replaces the same coordinate instead of duplicating it, and
-    /// tags/content are rebuilt deterministically from the manifest.
-    ///
-    /// `tx` and `block` come from the manifest when it carries them; forge
-    /// cannot expose the current run's transaction hashes from inside `run()`
-    /// (broadcast artifacts are written *after* the script finishes), so a
-    /// manifest without them points at forge's `run-latest.json` through its
-    /// `broadcast` field — or pass `--broadcast` explicitly.
-    #[command(name = "record")]
-    Record {
-        /// Deployments JSON written by `DeployOrgDao.s.sol`
-        #[arg(long)]
-        file: String,
-        /// Forge broadcast artifact (`broadcast/<script>/<chainid>/run-latest.json`),
-        /// used when the manifest does not carry `tx`/`block`
-        #[arg(long)]
-        broadcast: Option<String>,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum ProjectsCmd {
-    /// Create a new multi-repo project (NIP-MP kind:30621)
-    ///
-    /// With no `--repo`, creates a default repository bound to `--channel`.
-    /// Fails with Conflict if the project already exists.
-    Create {
-        /// Project identifier (slug), up to 1024 bytes
-        slug: String,
-        /// Member repository coordinate: bare Buzz repo id (e.g. `buzz`) or full
-        /// `30617:<owner-hex>:<repo-d>` for cross-owner or colon-bearing repo ids.
-        /// Omit to create a default repository named after the slug (requires `--channel`).
-        #[arg(long = "repo")]
-        repo: Vec<String>,
-        /// Display name (≤256 bytes)
-        #[arg(long)]
-        name: Option<String>,
-        /// Description (≤2048 bytes)
-        #[arg(long)]
-        description: Option<String>,
-        /// Associated Buzz channel UUID
-        #[arg(long)]
-        channel: Option<String>,
-        /// Visibility: `listed` (default) or `unlisted`
-        #[arg(long)]
-        visibility: Option<ProjectVisibility>,
-    },
-    /// Get a project by slug
-    Get {
-        /// Project slug
-        slug: String,
-        /// Owner pubkey (64-char hex). Defaults to the current identity.
-        #[arg(long)]
-        owner: Option<String>,
-    },
-    /// List projects
-    List {
-        /// Owner pubkey (64-char hex). Defaults to the current identity.
-        #[arg(long)]
-        owner: Option<String>,
-        /// Maximum number of results
-        #[arg(long)]
-        limit: Option<u32>,
-    },
-    /// Add one or more member repositories to a project
-    #[command(name = "add-repo")]
-    AddRepo {
-        /// Project slug
-        slug: String,
-        /// Member repository coordinate (bare id or full `30617:<owner-hex>:<repo-d>`)
-        #[arg(long = "repo", required = true)]
-        repo: Vec<String>,
-    },
-    /// Draft a project-linked channel for owner review in Buzz Desktop
-    #[command(name = "add-channel")]
-    AddChannel {
-        /// Project home channel UUID from the current ACP [Context]
-        #[arg(long)]
-        home_channel: String,
-        /// New channel name
-        #[arg(long)]
-        name: String,
-        /// Optional channel description
-        #[arg(long)]
-        description: Option<String>,
-        /// Channel visibility
-        #[arg(long, value_enum, default_value = "open")]
-        visibility: ChannelVisibility,
-        /// Optional temporary-channel lifetime in seconds
-        #[arg(long)]
-        ttl: Option<u64>,
-        /// Optional Desktop channel-template name
-        #[arg(long)]
-        template: Option<String>,
-    },
-    /// Remove one or more member repositories from a project
-    #[command(name = "remove-repo")]
-    RemoveRepo {
-        /// Project slug
-        slug: String,
-        /// Member repository coordinate to remove (bare id or full `30617:<owner-hex>:<repo-d>`)
-        #[arg(long = "repo", required = true)]
-        repo: Vec<String>,
-    },
-    /// Update project metadata (at least one setter or clearer required)
-    #[command(group = clap::ArgGroup::new("mutation").required(true).multiple(true))]
-    Update {
-        /// Project slug
-        slug: String,
-        /// Set the display name
-        #[arg(long, group = "mutation")]
-        name: Option<String>,
-        /// Remove the display name
-        #[arg(long, group = "mutation", conflicts_with = "name")]
-        clear_name: bool,
-        /// Set the description
-        #[arg(long, group = "mutation")]
-        description: Option<String>,
-        /// Remove the description
-        #[arg(long, group = "mutation", conflicts_with = "description")]
-        clear_description: bool,
-        /// Set the associated Buzz channel UUID
-        #[arg(long, group = "mutation")]
-        channel: Option<String>,
-        /// Remove the associated channel
-        #[arg(long, group = "mutation", conflicts_with = "channel")]
-        clear_channel: bool,
-        /// Set visibility: `listed` or `unlisted`
-        #[arg(long, group = "mutation")]
-        visibility: Option<ProjectVisibility>,
-        /// Remove the visibility tag (absence defaults to `listed`)
-        #[arg(long, group = "mutation", conflicts_with = "visibility")]
-        clear_visibility: bool,
-    },
-    /// Delete a project (head-based tombstone; verified after submit)
-    Delete {
-        /// Project slug
-        slug: String,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum PatchesCmd {
-    /// Send a git patch (NIP-34 kind:1617)
-    #[command(
-        after_help = "Examples:\n  git format-patch -1 HEAD --stdout | buzz patches send --repo-owner <hex> --repo-id myrepo --patch-file - --root\n  buzz patches send --repo-owner <hex> --repo-id myrepo --patch-file 0001-fix.patch --reply-to <prev-patch-id>"
-    )]
-    Send {
-        /// Repo owner pubkey (64-char hex)
-        #[arg(long)]
-        repo_owner: String,
-        /// Repo identifier (d-tag)
-        #[arg(long)]
-        repo_id: String,
-        /// Path to a `git format-patch` file, or '-' to read from stdin
-        #[arg(long)]
-        patch_file: String,
-        /// Earliest-unique-commit of the repo
-        #[arg(long)]
-        euc: Option<String>,
-        /// Additional recipient pubkey(s) — can be specified multiple times
-        #[arg(long = "to")]
-        to: Vec<String>,
-        /// Previous patch event id (series) or original root (revision)
-        #[arg(long)]
-        reply_to: Option<String>,
-        /// Mark as the first patch of a new series
-        #[arg(long, default_value_t = false)]
-        root: bool,
-        /// Mark as the first patch of a new revision of an existing series
-        #[arg(long, default_value_t = false)]
-        root_revision: bool,
-        /// Commit ID this patch produces when applied
-        #[arg(long)]
-        commit: Option<String>,
-        /// Parent commit ID
-        #[arg(long)]
-        parent_commit: Option<String>,
-        /// PGP signature of the commit
-        #[arg(long)]
-        commit_pgp_sig: Option<String>,
-        /// Committer identity: 'name|email|timestamp|tz-offset-minutes'
-        #[arg(long)]
-        committer: Option<String>,
-    },
-    /// Get a patch by event id
-    Get {
-        /// Patch event id (64-char hex)
-        #[arg(long)]
-        event: String,
-    },
-    /// List patches for a repo
-    List {
-        /// Repo owner pubkey (64-char hex)
-        #[arg(long)]
-        repo_owner: String,
-        /// Repo identifier (d-tag)
-        #[arg(long)]
-        repo_id: String,
-        /// Filter by patch author pubkey
-        #[arg(long)]
-        author: Option<String>,
-        /// Maximum number of results
-        #[arg(long)]
-        limit: Option<u32>,
-    },
-    /// Set status on a patch (open/merged/closed/draft — NIP-34 kind:1630-1633)
-    Status {
-        /// Root patch event id (first patch of the series/revision)
-        #[arg(long)]
-        root: String,
-        /// New status
-        #[arg(long, value_parser = ["open", "merged", "closed", "draft"])]
-        status: String,
-        /// Markdown context for the status change ('-' to read from stdin)
-        #[arg(long)]
-        content: Option<String>,
-        /// Repo owner pubkey — requires --repo-id
-        #[arg(long, requires = "repo_id")]
-        repo_owner: Option<String>,
-        /// Repo identifier (d-tag) — requires --repo-owner
-        #[arg(long, requires = "repo_owner")]
-        repo_id: Option<String>,
-        /// Earliest-unique-commit of the repo
-        #[arg(long)]
-        euc: Option<String>,
-        /// Root id of the revision that was accepted (status=merged only)
-        #[arg(long)]
-        revision: Option<String>,
-        /// Additional recipient pubkey(s) for the status event (besides the
-        /// repo owner, which is tagged automatically when --repo-owner is
-        /// given) — e.g. root/revision author. Can be specified multiple times.
-        #[arg(long = "to")]
-        to: Vec<String>,
-        /// Applied patch event id — can be specified multiple times (status=merged only).
-        /// Accepts `<id>`, `<id>:<relay-url>`, or `<id>:<relay-url>:<pubkey>`.
-        #[arg(long = "q")]
-        q: Vec<String>,
-        /// Merge commit id (status=merged only)
-        #[arg(long)]
-        merge_commit: Option<String>,
-        /// Commit id applied to the target branch — can be specified multiple times (status=merged only)
-        #[arg(long = "applied-as-commit")]
-        applied_as_commit: Vec<String>,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum PrCmd {
-    /// Open a git pull request (NIP-34 kind:1618)
-    #[command(
-        after_help = "Examples:\n  buzz pr open --repo-owner <hex> --repo-id myrepo --subject 'Fix bug' --body-file - --commit $(git rev-parse HEAD) --clone https://relay/git/owner/myrepo --branch-name fix-bug\n  buzz pr update --repo-owner <hex> --repo-id myrepo --pr <event> --pr-author <hex> --commit $(git rev-parse HEAD) --clone https://relay/git/owner/myrepo"
-    )]
-    Open {
-        /// Repo owner pubkey (64-char hex)
-        #[arg(long)]
-        repo_owner: String,
-        /// Repo identifier (d-tag)
-        #[arg(long)]
-        repo_id: String,
-        /// Pull request subject/header
-        #[arg(long, alias = "title")]
-        subject: String,
-        /// Pull request body markdown. Use '-' to read from stdin.
-        #[arg(long, conflicts_with = "body_file")]
-        body: Option<String>,
-        /// Path to pull request body markdown, or '-' to read from stdin.
-        #[arg(long, conflicts_with = "body")]
-        body_file: Option<String>,
-        /// Tip commit of the PR branch
-        #[arg(long)]
-        commit: String,
-        /// Clone URL where the tip commit can be fetched — can be specified multiple times
-        #[arg(long = "clone", required = true)]
-        clone: Vec<String>,
-        /// Recommended branch name
-        #[arg(long)]
-        branch_name: Option<String>,
-        /// Most recent common ancestor with the target branch
-        #[arg(long)]
-        merge_base: Option<String>,
-        /// Earliest-unique-commit of the repo
-        #[arg(long)]
-        euc: Option<String>,
-        /// Label — can be specified multiple times
-        #[arg(long = "label")]
-        label: Vec<String>,
-        /// Additional recipient pubkey(s) — can be specified multiple times
-        #[arg(long = "to")]
-        to: Vec<String>,
-        /// Channel where this pull request originated (NIP-29 h-tag)
-        #[arg(long)]
-        channel: Option<String>,
-        /// Root patch event id this PR revises
-        #[arg(long)]
-        revision_of: Option<String>,
-    },
-    /// Update a git pull request tip (NIP-34 kind:1619)
-    Update {
-        /// Repo owner pubkey (64-char hex)
-        #[arg(long)]
-        repo_owner: String,
-        /// Repo identifier (d-tag)
-        #[arg(long)]
-        repo_id: String,
-        /// Pull request event id being updated
-        #[arg(long)]
-        pr: String,
-        /// Pull request author's pubkey
-        #[arg(long)]
-        pr_author: String,
-        /// Updated tip commit of the PR branch
-        #[arg(long)]
-        commit: String,
-        /// Clone URL where the updated tip commit can be fetched — can be specified multiple times
-        #[arg(long = "clone", required = true)]
-        clone: Vec<String>,
-        /// Markdown context for the update. Use '-' to read from stdin.
-        #[arg(long, conflicts_with = "body_file")]
-        body: Option<String>,
-        /// Path to markdown context for the update, or '-' to read from stdin.
-        #[arg(long, conflicts_with = "body")]
-        body_file: Option<String>,
-        /// Most recent common ancestor with the target branch
-        #[arg(long)]
-        merge_base: Option<String>,
-        /// Earliest-unique-commit of the repo
-        #[arg(long)]
-        euc: Option<String>,
-        /// Additional recipient pubkey(s) — can be specified multiple times
-        #[arg(long = "to")]
-        to: Vec<String>,
-    },
-    /// Get a PR by event id
-    Get {
-        /// PR event id (64-char hex)
-        #[arg(long)]
-        event: String,
-    },
-    /// List PRs for a repo
-    List {
-        /// Repo owner pubkey (64-char hex)
-        #[arg(long)]
-        repo_owner: String,
-        /// Repo identifier (d-tag)
-        #[arg(long)]
-        repo_id: String,
-        /// Filter by PR author pubkey
-        #[arg(long)]
-        author: Option<String>,
-        /// Filter by label
-        #[arg(long)]
-        label: Option<String>,
-        /// Maximum number of results
-        #[arg(long)]
-        limit: Option<u32>,
-    },
-    /// Set status on a PR (open/merged/closed/draft — NIP-34 kind:1630-1633)
-    Status {
-        /// Pull request event id
-        #[arg(long)]
-        pr: String,
-        /// New status
-        #[arg(long, value_parser = ["open", "merged", "closed", "draft"])]
-        status: String,
-        /// Markdown context for the status change. Use '-' to read from stdin.
-        #[arg(long, conflicts_with = "body_file")]
-        body: Option<String>,
-        /// Path to markdown context for the status change, or '-' to read from stdin.
-        #[arg(long, conflicts_with = "body")]
-        body_file: Option<String>,
-        /// Repo owner pubkey — requires --repo-id
-        #[arg(long, requires = "repo_id")]
-        repo_owner: Option<String>,
-        /// Repo identifier (d-tag) — requires --repo-owner
-        #[arg(long, requires = "repo_owner")]
-        repo_id: Option<String>,
-        /// Earliest-unique-commit of the repo
-        #[arg(long)]
-        euc: Option<String>,
-        /// Additional recipient pubkey(s) for the status event (besides the
-        /// repo owner, which is tagged automatically when --repo-owner is
-        /// given) — e.g. PR author/reviewers. Can be specified multiple times.
-        #[arg(long = "to")]
-        to: Vec<String>,
-        /// Merge commit id (status=merged only)
-        #[arg(long)]
-        merge_commit: Option<String>,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum IssuesCmd {
-    /// Create a git issue (NIP-34 kind:1621)
-    Create {
-        /// Repo owner pubkey (64-char hex). Optional when `--channel` (or
-        /// `BUZZ_GIT_ORIGIN_CHANNEL_ID`) names a project home.
-        #[arg(long)]
-        repo_owner: Option<String>,
-        /// Repo identifier (d-tag). Optional when `--channel` (or
-        /// `BUZZ_GIT_ORIGIN_CHANNEL_ID`) names a project home.
-        #[arg(long)]
-        repo_id: Option<String>,
-        /// Project home channel. Infers the repository, creating one bound to
-        /// this project when none exists. Defaults to `BUZZ_GIT_ORIGIN_CHANNEL_ID`.
-        #[arg(long)]
-        channel: Option<String>,
-        /// Issue title
-        #[arg(long, alias = "subject")]
-        title: String,
-        /// Issue body, markdown. Use '-' to read from stdin.
-        #[arg(long)]
-        content: String,
-        /// Label — can be specified multiple times
-        #[arg(long = "label")]
-        label: Vec<String>,
-        /// Additional recipient pubkey(s) — can be specified multiple times
-        #[arg(long = "to")]
-        to: Vec<String>,
-    },
-    /// Get an issue by event id
-    Get {
-        /// Issue event id (64-char hex)
-        #[arg(long)]
-        event: String,
-    },
-    /// List issues for a repo
-    List {
-        /// Repo owner pubkey (64-char hex)
-        #[arg(long)]
-        repo_owner: String,
-        /// Repo identifier (d-tag)
-        #[arg(long)]
-        repo_id: String,
-        /// Filter by issue author pubkey
-        #[arg(long)]
-        author: Option<String>,
-        /// Filter by label
-        #[arg(long)]
-        label: Option<String>,
-        /// Maximum number of results
-        #[arg(long)]
-        limit: Option<u32>,
-    },
-    /// Set status on an issue (open/resolved/closed/draft — NIP-34 kind:1630-1633)
-    Status {
-        /// Issue event id
-        #[arg(long)]
-        issue: String,
-        /// New status
-        #[arg(long, value_parser = ["open", "resolved", "closed", "draft"])]
-        status: String,
-        /// Markdown context for the status change ('-' to read from stdin)
-        #[arg(long)]
-        content: Option<String>,
-        /// Repo owner pubkey — requires --repo-id
-        #[arg(long, requires = "repo_id")]
-        repo_owner: Option<String>,
-        /// Repo identifier (d-tag) — requires --repo-owner
-        #[arg(long, requires = "repo_owner")]
-        repo_id: Option<String>,
-        /// Earliest-unique-commit of the repo
-        #[arg(long)]
-        euc: Option<String>,
-        /// Additional recipient pubkey(s) for the status event (besides the
-        /// repo owner, which is tagged automatically when --repo-owner is
-        /// given) — e.g. the issue author. Can be specified multiple times.
-        #[arg(long = "to")]
-        to: Vec<String>,
-    },
-    /// Assign an issue to one or more people or agents. Only assignments
-    /// signed by the issue author or repo owner are trusted by clients;
-    /// anyone may assign themselves (sole assignee = your own pubkey).
-    Assign {
-        /// Issue event id (64-char hex)
-        #[arg(long)]
-        issue: String,
-        /// Repo owner pubkey (64-char hex)
-        #[arg(long)]
-        repo_owner: String,
-        /// Repo identifier (d-tag)
-        #[arg(long)]
-        repo_id: String,
-        /// Assignee pubkey (64-char hex) — can be specified multiple times
-        #[arg(long = "assignee", required = true)]
-        assignee: Vec<String>,
-        /// Human-readable assignee name(s) for the note body, e.g. "Thomas".
-        /// Defaults to the truncated assignee pubkeys.
-        #[arg(long)]
-        label: Option<String>,
-    },
-    /// Remove one or more assignees from an issue. Issue authors and repo
-    /// owners may remove anyone; other users may remove only themselves.
-    Unassign {
-        /// Issue event id (64-char hex)
-        #[arg(long)]
-        issue: String,
-        /// Repo owner pubkey (64-char hex)
-        #[arg(long)]
-        repo_owner: String,
-        /// Repo identifier (d-tag)
-        #[arg(long)]
-        repo_id: String,
-        /// Assignee pubkey to remove — can be specified multiple times
-        #[arg(long = "assignee", required = true)]
-        assignee: Vec<String>,
-        /// Human-readable assignee name(s) for the note body.
-        /// Defaults to the truncated assignee pubkeys.
-        #[arg(long)]
-        label: Option<String>,
-    },
 }
 
 #[derive(Subcommand)]
@@ -2569,89 +1566,6 @@ pub enum MediaCmd {
         /// Output path. Omit or use '-' to write raw bytes to stdout.
         #[arg(short, long)]
         output: Option<String>,
-    },
-}
-
-/// Subcommands for `buzz mem`.
-#[derive(Subcommand)]
-pub enum MemCmd {
-    /// List non-tombstoned memory entries
-    Ls {
-        /// Owner pubkey (hex). Overrides BUZZ_AUTH_TAG.
-        #[arg(long)]
-        owner: Option<String>,
-        /// Agent pubkey (hex) to read as this key's owner.
-        #[arg(long)]
-        agent: Option<String>,
-        /// Emit JSON instead of tab-delimited lines.
-        #[arg(long, default_value_t = false)]
-        json: bool,
-    },
-    /// Print the value of a slug to stdout (no trailing newline)
-    Get {
-        slug: String,
-        #[arg(long)]
-        owner: Option<String>,
-        /// Agent pubkey (hex) to read as this key's owner.
-        #[arg(long)]
-        agent: Option<String>,
-    },
-    /// Print sha256(value) in hex (use as `--base-hash` for `mem patch`).
-    Hash {
-        slug: String,
-        #[arg(long)]
-        owner: Option<String>,
-        /// Agent pubkey (hex) to read as this key's owner.
-        #[arg(long)]
-        agent: Option<String>,
-    },
-    /// Set a slug's value. Pass `-` to read the value from stdin.
-    Set {
-        slug: String,
-        value: String,
-        #[arg(long)]
-        owner: Option<String>,
-        /// Allow committing an empty value. Without this, a zero-byte stdin
-        /// read is rejected to prevent silent data loss from upstream
-        /// pipeline failures.
-        #[arg(long, default_value_t = false)]
-        allow_empty: bool,
-    },
-    /// Apply a unified diff to a slug's current value (safer than set).
-    ///
-    /// Reads the diff from stdin or `--patch-file`. Refuses to apply if the
-    /// slug has changed since `--base-hash` was captured, and refuses
-    /// hunks whose context doesn't match the current value verbatim.
-    Patch {
-        slug: String,
-        /// Read the patch from a file instead of stdin.
-        #[arg(long)]
-        patch_file: Option<String>,
-        /// sha256 hex digest (lowercase) of the value the patch was generated
-        /// against. Hashes the exact UTF-8 bytes returned by `buzz mem get`,
-        /// not normalized lines. Run `buzz mem hash <slug>` to capture this
-        /// before editing.
-        #[arg(long)]
-        base_hash: Option<String>,
-        /// Skip the base-hash check. Unsafe if concurrent edits are possible —
-        /// the patch will be applied against whatever the current value is,
-        /// even if another agent rewrote it after the patch was generated.
-        #[arg(long, default_value_t = false)]
-        no_base_hash: bool,
-        /// Echo the input patch + resulting sha256 and exit without writing.
-        #[arg(long, default_value_t = false)]
-        dry_run: bool,
-        /// Allow committing an empty result.
-        #[arg(long, default_value_t = false)]
-        allow_empty: bool,
-        #[arg(long)]
-        owner: Option<String>,
-    },
-    /// Publish a tombstone for a slug (cannot be used on `core`).
-    Rm {
-        slug: String,
-        #[arg(long)]
-        owner: Option<String>,
     },
 }
 
@@ -2805,455 +1719,19 @@ pub enum ModerationCmd {
     },
 }
 
-/// The trustgraph scoring operator (NIP-LP kind 37006). The scoring ENGINE
-/// is external and replaceable; this is the bridge that turns any engine's
-/// scores into the roots + proofs the launchpad and `TrustGatedHook` consume.
-#[derive(Subcommand)]
-pub enum TrustgraphCmd {
-    /// Scores file -> Merkle root + per-member proofs (local; the workspace
-    /// data stays private — only the root ships)
-    ComposeRoot {
-        /// Program id (default: the launchpad community program)
-        #[arg(long)]
-        program: Option<String>,
-        /// Epoch/checkpoint the root covers
-        #[arg(long)]
-        epoch: String,
-        /// Scores JSON ([{"member": "0x..", "score": n}]; "-" = stdin)
-        #[arg(long)]
-        scores: String,
-        /// Also write just the proofs map here (the file the indexer hosts)
-        #[arg(long)]
-        proofs_out: Option<String>,
-        /// Where the full score file + proofs live (recorded in the record)
-        #[arg(long)]
-        indexer_url: Option<String>,
-        /// Block at which the root is anchored onchain, if known
-        #[arg(long)]
-        anchor_block: Option<u64>,
-    },
-    /// Sign and publish the 37006 score-root record (relay auth)
-    PublishRoot {
-        /// Program id (default: the launchpad community program)
-        #[arg(long)]
-        program: Option<String>,
-        /// Epoch the root covers
-        #[arg(long)]
-        epoch: Option<String>,
-        /// The Merkle root (0x + 64 hex)
-        #[arg(long)]
-        root: Option<String>,
-        /// Publish from a compose-root bundle JSON instead
-        #[arg(long)]
-        from_bundle: Option<String>,
-        /// Proof file location (recorded as `indexerUrl`)
-        #[arg(long)]
-        indexer_url: Option<String>,
-        /// Onchain anchor block, if known
-        #[arg(long)]
-        anchor_block: Option<u64>,
-    },
-    /// Rotate TrustGatedHook's score root (chain opt-in: the hook owner's key)
-    RotateGate {
-        /// TrustGatedHook address (`0x…`)
-        #[arg(long)]
-        hook: String,
-        /// The new Merkle root (0x + 64 hex)
-        #[arg(long)]
-        root: String,
-        /// Minimum score for community-track admission
-        #[arg(long)]
-        min_score: u128,
-        /// Print the calldata instead of sending
-        #[arg(long)]
-        dry_run: bool,
-    },
-}
-
 /// Community org graph commands — NIP-ORG kinds:37010–37013.
 #[derive(Subcommand)]
 pub enum OrgCmd {
     /// Manage org nodes (roles, teams, agent seats)
     #[command(subcommand)]
     Node(OrgNodeCmd),
-    /// Manage org grants (delegated authority)
-    #[command(subcommand)]
-    Grant(OrgGrantCmd),
     /// Manage org budgets (autonomy bounds)
     #[command(subcommand)]
     Budget(OrgBudgetCmd),
 
-    /// Onchain spend-ceiling guard (OrgAllowance.sol) — opt-in via BUZZ_EVM_*
-    #[command(subcommand)]
-    Allowance(OrgAllowanceCmd),
-
-    /// Manage contribution records (action verification + credit)
-    #[command(subcommand)]
-    Contribution(OrgContributionCmd),
-
     /// Agent controls (emergency stop)
     #[command(subcommand)]
     Agent(OrgAgentCmd),
-
-    /// Bind the org ROOT node to an onchain DAO (NIP-ORG "Opt-in onchain
-    /// binding") — republishes the root 37010 with `content.onchain`.
-    ///
-    /// This is the NODE binding (DAO governance). Different flag surface
-    /// from the budget `--onchain` flag (the kind:37012 spend-ceiling
-    /// binding to OrgAllowance.sol): `bind` takes `--chain` + `--dao`.
-    Bind {
-        /// Root node `d` tag to bind
-        #[arg(long)]
-        root: String,
-        /// Chain identifier, e.g. `anvil-31337` or `eip155:8453`
-        #[arg(long)]
-        chain: String,
-        /// Bound DAO contract address (`0x…`, 40 hex chars)
-        #[arg(long)]
-        dao: String,
-    },
-
-    /// Exit a bound DAO by ragequitting (NIP-ORG "Opt-in onchain binding").
-    ///
-    /// Local-only (EVM value layer; no relay connection, no Nostr key).
-    /// DEV mapping: the configured value-layer spender key
-    /// (`BUZZ_SPENDER_KEY`) IS the shareholder — the Nostr-holder ↔ EVM
-    /// identity mapping is a documented simplification until the
-    /// governance/DAO-proposal handover. Burns shares (default: the full
-    /// balance) and withdraws the holder's pro-rata of each `--token`
-    /// (default: ETH).
-    Ragequit {
-        /// Bound DAO contract address (`0x…`, 40 hex chars)
-        #[arg(long)]
-        dao: String,
-        /// Shares to burn (default: the spender key's full share balance)
-        #[arg(long)]
-        shares: Option<u128>,
-        /// Treasury token to withdraw pro-rata, `0x…` (repeatable; default ETH)
-        #[arg(long = "token")]
-        tokens: Vec<String>,
-    },
-}
-
-/// Agent Wiki subcommands — kind:44002 agent-maintained knowledge base pages.
-///
-/// This is a distinct feature from the human wiki (kind:44001, Yjs/Trystero
-/// live editing): an agent distillation loop maintains an executive standup
-/// page per space. Configuration reuses the contribution classifier env vars
-/// (`BUZZ_CLASSIFIER_API_URL`, `BUZZ_CLASSIFIER_API_KEY`,
-/// `BUZZ_CLASSIFIER_MODEL`) — see `docs/agent-wiki.md`.
-#[derive(Subcommand)]
-pub enum AgwikiCmd {
-    /// Distill done tasks + contribution records into the space standup page
-    ///
-    /// Fetches a bounded source bundle (done kind:44011 tasks and published
-    /// kind:37013 contribution records) newer than the persisted cursor,
-    /// drafts an executive standup page (`<space>/standup`, rewritten to the
-    /// current truth — patch semantics, never a diary) via the classifier
-    /// endpoint, validates the markdown strictly (one retry, then fail
-    /// loudly), and either prints the draft or, with `--publish`, signs and
-    /// publishes it as kind:44002 with provenance tags (`model`,
-    /// `cost_tokens`, `sources`).
-    ///
-    /// The cursor is persisted in the standup page's front-matter
-    /// (`agwiki-cursor`) and only advances on a successful publish. A run
-    /// with nothing new never calls the LLM. Max ~1500 output tokens,
-    /// 30s timeout, 429 back-off with one retry.
-    Distill {
-        /// Wiki space (d = `<space>/standup`)
-        #[arg(long, default_value = "default")]
-        space: String,
-        /// Max source events per kind to ingest (hard cap 20)
-        #[arg(long)]
-        limit: Option<u32>,
-        /// Sign and publish the standup page instead of previewing
-        #[arg(long)]
-        publish: bool,
-        /// Use a trained skill file (a SkillOpt `best_skill.md`) as the
-        /// system prompt instead of the built-in one
-        #[arg(long)]
-        skill_file: Option<String>,
-    },
-    /// Show one agent wiki page by coordinate `<space>/<slug>`
-    Show {
-        /// Page coordinate, e.g. `default/standup`
-        page: String,
-    },
-    /// List agent wiki pages, newest revision per coordinate
-    List {
-        /// Only list pages in this space (d prefix `<space>/`)
-        #[arg(long)]
-        space: Option<String>,
-        /// Max events to scan (default 200, cap 512)
-        #[arg(long)]
-        limit: Option<u32>,
-    },
-    /// Compose `agent-draft` proposal records (47004) from wiki decision blocks
-    ///
-    /// The persona drafting loop's CLI host (docs/persona-drafting-loop.md):
-    /// scans the human wiki (44001) and agent wiki (44002) for fenced
-    /// `decision` blocks and composes one kind:47004 `agent-draft` record per
-    /// honest block — the verbatim-evidence rule strictly enforced, malformed
-    /// blocks skipped and reported, never repaired. Deterministic (no LLM in
-    /// this step). Dry-run by default; `--publish` signs and lands each draft
-    /// (agent drafts are `governance.proposal` actions at the S3 budget gate
-    /// and never broadcast onchain without a human counter-sign). Dedupe by
-    /// the `wiki` anchor tag means re-runs on unchanged pages draft nothing.
-    Draft {
-        /// Launch coordinate (`37001:<founder-hex>:<launch-id>`) drafts bind to
-        #[arg(long)]
-        launch: String,
-        /// Only scan pages in this space (d prefix `<space>/`)
-        #[arg(long)]
-        space: Option<String>,
-        /// Only scan one page (exact d match, e.g. `default/standup`)
-        #[arg(long)]
-        page: Option<String>,
-        /// Max page events to scan (default 200, cap 512)
-        #[arg(long)]
-        limit: Option<u32>,
-        /// Sign and publish the drafts instead of previewing
-        #[arg(long)]
-        publish: bool,
-    },
-    /// Train the distill skill with SkillOpt (arXiv:2605.23904 port)
-    ///
-    /// The trainable artifact is the distill system prompt. Rollouts
-    /// generate standup pages from the fixture corpus under the candidate
-    /// skill; our validators are the held-out score (page validates,
-    /// decision blocks extract, evidence verbatim). Strict held-out gate —
-    /// only improvements are kept. See docs/skillopt-port.md.
-    TrainSkill {
-        /// Fixture corpus root with train/, sel/, test/ subdirs of .md prompts
-        #[arg(long)]
-        data: Option<String>,
-        /// Epochs (the paper default is 4; the CLI defaults to 1 as a cost guard)
-        #[arg(long)]
-        epochs: Option<usize>,
-        /// Where to write the trained skill
-        #[arg(long)]
-        out: Option<String>,
-        /// Reasoning effort for all LLM stages (SkillOpt's model.reasoning_effort:
-        /// low | medium | high; default medium)
-        #[arg(long)]
-        reasoning_effort: Option<String>,
-        /// Per-role override for the optimizer stages (reflection/merges/rank)
-        #[arg(long)]
-        optimizer_effort: Option<String>,
-        /// Per-role override for target rollouts (page generation)
-        #[arg(long)]
-        target_effort: Option<String>,
-    },
-}
-
-/// Self-organizing agent teams (SAT) — `buzz team`.
-///
-/// Slice 1 of the teamwork-strategy engine from arXiv 2609.22682
-/// ("Self-Organizing Agent Teams Learn to Reason Together"): fixed agent
-/// teams execute reusable teamwork strategies P = (S, τ, α) — ordered
-/// conversational phases under a shared teamwork prompt and persistent role
-/// prompts. Kinds 44020 (strategy), 44021 (run), 44022 (turn); see
-/// `docs/agent-teams.md` for the full spec.
-#[derive(Subcommand)]
-pub enum TeamCmd {
-    /// Execute a strategy's phases against a problem (LLM conductor)
-    #[command(
-        after_help = "Examples:\n  buzz team run --strategy mechanistic_step_audit --problem \"Compute 1+1\"\n  buzz team run --strategy s1 --problem \"<text>\" --max-tokens-per-turn 400 --publish\n\nDefault prints the transcript + final answer + totals (preview). With --publish, \nsigns + publishes the kind:44022 turns and the kind:44021 run. Missing \nBUZZ_CLASSIFIER_API_URL/KEY is a hard error before any network call; an LLM \nfailure mid-run publishes nothing partial."
-    )]
-    Run {
-        /// Strategy id (the kind:44020 `d` tag), e.g. `mechanistic_step_audit`
-        #[arg(long)]
-        strategy: String,
-        /// The problem the team should solve
-        #[arg(long)]
-        problem: String,
-        /// Response token cap per LLM turn (default 700, hard cap 2048)
-        #[arg(long)]
-        max_tokens_per_turn: Option<u32>,
-        /// Org node `d` to bind roster slots to (holders first, then agent
-        /// seats, in node order). Runs an ADVISORY budget pre-flight; the
-        /// relay does not enforce budgets against team runs.
-        #[arg(long)]
-        org_node: Option<String>,
-        /// Sign and publish the run + turns instead of previewing
-        #[arg(long)]
-        publish: bool,
-    },
-    /// Reflect on a completed run and propose a revised strategy (§2.2)
-    #[command(
-        after_help = "Examples:\n  buzz team reflect --run <run-id>\n  buzz team reflect --run <run-id> --publish\n\nFetches the kind:44021 run + its strategy, asks the classifier endpoint for teamwork reflection (failure diagnosis, member-specific evidence, targeted mutations), and prints a diff of the revised strategy. With --publish, signs the revision as a new kind:44020 with d = <original-id>-rev<N> and a parentStrategy reference."
-    )]
-    Reflect {
-        /// The completed run's id (the kind:44021 `d` tag)
-        #[arg(long)]
-        run: String,
-        /// Sign and publish the revised strategy (kind:44020, d = <id>-rev<N>)
-        #[arg(long)]
-        publish: bool,
-    },
-    /// Manage team strategy definitions (kind:44020)
-    #[command(subcommand)]
-    Strategy(TeamStrategyCmd),
-    /// Seed example strategies from the paper's Appendix A
-    #[command(subcommand)]
-    Strategies(TeamStrategiesCmd),
-}
-
-/// Team strategy management — kind:44020 (addressable, d = strategy id).
-#[derive(Subcommand)]
-pub enum TeamStrategyCmd {
-    /// Strictly validate and (with --publish) publish a strategy file
-    Put {
-        /// Strategy id (`d` tag), 1..=64 chars
-        #[arg(long)]
-        id: String,
-        /// Path to a strategy JSON file
-        #[arg(long)]
-        file: String,
-        /// Sign and publish instead of previewing
-        #[arg(long)]
-        publish: bool,
-    },
-    /// Show the newest revision of one strategy
-    Get {
-        /// Strategy id
-        id: String,
-    },
-    /// List strategies, newest revision per id
-    List {
-        /// Max events to scan (default 50, cap 256)
-        #[arg(long)]
-        limit: Option<u32>,
-    },
-}
-
-/// Seeded strategy loading.
-#[derive(Subcommand)]
-pub enum TeamStrategiesCmd {
-    /// Load 2–3 strategies transcribed from arXiv 2609.22682 Appendix A
-    ///
-    /// Without --publish, prints each seed for review. With --publish,
-    /// validates + publishes each one as kind:44020 (revisions replace via
-    /// read-side LWW).
-    SeedExamples {
-        /// Sign and publish the seeds instead of previewing
-        #[arg(long)]
-        publish: bool,
-    },
-    /// Strategy banks transcribed from arXiv 2609.22682 Appendix A
-    ///
-    /// `list` prints every seedable bank under strategies/ with its strategy
-    /// count and appendix section. `seed` validates a whole bank with the
-    /// product's strict strategy schema and publishes each file as kind:44020
-    /// (`d` = file stem), skipping ids whose `d` tag already exists on the
-    /// relay — so a re-run is idempotent and never creates a second copy.
-    #[command(subcommand)]
-    Bank(BankCmd),
-}
-
-/// `buzz team strategies bank …` — the repo-root `strategies/` banks.
-#[derive(Subcommand)]
-pub enum BankCmd {
-    /// List strategy banks, their strategy counts, and appendix section
-    List {
-        /// Bank root directory (default: ./strategies)
-        #[arg(long, default_value = crate::commands::team_run::DEFAULT_BANK_DIR)]
-        dir: String,
-    },
-    /// Validate and publish one bank's strategies (idempotent by `d` tag)
-    ///
-    /// Without --publish, prints every validated strategy for review. With
-    /// --publish, each strategy reports `publish <id>` or `skip <id>: already
-    /// on the relay`, followed by a per-bank total.
-    Seed {
-        /// Bank directory name (e.g. aime-2024, gpqa-diamond)
-        bank: String,
-        /// Bank root directory (default: ./strategies)
-        #[arg(long, default_value = crate::commands::team_run::DEFAULT_BANK_DIR)]
-        dir: String,
-        /// Sign and publish instead of previewing
-        #[arg(long)]
-        publish: bool,
-    },
-}
-
-/// Org contribution record subcommands — kind:37013.
-///
-/// `contribute` is an alias for `contribution` (the canonical name), matching
-/// the classifier command family (`buzz org contribute classify ...`).
-#[derive(Subcommand)]
-#[command(visible_alias = "contribute")]
-pub enum OrgContributionCmd {
-    /// Record a contribution action with its multi-dimensional profile
-    Create {
-        /// Action id (slug): `[a-z0-9._-]{1,64}`
-        #[arg(long)]
-        id: String,
-        /// Description of the contribution action
-        #[arg(long)]
-        action: String,
-        /// Dimension in `key:value` format (repeatable)
-        #[arg(long = "dim")]
-        dim: Vec<String>,
-        /// Evidence event id (repeatable)
-        #[arg(long = "evidence")]
-        evidence: Vec<String>,
-        /// Informed-by reference (contribution record d-tag, repeatable)
-        #[arg(long = "informed-by")]
-        informed_by: Vec<String>,
-        /// Human work fraction (0.0–1.0, default 1.0)
-        #[arg(long, default_value = "1.0")]
-        human: f64,
-        /// AI work fraction (0.0–1.0, default 0.0)
-        #[arg(long, default_value = "0.0")]
-        ai: f64,
-    },
-    /// Get a contribution record by action id
-    Get {
-        /// Action id (slug)
-        #[arg(long)]
-        id: String,
-    },
-    /// List recent contribution records
-    List {
-        /// Max events to return (default 100)
-        #[arg(long)]
-        limit: Option<u32>,
-    },
-    /// Draft a kind:37013 contribution record for a completed kind-44011 task
-    /// via the LLM classifier (BUZZ_CLASSIFIER_API_URL/API_KEY/MODEL).
-    ///
-    /// The system proposes, the human disposes: without `--publish` this only
-    /// prints the validated draft (review_status stays `pending`); the
-    /// desktop Contributions tab is the review surface. With `--publish` the
-    /// record is signed with the CLI key and published with `d` = the task
-    /// event id, so re-classifying the same task replaces the same record
-    /// (NIP-33 LWW).
-    ///
-    /// LLM cost note: every drafted record spends one classifier call (plus
-    /// one retry call if the first draft fails validation). Batch mode
-    /// (`--all-done`) spends one call per drafted record, so `--limit` is a
-    /// hard cap on the per-run spend.
-    Classify {
-        /// Kind-44011 task event id (64 hex) to classify
-        #[arg(long, conflicts_with = "all_done")]
-        task: Option<String>,
-        /// Classify every done kind-44011 task that has no 37013 record yet
-        /// (batch; implies publish — previewing N drafts is not practical)
-        #[arg(long)]
-        all_done: bool,
-        /// Sign and publish the draft (default: preview only; batch always
-        /// publishes)
-        #[arg(long)]
-        publish: bool,
-        /// Max records to draft in batch mode (default 5, hard capped at 20)
-        #[arg(long, requires = "all_done")]
-        limit: Option<u32>,
-        /// Operator context appended to the task content (treated as data by
-        /// the classifier, never as instructions)
-        #[arg(long)]
-        note: Option<String>,
-    },
 }
 
 /// Org agent subcommands.
@@ -3347,50 +1825,6 @@ pub enum OrgNodeCmd {
     },
 }
 
-/// Org grant subcommands — kind:37011.
-#[derive(Subcommand)]
-pub enum OrgGrantCmd {
-    /// Create a new grant (delegated authority)
-    Create {
-        /// Grant id (slug)
-        #[arg(long)]
-        id: String,
-        /// Grantee pubkey (64-char hex) — human or agent
-        #[arg(long)]
-        grantee: String,
-        /// Org node `d` tag the issuer acts through
-        #[arg(long)]
-        via: String,
-        /// Scoped capability verb(s) (repeatable): e.g. "read:#leadership", "task:create", "spend:100000"
-        #[arg(long = "verb")]
-        verb: Vec<String>,
-        /// Parent grant id (omit for root grants from standing)
-        #[arg(long)]
-        parent_grant: Option<String>,
-        /// Expiry unix timestamp (omit for no expiry)
-        #[arg(long)]
-        expires: Option<u64>,
-    },
-    /// Revoke a grant
-    Revoke {
-        /// Grant id
-        #[arg(long)]
-        id: String,
-    },
-    /// Get a grant by id
-    Get {
-        /// Grant id
-        #[arg(long)]
-        id: String,
-    },
-    /// List all grants
-    List {
-        /// Maximum number of results
-        #[arg(long)]
-        limit: Option<u32>,
-    },
-}
-
 /// Org budget subcommands — kind:37012.
 #[derive(Subcommand)]
 pub enum OrgBudgetCmd {
@@ -3472,59 +1906,6 @@ pub enum OrgBudgetCmd {
     },
 }
 
-/// Onchain spend-ceiling guard subcommands — OrgAllowance.sol client.
-///
-/// Opt-in: with `BUZZ_EVM_RPC_URL` / `BUZZ_ALLOWANCE_CONTRACT` unset, these
-/// commands fail with a usage error and nothing else in the CLI changes.
-/// `check` is read-only and needs no relay connection; `spend` records the
-/// spend from the authorized spender key (`BUZZ_SPENDER_KEY`) and mirrors a
-/// kind:37014 Budget Spend Receipt to the relay.
-#[derive(Subcommand)]
-pub enum OrgAllowanceCmd {
-    /// Check whether a spend fits the subject's onchain allowance (read-only)
-    Check {
-        /// Budgeted agent pubkey (64-char hex — the contract's bytes32 subject)
-        #[arg(long)]
-        subject: String,
-        /// Token contract address (0x…)
-        #[arg(long)]
-        token: String,
-        /// Amount in the token's smallest unit (decimal)
-        #[arg(long)]
-        amount: String,
-        /// Budget window the epoch counter maps to: epoch | day | week | month
-        #[arg(long, default_value = "day")]
-        window: String,
-    },
-    /// Record a spend onchain (as the authorized spender) and publish a
-    /// kind:37014 Budget Spend Receipt. With `--to` the payout is ENFORCED
-    /// (`spendTo`: the contract debits the allowance and moves the tokens from
-    /// its treasury to the recipient in one transaction); without it the spend
-    /// is only recorded (`spend`, ADVISORY — no tokens move).
-    Spend {
-        /// Budgeted agent pubkey (64-char hex — the contract's bytes32 subject)
-        #[arg(long)]
-        subject: String,
-        /// Token contract address (0x…)
-        #[arg(long)]
-        token: String,
-        /// Amount in the token's smallest unit (decimal)
-        #[arg(long)]
-        amount: String,
-        /// Budget window the epoch counter maps to: epoch | day | week | month
-        #[arg(long, default_value = "day")]
-        window: String,
-        /// Unit identifier recorded in the Nostr receipt
-        #[arg(long, default_value = "usd-cents")]
-        unit: String,
-        /// Recipient address (0x…). Uses the enforced `spendTo` payout: the
-        /// OrgAllowance treasury must have approved the contract for the token.
-        /// Omit to record an advisory (accounting-only) spend.
-        #[arg(long)]
-        to: Option<String>,
-    },
-}
-
 /// Normalize hand-authored `BUZZ_AUTH_TAG` input to strict JSON.
 ///
 /// `.env` files and shell exports sometimes carry the tag in the unquoted
@@ -3561,7 +1942,6 @@ fn normalize_auth_tag_input(input: &str) -> String {
 }
 
 async fn run(cli: Cli) -> Result<(), CliError> {
-    check_raise_gate(&cli.command, raise_commands_enabled())?;
     let relay_url = client::normalize_relay_url(&cli.relay);
 
     // Pack commands are local-only — no relay connection needed.
@@ -3585,113 +1965,6 @@ async fn run(cli: Cli) -> Result<(), CliError> {
             TemplatesCmd::List => return commands::templates::cmd_list(&cli.format),
             TemplatesCmd::Show { id } => return commands::templates::cmd_show(id),
             TemplatesCmd::Apply { .. } => {}
-        }
-    }
-
-    // Onchain allowance checks are local-only — no relay connection and no
-    // Nostr key needed (the check is an EVM read). The spend path goes
-    // through the normal dispatch below: it publishes a kind:37014 receipt.
-    if let Cmd::Org(OrgCmd::Allowance(OrgAllowanceCmd::Check {
-        ref subject,
-        ref token,
-        ref amount,
-        ref window,
-    })) = cli.command
-    {
-        return commands::org::cmd_allowance_check(subject, token, amount, window).await;
-    }
-
-    // Ragequit is local-only — the EVM exit right needs no relay identity.
-    if let Cmd::Org(OrgCmd::Ragequit {
-        ref dao,
-        ref shares,
-        ref tokens,
-    }) = cli.command
-    {
-        return commands::org_ragequit::cmd_ragequit(dao, *shares, tokens.clone()).await;
-    }
-
-    // Trustgraph operator: compose and gate rotation run before auth;
-    // publish-root falls through to the relay auth below.
-    if let Cmd::Trustgraph(ref tg_cmd) = cli.command {
-        if !matches!(tg_cmd, TrustgraphCmd::PublishRoot { .. }) {
-            use TrustgraphCmd::*;
-            return match tg_cmd {
-                ComposeRoot {
-                    program,
-                    epoch,
-                    scores,
-                    proofs_out,
-                    indexer_url,
-                    anchor_block,
-                } => commands::trustgraph::cmd_compose_root(
-                    program
-                        .as_deref()
-                        .unwrap_or(commands::trustgraph::DEFAULT_PROGRAM),
-                    epoch,
-                    scores,
-                    proofs_out.as_deref(),
-                    indexer_url.as_deref(),
-                    *anchor_block,
-                ),
-                RotateGate {
-                    hook,
-                    root,
-                    min_score,
-                    dry_run,
-                } => commands::trustgraph::cmd_rotate_gate(hook, root, *min_score, *dry_run).await,
-                PublishRoot { .. } => unreachable!("publish runs after auth"),
-            };
-        }
-    }
-
-    // Governance chain commands (agentic-governance-design.md S1) are
-    // chain-local like ragequit: they run before relay auth.
-    if let Cmd::Launchpad(ref gov_cmd) = cli.command {
-        if matches!(
-            gov_cmd,
-            LaunchpadCmd::Propose { .. }
-                | LaunchpadCmd::Vote(..)
-                | LaunchpadCmd::Queue { .. }
-                | LaunchpadCmd::Process { .. }
-                | LaunchpadCmd::ProposalState { .. }
-                | LaunchpadCmd::Work { .. }
-        ) {
-            use LaunchpadCmd::*;
-            return match gov_cmd {
-                Propose {
-                    dao,
-                    op,
-                    to,
-                    value,
-                    data,
-                    nonce,
-                } => commands::launchpad_gov::cmd_propose(dao, *op, to, value, data, nonce).await,
-                Vote(args) => {
-                    commands::launchpad_gov::cmd_vote(
-                        &args.dao,
-                        &args.id,
-                        &args.support,
-                        args.shares.as_deref(),
-                        args.owner.as_deref(),
-                    )
-                    .await
-                }
-                Queue { dao, id } => commands::launchpad_gov::cmd_queue(dao, id).await,
-                Process {
-                    dao,
-                    op,
-                    to,
-                    value,
-                    data,
-                    nonce,
-                } => commands::launchpad_gov::cmd_process(dao, *op, to, value, data, nonce).await,
-                ProposalState { dao, id } => {
-                    commands::launchpad_gov::cmd_proposal_state(dao, id).await
-                }
-                Work { step } => commands::launchpad_work::run(step).await,
-                _ => unreachable!("only chain-local variants matched"),
-            };
         }
     }
 
@@ -3764,7 +2037,6 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Canvas(sub) => commands::channels::dispatch_canvas(sub, &client).await,
         Cmd::Reactions(sub) => commands::reactions::dispatch(sub, &client).await,
         Cmd::Emoji(sub) => commands::emoji::dispatch(sub, &client).await,
-        Cmd::Gifs(sub) => commands::gifs::dispatch(sub, &client).await,
         Cmd::Dms(sub) => commands::dms::dispatch(sub, &client).await,
         Cmd::Users(sub) => commands::users::dispatch(sub, &client, &cli.format).await,
         Cmd::Workflows(sub) => commands::workflows::dispatch(sub, &client).await,
@@ -3772,22 +2044,14 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Social(sub) => commands::social::dispatch(sub, &client).await,
         Cmd::Notes(sub) => commands::notes::dispatch(sub, &client).await,
         Cmd::Repos(sub) => commands::repos::dispatch(sub, &client).await,
-        Cmd::Projects(sub) => commands::projects::dispatch(sub, &client).await,
         Cmd::Launchpad(sub) => commands::launchpad::dispatch(sub, &client).await,
-        Cmd::Patches(sub) => commands::patches::dispatch(sub, &client).await,
-        Cmd::Issues(sub) => commands::issues::dispatch(sub, &client).await,
-        Cmd::Pr(sub) => commands::pr::dispatch(sub, &client).await,
         Cmd::Media(sub) => commands::upload::dispatch_media(sub, &client).await,
         Cmd::Upload(sub) => commands::upload::dispatch(sub, &client).await,
-        Cmd::Mem(sub) => commands::mem::dispatch(sub, &client).await,
         Cmd::Moderation(sub) => commands::moderation::dispatch(sub, &client, &cli.format).await,
         Cmd::Org(sub) => commands::org::dispatch(sub, &client).await,
-        Cmd::Agwiki(sub) => commands::agent_wiki::dispatch(sub, &client).await,
         Cmd::Diag { limit } => commands::diag::cmd_diag(&client, limit).await,
-        Cmd::Team(sub) => commands::team_run::dispatch(sub, &client).await,
         Cmd::Templates(sub) => commands::templates::dispatch(sub, &client).await,
         Cmd::Pack(_) => unreachable!("handled above"),
-        Cmd::Trustgraph(sub) => commands::trustgraph::dispatch(sub, &client).await,
     }
 }
 
@@ -3978,32 +2242,23 @@ mod tests {
     fn command_inventory_is_stable() {
         let expected_groups: Vec<&str> = vec![
             "agents",
-            "agwiki",
             "canvas",
             "channels",
             "diag",
             "dms",
             "emoji",
             "feed",
-            "gifs",
-            "issues",
             "launchpad",
             "media",
-            "mem",
             "messages",
             "moderation",
             "notes",
             "org",
             "pack",
-            "patches",
-            "pr",
-            "projects",
             "reactions",
             "repos",
             "social",
-            "team",
             "templates",
-            "trustgraph",
             "upload",
             "users",
             "workflows",
@@ -4138,13 +2393,12 @@ mod tests {
         );
         assert_eq!(
             names(&cmd, "repos"),
-            vec!["bind", "create", "default-branch", "get", "list", "protect"]
+            vec!["bind", "create", "get", "list", "protect"]
         );
         let repos = cmd
             .get_subcommands()
             .find(|subcommand| subcommand.get_name() == "repos")
             .expect("repos command");
-        assert_eq!(names(repos, "default-branch"), vec!["get", "set"]);
         let protect = repos
             .get_subcommands()
             .find(|subcommand| subcommand.get_name() == "protect")
@@ -4157,59 +2411,15 @@ mod tests {
         protect_names.sort();
         assert_eq!(protect_names, vec!["list", "remove", "set"]);
         assert_eq!(
-            names(&cmd, "pr"),
-            vec!["get", "list", "open", "status", "update"]
-        );
-        assert_eq!(
-            names(&cmd, "patches"),
-            vec!["get", "list", "send", "status"]
-        );
-        assert_eq!(
-            names(&cmd, "projects"),
-            vec![
-                "add-channel",
-                "add-repo",
-                "create",
-                "delete",
-                "get",
-                "list",
-                "remove-repo",
-                "update"
-            ]
-        );
-        assert_eq!(
-            names(&cmd, "issues"),
-            vec!["assign", "create", "get", "list", "status", "unassign"]
-        );
-        assert_eq!(
             names(&cmd, "launchpad"),
             vec![
                 "brain",
-                "compose-bid",
-                "curate",
-                "delete",
-                "deployment",
-                "list",
                 "manager",
-                "mint-token",
-                "post-update",
-                "process",
-                "proposal-state",
-                "propose",
-                "queue",
                 "record",
-                "record-bid",
-                "record-claim",
-                "record-proposal",
-                "record-receipt",
-                "record-verdict",
                 "seasons",
-                "show",
                 "start",
                 "tasks",
                 "updates",
-                "vote",
-                "work",
                 "work-checks"
             ]
         );
@@ -4231,153 +2441,6 @@ mod tests {
         );
     }
 
-    fn launchpad_help(raise_commands: bool) -> String {
-        let cmd = build_command_with(raise_commands);
-        let launchpad = cmd
-            .find_subcommand("launchpad")
-            .expect("launchpad group")
-            .clone();
-        help_tree::render(&launchpad, usize::MAX)
-    }
-
-    /// The raise-era launchpad commands stay out of the help tree unless the
-    /// development switch is on, and the contributor path stays in it.
-    #[test]
-    fn raise_commands_hidden_from_help_unless_enabled() {
-        let help = launchpad_help(false);
-        let listed: Vec<&str> = help
-            .lines()
-            .filter_map(|line| line.split_whitespace().next())
-            .collect();
-        for name in RAISE_SUBCOMMANDS {
-            assert!(!listed.contains(&name), "{name} must be hidden:\n{help}");
-        }
-        for name in ["work", "propose", "vote", "queue", "process", "curate"] {
-            assert!(listed.contains(&name), "{name} must stay listed:\n{help}");
-        }
-        assert!(!help.contains("futarchy"), "{help}");
-        let full = build_command_with(false).render_long_help().to_string();
-        assert!(!full.contains("mint-token"), "root help lists mint-token");
-
-        let help = launchpad_help(true);
-        for name in RAISE_SUBCOMMANDS {
-            assert!(help.contains(name), "{name} must be listed when enabled");
-        }
-
-        let mut curate = build_command_with(false);
-        let curate_help = curate
-            .find_subcommand_mut("launchpad")
-            .and_then(|lp| lp.find_subcommand_mut("curate"))
-            .expect("curate")
-            .render_long_help()
-            .to_string();
-        assert!(!curate_help.contains("--floor-price"), "{curate_help}");
-        assert!(curate_help.contains("--treasury"), "{curate_help}");
-        let mut curate = build_command_with(true);
-        let curate_help = curate
-            .find_subcommand_mut("launchpad")
-            .and_then(|lp| lp.find_subcommand_mut("curate"))
-            .expect("curate")
-            .render_long_help()
-            .to_string();
-        assert!(curate_help.contains("--floor-price"), "{curate_help}");
-    }
-
-    fn parse_launchpad(args: &[&str]) -> Cli {
-        let argv = ["buzz", "launchpad"].iter().chain(args).copied();
-        Cli::from_arg_matches(
-            &build_command_with(false)
-                .try_get_matches_from(argv)
-                .expect("hidden commands still parse"),
-        )
-        .expect("matches")
-    }
-
-    /// `run` refuses a raise-era command before it reaches any dispatch,
-    /// unless the development switch is on.
-    #[test]
-    fn raise_commands_refused_unless_enabled() {
-        let refused: [&[&str]; 8] = [
-            &[
-                "mint-token",
-                "--name",
-                "A",
-                "--symbol",
-                "A",
-                "--supply",
-                "1",
-                "--treasury",
-                "0x0",
-            ],
-            &[
-                "compose-bid",
-                "x",
-                "--auction",
-                "0x0",
-                "--budget",
-                "1",
-                "--max-price",
-                "1",
-                "--tick-spacing",
-                "1",
-                "--floor-price",
-                "1",
-            ],
-            &["record-bid", "x"],
-            &[
-                "record-claim",
-                "x",
-                "--claim-id",
-                "c",
-                "--evidence-hash",
-                "h",
-                "--tx",
-                "t",
-            ],
-            &[
-                "record-verdict",
-                "x",
-                "--claim-id",
-                "c",
-                "--verdict",
-                "approve",
-                "--tx",
-                "t",
-            ],
-            &["curate", "x", "--name", "X", "--floor-price", "1"],
-            &["curate", "x", "--name", "X", "--auction", "0x0"],
-            &[
-                "record-proposal",
-                "x",
-                "--title",
-                "T",
-                "--kind",
-                "futarchy-budget",
-            ],
-        ];
-        for args in refused {
-            let cli = parse_launchpad(args);
-            match check_raise_gate(&cli.command, false) {
-                Err(CliError::Usage(message)) => {
-                    assert!(message.contains(ENV_DEV_RAISE_COMMANDS), "{message}")
-                }
-                other => panic!("{args:?} not refused: {:?}", other.err()),
-            }
-            assert!(check_raise_gate(&cli.command, true).is_ok(), "{args:?}");
-        }
-
-        let allowed: [&[&str]; 4] = [
-            &["curate", "x", "--name", "X", "--treasury", "0x0"],
-            &["record-proposal", "x", "--title", "T"],
-            &["record-receipt", "x", "--table", "sweep", "--tx", "t"],
-            &["list"],
-        ];
-        for args in allowed {
-            let cli = parse_launchpad(args);
-            assert!(check_raise_gate(&cli.command, false).is_ok(), "{args:?}");
-        }
-    }
-
     #[test]
     fn subcommand_counts_are_stable() {
         let expected: Vec<(&str, usize)> = vec![
@@ -4387,16 +2450,12 @@ mod tests {
             ("dms", 4),
             ("emoji", 5),
             ("feed", 1),
-            ("issues", 6),
-            ("launchpad", 27),
+            ("launchpad", 8),
             ("media", 1),
             ("messages", 8),
             ("pack", 2),
-            ("patches", 4),
-            ("pr", 5),
-            ("projects", 8),
             ("reactions", 3),
-            ("repos", 6),
+            ("repos", 5),
             ("social", 7),
             ("upload", 1),
             ("users", 6),
@@ -4464,128 +2523,4 @@ mod tests {
     }
 
     // ── projects update mutation group ────────────────────────────────────────
-
-    /// Project-channel requests accept the owner-review metadata.
-    #[test]
-    fn projects_add_channel_accepts_owner_review_fields() {
-        assert!(Cli::try_parse_from([
-            "buzz",
-            "projects",
-            "add-channel",
-            "--home-channel",
-            "11111111-1111-4111-8111-111111111111",
-            "--name",
-            "release-planning",
-            "--visibility",
-            "private",
-            "--template",
-            "Release team",
-        ])
-        .is_ok());
-    }
-
-    /// Multiple independent fields must be accepted in the same invocation.
-    #[test]
-    fn projects_update_multi_field_is_accepted() {
-        assert!(
-            Cli::try_parse_from([
-                "buzz",
-                "projects",
-                "update",
-                "my-slug",
-                "--name",
-                "X",
-                "--description",
-                "Y",
-            ])
-            .is_ok(),
-            "--name and --description together must be accepted"
-        );
-    }
-
-    /// A setter for one field and a clearer for a different field must be accepted.
-    #[test]
-    fn projects_update_setter_with_other_clearer_is_accepted() {
-        assert!(
-            Cli::try_parse_from([
-                "buzz",
-                "projects",
-                "update",
-                "my-slug",
-                "--name",
-                "X",
-                "--clear-description",
-            ])
-            .is_ok(),
-            "--name with --clear-description must be accepted"
-        );
-    }
-
-    /// A setter and its own clearer are mutually exclusive — clap must reject this.
-    #[test]
-    fn projects_update_setter_with_own_clearer_is_rejected() {
-        assert!(
-            Cli::try_parse_from([
-                "buzz",
-                "projects",
-                "update",
-                "my-slug",
-                "--name",
-                "X",
-                "--clear-name",
-            ])
-            .is_err(),
-            "--name and --clear-name together must be rejected by clap"
-        );
-    }
-
-    /// Providing no mutation options at all must be rejected by clap (required group).
-    #[test]
-    fn projects_update_no_mutation_is_rejected_by_clap() {
-        // Without credentials, a valid parse would reach authentication and fail
-        // with auth_error — but a clap-level rejection happens before any I/O.
-        // We verify it's a clap error (not just any error) by checking the error
-        // kind is not a runtime/auth failure — Cli::try_parse_from returns Err
-        // immediately for argument violations.
-        assert!(
-            Cli::try_parse_from(["buzz", "projects", "update", "my-slug"]).is_err(),
-            "update with no setters or clearers must be rejected at parse time"
-        );
-    }
-
-    /// An unrecognised visibility token must be rejected by clap before any I/O.
-    #[test]
-    fn projects_create_invalid_visibility_is_rejected_by_clap() {
-        assert!(
-            Cli::try_parse_from([
-                "buzz",
-                "projects",
-                "create",
-                "my-slug",
-                "--repo",
-                "buzz",
-                "--visibility",
-                "chartreuse",
-            ])
-            .is_err(),
-            "--visibility chartreuse must be rejected at parse time"
-        );
-    }
-
-    /// An unrecognised visibility token on update must be rejected by clap before any I/O.
-    #[test]
-    fn projects_update_invalid_visibility_is_rejected_by_clap() {
-        assert!(
-            Cli::try_parse_from([
-                "buzz",
-                "projects",
-                "update",
-                "my-slug",
-                "--visibility",
-                "chartreuse",
-            ])
-            .is_err(),
-            "--visibility chartreuse on update must be rejected at parse time"
-        );
-    }
 }

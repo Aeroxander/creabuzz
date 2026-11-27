@@ -48,7 +48,7 @@ use nostr::{EventBuilder, Kind, Tag};
 use serde_json::{json, Value};
 
 use crate::client::BuzzClient;
-use crate::commands::{launchpad_work::bytes32_arg, parse_write_response};
+use crate::commands::parse_write_response;
 use crate::error::CliError;
 
 pub(crate) mod checks;
@@ -58,6 +58,34 @@ pub(crate) mod sandbox;
 pub(crate) mod sandbox_ops;
 pub(crate) mod sandbox_run;
 pub(crate) mod snapshot;
+
+/// An id as a 32-byte word: a `0x` + 64 hex word as it is, or a short label as Solidity's `bytes32("label")`.
+pub fn bytes32_arg(value: &str, what: &str) -> Result<[u8; 32], CliError> {
+    let trimmed = value.trim();
+    if let Some(hex_part) = trimmed.strip_prefix("0x") {
+        if hex_part.len() != 64 || !hex_part.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(CliError::Usage(format!(
+                "{what} starts with 0x, so it must be 0x + 64 hex characters (got {trimmed:?}); \
+                 a label cannot start with 0x"
+            )));
+        }
+        let mut out = [0u8; 32];
+        out.copy_from_slice(
+            &hex::decode(hex_part).map_err(|e| CliError::Usage(format!("{what}: {e}")))?,
+        );
+        return Ok(out);
+    }
+    let bytes = trimmed.as_bytes();
+    if bytes.is_empty() || bytes.len() > 32 {
+        return Err(CliError::Usage(format!(
+            "{what} is a label of 1 to 32 bytes, or a 0x + 64 hex word (got {} bytes)",
+            bytes.len()
+        )));
+    }
+    let mut out = [0u8; 32];
+    out[..bytes.len()].copy_from_slice(bytes);
+    Ok(out)
+}
 
 #[cfg(test)]
 mod tests;
