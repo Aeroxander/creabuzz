@@ -90,8 +90,7 @@ transaction may now ask for more than the old 16,777,216 cap. The deployed addre
 The server is the existing relay, run from the Creaton stack in `deploy/compose` (its README, "Creaton", has the steps;
 `.env.creaton.example` has the settings). The first pilot is invited: the stack is invite-only server-wide
 (`BUZZ_REQUIRE_RELAY_MEMBERSHIP=true` in the bundle's `.env.example`), so people join only with an invite link an owner or
-admin makes, and self-serve communities stay off (no `BUZZ_SELF_SERVE_COMMUNITY_DOMAIN`).
-`docs/self-serve-communities.md` says what changes when that is lifted later.
+admin makes. The Lite branch has no self-serve community creation at all.
 
 It also needs the chain it checks passkey accounts against. Without these it refuses to link a passkey account to a
 person:
@@ -133,7 +132,6 @@ rows is for the first pilot.
 | `VITE_TEST_QUOTE_TOKENS` | `{"11155111":"<test-quote-token from the V5 manifest>"}` | **Trial only.** The free-mint test token the sale is priced in: it adds **Get test tokens** to the Trading card of a market priced in it |
 | `VITE_DAO_LAUNCH_KITS` | `{"11155111":"<launch-kit from the manifest>"}` | **Raises.** Test raises. Leave it out for the contributor-only first launch. The Creaton image is contributor-only anyway: it sets `VITE_CONTRIBUTOR_ONLY=1` itself, which hides every way to start a sale (D140); a build of your own without it shows the raise wizard, which saves drafts but cannot launch one. With it set, the contributor Start page also checks that both kits name the same summoner |
 | `VITE_RELAY_URL` | `wss://<your relay>` | Only when the page is not served by the relay itself (it otherwise talks to its own origin) |
-| `VITE_COMMUNITY_API_ORIGIN` | `https://<your relay>` | Only when communities live on several hosts (see `docs/self-serve-communities.md`) |
 | `VITE_ZERODEV_PROJECT_ID` (the project's UUID), `VITE_ZERODEV_CHAIN_ID=11155111` (and `VITE_ZERODEV_API_KEY` if the project has one) | A ZeroDev project on Sepolia, with a gas policy that sponsors every operation (each project's contracts are made when it starts, so a list of addresses cannot cover them) and a spending limit | Passkey accounts, with gas paid by its paymaster: testers then need no test ETH at all. **Required by the hosted image** when contributor projects are on (its people have no wallet to fall back on). In a build of your own, without them people bring a wallet and pay their own test gas. Passkey steps send through ZeroDev's own address for the project; `VITE_BUNDLER_URL` is not used by them |
 | `VITE_ERROR_REPORT_URL`, `VITE_APP_RELEASE` | Your collector and the build's version | Error reports (`docs/error-reporting.md`); the pilot wants them. The image defaults the release to the source revision |
 

@@ -147,7 +147,7 @@ export const KIND_AGENT_PROFILE = 10100;
 ///
 /// Encrypted memory record for AI agents. Addressed by `(pubkey_a, kind, d_tag)`,
 /// where `d_tag` is an HMAC over the agent↔owner conversation key. See
-/// `docs/nips/NIP-AE.md` and [`crate::engram`].
+/// `docs/nips/NIP-AE.md`.
 export const KIND_AGENT_ENGRAM = 30174;
 
 /// NIP-ER: Event Reminder (parameterized replaceable, author-only).

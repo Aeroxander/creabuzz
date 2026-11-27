@@ -6,8 +6,9 @@ Money is play dollars on a test network. Nothing here is legal or tax advice.
 ## What this branch is
 
 The same product as `v6.5` with the code that does not ship removed from the tree, so the repository matches what a
-backer, a founder and the server actually use. Nothing about the product changed: the app, the relay, the migrations
-and `contracts/pot` are as they were on `v6.5`.
+backer, a founder and the server actually use. The app, the migrations and `contracts/pot` are as they were on `v6.5`.
+The relay lost the routes and workers no client calls (listed below); nothing the app, the CLI docs or the shell
+journeys call was removed.
 
 ## What was removed
 
@@ -27,20 +28,45 @@ and `contracts/pot` are as they were on `v6.5`.
 - `contracts/pot`, with `contracts/lib/forge-std` and `contracts/lib/openzeppelin-contracts`.
 - `deploy/compose`, the Docker image (`runtime`, also `runtime-creaton`) and the pot journeys.
 
+## The second cut (code nothing calls)
+
+After the first commit removed whole directories, a second pass removed code inside the kept crates and packages that
+no client, script, doc or journey reaches. The work is one commit per cluster, so each can be reverted alone.
+
+| Cluster | What went | Lines |
+|---|---|---|
+| `packages/creaton-core` | `launchpad/`, `org/`, `templates/` except the files the app and the kept tests import, plus `dm.ts` and `link-device.ts` | about 42k |
+| `buzz-cli` | `team`, `projects`, `agwiki`, `issues`, `pr`, `patches`, `mem`, `gifs`, `trustgraph`; the launchpad raise and chain commands; `org grant/contribution/allowance/bind/ragequit`; `repos default-branch` | about 24k |
+| Relay HTTP admin API | `api/admin/**`, the admin host and bundle config, and the database code only it used | about 20k |
+| Relay routes | operator provisioning, self-serve communities, the community list, GIF search, the `/buzz/v1` read-state API, SIWE wallet routes, the demo mesh echo, the NIP-IA archive chain (kinds 9035 and 9036 are now unknown kinds) | about 25k |
+| Huddle audio, tunnel, mesh | `audio/`, `tunnel/`, `mesh_boot` and the `buzz-relay-mesh` crate | about 31k |
+| Push and pairing | NIP-PL push delivery (kind 30350) and device pairing. Browser web push (`/push/web`) stays | about 9k |
+| SDK | the broker, unused builders, two agent-only core modules, old e2e tests | about 10k |
+
+Rust crates went from 42 to 22 over both cuts. The workspace passes `cargo check --workspace --all-targets`, clippy with
+`-D warnings`, `cargo fmt --check` and every test that needs no database (the Postgres-backed ones compile but were not
+run). The app (2113 tests) and `creaton-core` (305) pass.
+
 ## What was not cut, on purpose
 
 - No app features were removed. The routes, tabs and sheets are the same as on `v6.5`. Cutting those waits for the pot
   journeys and a real-phone join and leave test (see below).
-- Rust crates: 19 were removed in a second commit (the agent harness `buzz-acp`, `buzz-agent`, `sprig`, `buzz-dev-mcp`
-  and `git-*-nostr`; the fleet crates; the iOS push gateway; the device-pairing crates; and orphans). 23 remain.
-  Inside the kept crates, the relay still holds code for the removed pieces: `audio/` (huddle audio) and `buzz-persona`'s `buzz-agent` runtime branch.
-- Old launchpad code inside `packages/creaton-core/src/launchpad` stays until its tests are rewritten to stand alone.
+- Left for an owner decision, because each is a product choice and not dead code: git hosting's write half, the
+  template, workflow, persona, wiki and org chain, NIP-FI, `buzz-deletion`, invites, the audit log and `buzz-conformance`.
+- `buzz-agwiki` and `buzz-skillopt` stay while the relay depends on them.
+- Kept on purpose inside the relay: the chain reader (kind 39009), LLM gateway and budget caps, board moderation,
+  launch update authority, join-policy routes, the git read path, `RELAY_OPERATOR_PUBKEYS`, and `buzz-admin`
+  (reports, add and remove member, archive).
+- Migrations 0001 to 0076 and `schema/` are untouched, so tables for cut features (operator listener, archived
+  identities, read state) still exist and are unused. A migration that drops them is possible later; it was not made.
 
-## Known gaps after the cut
+## Known gaps after the cuts
 
-- `packages/creaton-core` still exports about 400 things (mostly in `launchpad/`) that only the removed clients used.
-  The unused-exports scan is switched off for that package in `knip.jsonc` until they are cut; turn
-  `includeEntryExports` back on to list them.
+- Unread counters on rooms and boards come from the `/buzz/v1` read-state API, which is cut. The app already shows no
+  counters when the server lacks the API, so nothing breaks, but the markers are gone.
+- `packages/creaton-core` still exports about 300 things that nothing imports. The unused-exports scan is switched off
+  for that package in `knip.jsonc`; turn `includeEntryExports` back on to list them.
+- `crates/buzz-cli/README.md` and `TESTING.md` may still describe a few cut commands.
 - `scripts/ci-selection.test.mjs` needs the pinned paths-filter action bundle (`PATHS_FILTER_ACTION`) and was not run
   here. The other script tests pass.
 - Shell journeys that need services (`pot-full-loop`, `pot-chain-loop`, `app-real-loop-e2e`) had only their file paths
