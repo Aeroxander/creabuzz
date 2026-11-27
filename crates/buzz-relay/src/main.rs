@@ -71,7 +71,7 @@ fn relay_keypair_from_config(relay_private_key: Option<&str>) -> anyhow::Result<
 ///
 /// Set via `BUZZ_USAGE_METRICS_PER_COMMUNITY`:
 ///   - `off` — suppress all per-community series; fleet totals only (default)
-///   - `all` — emit per-community series for every community (rollback only)
+///   - `all` — emit per-community connection, subscription and storage series for every community
 ///
 /// A `top:<k>` mode (per-community series for the k most-active communities)
 /// is planned as a fast-follow once the series-lifecycle (gauge idle-timeout
@@ -216,15 +216,6 @@ impl FleetUsageSchedule {
     fn mark_activity_failure(&mut self, now: std::time::Instant) {
         self.next_activity = now + self.retry_interval;
         self.activity_refresh_ok = false;
-    }
-
-    /// The `all` rollback collects both families together on every leader
-    /// tick and emits their values directly, so only health state is kept.
-    fn mark_legacy_success(&mut self, now: std::time::Instant) {
-        self.last_stock_success = Some(now);
-        self.last_activity_success = Some(now);
-        self.stock_refresh_ok = true;
-        self.activity_refresh_ok = true;
     }
 
     fn stock_available(&self) -> bool {
@@ -920,13 +911,9 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
     {
         let runtime_id = handle.local_runtime_id;
         // Register the per-profile inbound consumers (huddle datagram fan-in,
-        // HuddleControl accept loop, reliable-stream accept + optional
-        // BUZZ_MESH_DEMO_ECHO) before peers can route traffic here.
-        handle.wire_consumers(
-            Arc::clone(&state.audio_rooms),
-            state.config.mesh_demo_echo,
-            Arc::clone(&state.shutting_down),
-        );
+        // HuddleControl accept loop, reliable-stream accept) before peers can
+        // route traffic here.
+        handle.wire_consumers(Arc::clone(&state.audio_rooms));
         if state.mesh.set(handle).is_err() {
             unreachable!("mesh handle is set exactly once, right here");
         }
@@ -1237,24 +1224,6 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
     } else {
         info!("NIP-PL push disabled by BUZZ_PUSH_ENABLED");
     }
-
-    // Registration cleanup is independent of configured routes. Delivery is
-    // opt-in, while accepted events populate the outbox transactionally.
-    tokio::spawn(buzz_relay::operator_listener::run_reaper(Arc::clone(
-        &state,
-    )));
-    if !state.config.operator_listener_delivery_urls.is_empty() {
-        tokio::spawn(buzz_relay::operator_listener::run_delivery_worker(
-            Arc::clone(&state),
-        ));
-        info!(
-            listeners = state.config.operator_listener_delivery_urls.len(),
-            "operator-listener mention delivery worker started"
-        );
-    } else {
-        info!("operator-listener mention delivery disabled by BUZZ_OPERATOR_LISTENERS");
-    }
-    info!("operator-listener registration cleanup started");
 
     // Admin outbox delivery worker — drives `relay_admin_outbox` rows.
     // Uses DB-level leases (held_by / lease_expires_at) so multiple pods can
@@ -2420,17 +2389,7 @@ async fn run_usage_metrics_tick(
         }
     }
     if leader.is_some() {
-        if emission_scope.includes_per_community() {
-            let result = emit_db_usage_metrics(state, emission_scope, &host_map).await;
-            record_legacy_usage_collection(result.is_ok(), fleet_schedule);
-            if let Err(error) = result {
-                warn!("Usage metrics leader demoting: DB collection failed");
-                *leader = None;
-                return Err(error);
-            }
-        } else {
-            emit_fleet_db_usage_metrics(state, fleet_schedule).await;
-        }
+        emit_fleet_db_usage_metrics(state, fleet_schedule).await;
         let invite_retention_cutoff = chrono::Utc::now() - chrono::Duration::days(30);
         match state
             .db
@@ -2459,19 +2418,6 @@ async fn run_usage_metrics_tick(
 fn mark_usage_leader_demoted(schedule: &mut FleetUsageSchedule) {
     schedule.reset_after_demotion(std::time::Instant::now());
     emit_usage_snapshot_availability(schedule);
-}
-
-/// The `all` rollback collects every family on each leader tick, so a
-/// successful collection makes both families available and a failure demotes
-/// the leader. This keeps the documented availability gates valid in either
-/// emission mode.
-fn record_legacy_usage_collection(succeeded: bool, schedule: &mut FleetUsageSchedule) {
-    if succeeded {
-        schedule.mark_legacy_success(std::time::Instant::now());
-        emit_cached_fleet_usage_metrics(schedule);
-    } else {
-        mark_usage_leader_demoted(schedule);
-    }
 }
 
 fn emit_usage_snapshot_availability(schedule: &FleetUsageSchedule) {
@@ -2692,334 +2638,6 @@ async fn run_storage_sweep_tick(
     }
 }
 
-/// Emit the database-derived usage snapshot from the stable leader only.
-async fn emit_db_usage_metrics(
-    state: &AppState,
-    emission_scope: &EmissionScope,
-    host_map: &HashMap<Uuid, String>,
-) -> anyhow::Result<()> {
-    // --- Collect all DB results before emitting any metrics (C4) ---
-    //
-    // All `.await?` calls happen here. If any query fails the function returns
-    // early — no metrics are emitted for this tick — preventing a mixed
-    // fresh/stale snapshot where later gauges retain their last value while
-    // earlier ones are updated.
-
-    let community_total = state.db.usage_community_count().await?;
-    let user_rows = state.db.usage_user_counts().await?;
-    let channel_rows = state.db.usage_channel_counts().await?;
-    let message_rows = state.db.usage_message_counts().await?;
-    let relay_member_rows = state.db.usage_relay_member_counts().await?;
-    let workflow_rows = state.db.usage_workflow_counts().await?;
-    let git_repo_rows = state.db.usage_git_repo_counts().await?;
-    let active_users_1d = state.db.usage_active_user_counts("1 day").await?;
-    let active_users_7d = state.db.usage_active_user_counts("7 days").await?;
-    let active_users_30d = state.db.usage_active_user_counts("30 days").await?;
-    let active_channels_1d = state.db.usage_active_channel_counts("1 day").await?;
-    let active_channels_7d = state.db.usage_active_channel_counts("7 days").await?;
-
-    // --- Determine which community IDs receive per-community series (K1) ---
-    //
-    // `active_set` is the subset of host_map IDs that get per-community gauges
-    // this tick. Fleet-wide totals (buzz_total_*) always emit regardless.
-    let active_set: HashSet<Uuid> = host_map
-        .keys()
-        .filter(|id| emission_scope.allows(id))
-        .copied()
-        .collect();
-
-    // --- Publish phase: emit all metrics now that every query succeeded ---
-
-    // --- A. Adoption stocks (DB-polled) ---
-
-    // buzz_communities_total (no tag — fleet-wide count)
-    metrics::gauge!("buzz_communities_total").set(community_total as f64);
-
-    // buzz_community_users{community, type:human|agent}
-    // Emit from host_map so communities that have zero users still get a 0
-    // rather than keeping the last nonzero value until process restart.
-    {
-        let rows: HashMap<Uuid, _> = user_rows.into_iter().map(|r| (r.community_id, r)).collect();
-        // Fleet totals (always emitted).
-        let (total_human, total_agent): (i64, i64) = rows
-            .values()
-            .fold((0, 0), |(h, a), r| (h + r.human, a + r.agent));
-        metrics::gauge!("buzz_total_users", "type" => "human").set(total_human as f64);
-        metrics::gauge!("buzz_total_users", "type" => "agent").set(total_agent as f64);
-        // Per-community series (gated by active_set).
-        for (&id, community) in host_map {
-            if !active_set.contains(&id) {
-                continue;
-            }
-            let (human, agent) = rows.get(&id).map(|r| (r.human, r.agent)).unwrap_or((0, 0));
-            metrics::gauge!("buzz_community_users", "community" => community.clone(), "type" => "human")
-                .set(human as f64);
-            metrics::gauge!("buzz_community_users", "community" => community.clone(), "type" => "agent")
-                .set(agent as f64);
-        }
-    }
-
-    // buzz_community_channels{community, type}
-    // Zero-fill across all (community, channel_type) pairs so a type that
-    // drops to zero emits 0 rather than retaining its last nonzero value.
-    {
-        const CHANNEL_TYPES: &[&str] = &["stream", "forum", "dm", "workflow"];
-        let rows: HashMap<(Uuid, &str), i64> = channel_rows
-            .into_iter()
-            .filter_map(|r| {
-                let matched = CHANNEL_TYPES
-                    .iter()
-                    .find(|&&t| t == r.channel_type.as_str())
-                    .map(|&t| ((r.community_id, t), r.count));
-                if matched.is_none() {
-                    warn!(
-                        channel_type = %r.channel_type,
-                        "usage_channel_counts: unrecognised channel_type — row skipped"
-                    );
-                }
-                matched
-            })
-            .collect();
-        // Fleet totals (always emitted).
-        for &ct in CHANNEL_TYPES {
-            let total: i64 = host_map
-                .keys()
-                .map(|id| rows.get(&(*id, ct)).copied().unwrap_or(0))
-                .sum();
-            metrics::gauge!("buzz_total_channels", "type" => ct).set(total as f64);
-        }
-        // Per-community series (gated by active_set).
-        for (&id, community) in host_map {
-            if !active_set.contains(&id) {
-                continue;
-            }
-            for &ct in CHANNEL_TYPES {
-                let count = rows.get(&(id, ct)).copied().unwrap_or(0);
-                metrics::gauge!(
-                    "buzz_community_channels",
-                    "community" => community.clone(),
-                    "type" => ct
-                )
-                .set(count as f64);
-            }
-        }
-    }
-
-    // buzz_community_messages{community}
-    // Emit 0 for communities with no messages so dashboards don't stale-read.
-    {
-        let rows: HashMap<Uuid, i64> = message_rows
-            .into_iter()
-            .map(|r| (r.community_id, r.count))
-            .collect();
-        // Fleet total (always emitted).
-        let total: i64 = rows.values().sum();
-        metrics::gauge!("buzz_total_messages").set(total as f64);
-        // Per-community series (gated by active_set).
-        for (&id, community) in host_map {
-            if !active_set.contains(&id) {
-                continue;
-            }
-            let count = rows.get(&id).copied().unwrap_or(0);
-            metrics::gauge!("buzz_community_messages", "community" => community.clone())
-                .set(count as f64);
-        }
-    }
-
-    // buzz_community_relay_members{community, role}
-    // Zero-fill across all (community, role) pairs; relay_members.role is a
-    // CHECK constraint over {'owner', 'admin', 'member'}.
-    {
-        const RELAY_ROLES: &[&str] = &["owner", "admin", "member"];
-        let rows: HashMap<(Uuid, &str), i64> = relay_member_rows
-            .into_iter()
-            .filter_map(|r| {
-                let matched = RELAY_ROLES
-                    .iter()
-                    .find(|&&role| role == r.role.as_str())
-                    .map(|&role| ((r.community_id, role), r.count));
-                if matched.is_none() {
-                    warn!(
-                        role = %r.role,
-                        "usage_relay_member_counts: unrecognised role — row skipped"
-                    );
-                }
-                matched
-            })
-            .collect();
-        // Fleet totals (always emitted).
-        for &role in RELAY_ROLES {
-            let total: i64 = host_map
-                .keys()
-                .map(|id| rows.get(&(*id, role)).copied().unwrap_or(0))
-                .sum();
-            metrics::gauge!("buzz_total_relay_members", "role" => role).set(total as f64);
-        }
-        // Per-community series (gated by active_set).
-        for (&id, community) in host_map {
-            if !active_set.contains(&id) {
-                continue;
-            }
-            for &role in RELAY_ROLES {
-                let count = rows.get(&(id, role)).copied().unwrap_or(0);
-                metrics::gauge!(
-                    "buzz_community_relay_members",
-                    "community" => community.clone(),
-                    "role" => role
-                )
-                .set(count as f64);
-            }
-        }
-    }
-
-    // buzz_community_workflows{community, status}
-    // Zero-fill across all (community, status) pairs; workflow_status is a
-    // DB enum: {'active', 'disabled', 'archived'}.
-    {
-        const WORKFLOW_STATUSES: &[&str] = &["active", "disabled", "archived"];
-        let rows: HashMap<(Uuid, &str), i64> = workflow_rows
-            .into_iter()
-            .filter_map(|r| {
-                let matched = WORKFLOW_STATUSES
-                    .iter()
-                    .find(|&&s| s == r.status.as_str())
-                    .map(|&s| ((r.community_id, s), r.count));
-                if matched.is_none() {
-                    warn!(
-                        status = %r.status,
-                        "usage_workflow_counts: unrecognised workflow status — row skipped"
-                    );
-                }
-                matched
-            })
-            .collect();
-        // Fleet totals (always emitted).
-        for &status in WORKFLOW_STATUSES {
-            let total: i64 = host_map
-                .keys()
-                .map(|id| rows.get(&(*id, status)).copied().unwrap_or(0))
-                .sum();
-            metrics::gauge!("buzz_total_workflows", "status" => status).set(total as f64);
-        }
-        // Per-community series (gated by active_set).
-        for (&id, community) in host_map {
-            if !active_set.contains(&id) {
-                continue;
-            }
-            for &status in WORKFLOW_STATUSES {
-                let count = rows.get(&(id, status)).copied().unwrap_or(0);
-                metrics::gauge!(
-                    "buzz_community_workflows",
-                    "community" => community.clone(),
-                    "status" => status
-                )
-                .set(count as f64);
-            }
-        }
-    }
-
-    // buzz_community_git_repos{community}
-    // Emit 0 for communities with no repos.
-    {
-        let rows: HashMap<Uuid, i64> = git_repo_rows
-            .into_iter()
-            .map(|r| (r.community_id, r.count))
-            .collect();
-        // Fleet total (always emitted).
-        let total: i64 = rows.values().sum();
-        metrics::gauge!("buzz_total_git_repos").set(total as f64);
-        // Per-community series (gated by active_set).
-        for (&id, community) in host_map {
-            if !active_set.contains(&id) {
-                continue;
-            }
-            let count = rows.get(&id).copied().unwrap_or(0);
-            metrics::gauge!("buzz_community_git_repos", "community" => community.clone())
-                .set(count as f64);
-        }
-    }
-
-    // --- C. Engagement — windowed DAU/WAU/MAU + active channels ---
-    // Emit 0 for window/type/community combos that had no activity; this
-    // ensures a community that was active last tick but quiet this tick reads
-    // 0 rather than retaining its last nonzero value.
-
-    for (data, label) in [
-        (active_users_1d, "1d"),
-        (active_users_7d, "7d"),
-        (active_users_30d, "30d"),
-    ] {
-        let rows: HashMap<Uuid, _> = data.into_iter().map(|r| (r.community_id, r)).collect();
-        // Fleet totals (always emitted).
-        let (total_human, total_agent, total_unknown): (i64, i64, i64) =
-            rows.values().fold((0, 0, 0), |(h, a, u), r| {
-                (h + r.human, a + r.agent, u + r.unknown)
-            });
-        metrics::gauge!("buzz_total_active_users", "window" => label, "type" => "human")
-            .set(total_human as f64);
-        metrics::gauge!("buzz_total_active_users", "window" => label, "type" => "agent")
-            .set(total_agent as f64);
-        metrics::gauge!("buzz_total_active_users", "window" => label, "type" => "unknown")
-            .set(total_unknown as f64);
-        // Per-community series (gated by active_set).
-        for (&id, community) in host_map {
-            if !active_set.contains(&id) {
-                continue;
-            }
-            let (human, agent, unknown) = rows
-                .get(&id)
-                .map(|r| (r.human, r.agent, r.unknown))
-                .unwrap_or((0, 0, 0));
-            metrics::gauge!(
-                "buzz_community_active_users",
-                "community" => community.clone(),
-                "window" => label,
-                "type" => "human"
-            )
-            .set(human as f64);
-            metrics::gauge!(
-                "buzz_community_active_users",
-                "community" => community.clone(),
-                "window" => label,
-                "type" => "agent"
-            )
-            .set(agent as f64);
-            metrics::gauge!(
-                "buzz_community_active_users",
-                "community" => community.clone(),
-                "window" => label,
-                "type" => "unknown"
-            )
-            .set(unknown as f64);
-        }
-    }
-
-    for (data, label) in [(active_channels_1d, "1d"), (active_channels_7d, "7d")] {
-        let rows: HashMap<Uuid, i64> = data
-            .into_iter()
-            .map(|r| (r.community_id, r.count))
-            .collect();
-        // Fleet total (always emitted).
-        let total: i64 = rows.values().sum();
-        metrics::gauge!("buzz_total_active_channels", "window" => label).set(total as f64);
-        // Per-community series (gated by active_set).
-        for (&id, community) in host_map {
-            if !active_set.contains(&id) {
-                continue;
-            }
-            let count = rows.get(&id).copied().unwrap_or(0);
-            metrics::gauge!(
-                "buzz_community_active_channels",
-                "community" => community.clone(),
-                "window" => label
-            )
-            .set(count as f64);
-        }
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
@@ -3032,8 +2650,7 @@ mod tests {
     use super::{
         apply_activity_refresh, apply_stock_refresh, buzz_auto_migrate_enabled, connect_audit_pool,
         dropped_in_memory_keys, emit_cached_fleet_usage_metrics, idle_timeout_secs,
-        jwks_next_retry_after_failed_refresh, nip_fi_jwks_refresh_loop,
-        record_legacy_usage_collection, refresh_due_fleet_usage,
+        jwks_next_retry_after_failed_refresh, nip_fi_jwks_refresh_loop, refresh_due_fleet_usage,
         refresh_legacy_active_gauge_recency, relay_keypair_from_config,
         run_jwks_refresh_supervisor, run_periodic_until_cancelled, EmissionScope,
         FleetUsageSchedule, InMemoryMetricKey, PartitionAuditSchedule,
@@ -3638,41 +3255,6 @@ mod tests {
         let values = emit(&schedule);
         assert_eq!(values.get(stock_available), Some(&1.0));
         assert_eq!(values.get(activity_available), Some(&1.0));
-    }
-
-    #[test]
-    fn legacy_collection_publishes_coherent_availability() {
-        let mut schedule = FleetUsageSchedule::new_at(
-            std::time::Instant::now(),
-            Duration::from_secs(60),
-            Duration::from_secs(600),
-            Duration::from_secs(10),
-        );
-        let stock_available = "buzz_usage_snapshot_available{family=stock}";
-        let activity_available = "buzz_usage_snapshot_available{family=activity}";
-        let mut record = |succeeded: bool| {
-            let recorder = metrics_util::debugging::DebuggingRecorder::new();
-            metrics::with_local_recorder(&recorder, || {
-                record_legacy_usage_collection(succeeded, &mut schedule)
-            });
-            usage_metric_values(&recorder)
-        };
-
-        for (succeeded, expected) in [(true, 1.0), (false, 0.0), (true, 1.0)] {
-            let values = record(succeeded);
-            assert_eq!(values.get(stock_available), Some(&expected), "{succeeded}");
-            assert_eq!(
-                values.get(activity_available),
-                Some(&expected),
-                "{succeeded}"
-            );
-            // Age is the companion freshness signal; it must exist after a
-            // successful rollback collection and not after a demotion.
-            for family in ["stock", "activity"] {
-                let age = format!("buzz_usage_snapshot_age_seconds{{family={family}}}");
-                assert_eq!(values.contains_key(&age), succeeded, "{age}");
-            }
-        }
     }
 
     #[test]

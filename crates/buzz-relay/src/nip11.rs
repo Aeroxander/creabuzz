@@ -60,12 +60,6 @@ pub struct RelayInfo {
         skip_serializing_if = "Option::is_none"
     )]
     pub smart_account_links: Option<bool>,
-    /// Host-bound atomic read-state snapshot capability; absent on unresolved hosts.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub read_state_snapshot: Option<serde_json::Value>,
-    /// Opt-in, host-bound private accessory API; separate from legacy NIP-RS.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub buzz_v1: Option<BuzzV1Descriptor>,
     /// NIP-AR artifact query transport and enforced resource limits.
     pub artifacts: serde_json::Value,
     /// Relay operator's public key (hex), if published.
@@ -89,10 +83,6 @@ pub struct RelayInfo {
     /// Public WebSocket URL of the dedicated NIP-AB device-pairing relay.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pairing_relay_url: Option<String>,
-    /// Relay-owned GIF search integration. The descriptor is public and
-    /// provider-agnostic; provider credentials remain server-side.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub gif: Option<GifDescriptor>,
     /// Relay's own signing pubkey (NIP-11 `self` field, NIP-43).
     #[serde(rename = "self", skip_serializing_if = "Option::is_none")]
     pub relay_self: Option<String>,
@@ -100,41 +90,6 @@ pub struct RelayInfo {
     /// Absent when the relay is in `Off` mode. [FI-TRACE-DISCOVERY-PRIVATE]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub federated_identity: Option<serde_json::Value>,
-}
-
-/// Private read-state accessory contract and enforced client request limits.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BuzzV1Descriptor {
-    /// Accessory contract version, not a Nostr protocol number.
-    pub version: u32,
-    /// Relay-relative API prefix; callers retain the requesting origin.
-    pub base_path: String,
-    /// Author-time unread horizon; does not expire messages or frontiers.
-    pub retention_seconds: u32,
-    /// Maximum joined channels per sidebar page.
-    pub max_channels: usize,
-    /// Maximum independent write intents per request.
-    pub max_intents: usize,
-    /// Maximum explicit contexts per read request.
-    pub max_contexts: usize,
-    /// Maximum message selectors across one context request.
-    pub max_context_messages: usize,
-    /// Maximum unread-thread summaries per sidebar channel row.
-    pub max_thread_summaries: usize,
-    /// Message kinds that count as unread and as latest activity. Clients
-    /// classify live arrivals with this set instead of keeping a copy.
-    pub eligible_kinds: [i32; 4],
-}
-
-/// Public capability descriptor for relay-proxied GIF search.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct GifDescriptor {
-    /// Provider identifier understood by Buzz clients.
-    pub provider: String,
-    /// Relay-relative authenticated metadata search endpoint.
-    pub search: String,
-    /// Relay-relative authenticated share-reporting endpoint.
-    pub share: String,
 }
 
 /// Protocol and resource limits advertised in the NIP-11 document.
@@ -237,18 +192,12 @@ impl RelayInfo {
     /// gates on NIP-43 events — i.e. has a stable key AND enforces
     /// membership. NIP-43 events are verified against `self`, so it is a
     /// programmer error to advertise NIP-43 without a `relay_self`.
-    ///
-    /// `gif_provider` is a config-derived provider identifier. When present,
-    /// `build` advertises the provider-agnostic `buzz-gif` extension and the
-    /// relay-relative metadata search endpoint. It must never contain a
-    /// provider credential.
     pub(crate) fn build(
         relay_self: Option<&str>,
         icon: Option<&str>,
         flags: RelayCapabilityFlags,
         max_message_length: usize,
         pairing_relay_url: Option<&str>,
-        gif_provider: Option<&str>,
     ) -> Self {
         let RelayCapabilityFlags {
             advertise_nip43,
@@ -264,19 +213,7 @@ impl RelayInfo {
             supported_nips.push(NIP_RELAY_MEMBERSHIP);
         }
 
-        let mut supported_extensions = vec![
-            "nip-er".to_string(),
-            "nip-ar".to_string(),
-            "erc-4824".to_string(),
-        ];
-        let gif = gif_provider.map(|provider| {
-            supported_extensions.push("buzz-gif".to_string());
-            GifDescriptor {
-                provider: provider.to_string(),
-                search: crate::api::gifs::SEARCH_PATH.to_string(),
-                share: crate::api::gifs::SHARE_PATH.to_string(),
-            }
-        });
+        let supported_extensions = vec!["nip-er".to_string(), "nip-ar".to_string()];
 
         // NIP-FI discovery descriptor. Per [FI-TRACE-DISCOVERY-PRIVATE], the
         // document is byte-identical across all enrollment modes — no issuer
@@ -301,8 +238,6 @@ impl RelayInfo {
             investing: None,
             web_push: None,
             smart_account_links: None,
-            read_state_snapshot: None,
-            buzz_v1: None,
             artifacts: serde_json::json!({
                 "version": 1, "revision_kind": 45010, "removal_kind": 45011,
                 "query": "/query", "count": "/count",
@@ -326,7 +261,6 @@ impl RelayInfo {
             version: env!("CARGO_PKG_VERSION").to_string(),
             limitation: Some(relay_limitation(max_message_length, advertise_fi)),
             pairing_relay_url: pairing_relay_url.map(str::to_string),
-            gif,
             relay_self: relay_self.map(|s| s.to_string()),
             federated_identity,
         }
@@ -407,7 +341,6 @@ pub(crate) async fn nip11_document(state: &crate::state::AppState, raw_host: &st
         },
         state.config.max_frame_bytes,
         state.config.pairing_relay_url.as_deref(),
-        state.config.klipy.as_ref().map(|_| "klipy"),
     );
     info.investing = state.config.investing;
     info.web_push = state
@@ -439,29 +372,6 @@ pub(crate) async fn nip11_document(state: &crate::state::AppState, raw_host: &st
         }
         info.example_project =
             crate::share_preview::example_project(state, tenant.community()).await;
-        if state.config.buzz_v1_enabled {
-            use buzz_db::personal_read::{
-                ELIGIBLE_KINDS, MAX_CHANNELS, MAX_CONTEXTS, MAX_CONTEXT_MESSAGES, MAX_INTENTS,
-                MAX_THREAD_SUMMARIES,
-            };
-            info.buzz_v1 = Some(BuzzV1Descriptor {
-                version: 1,
-                base_path: crate::api::buzz_v1::BASE_PATH.to_owned(),
-                retention_seconds: state.config.buzz_v1_retention_seconds,
-                max_channels: MAX_CHANNELS,
-                max_intents: MAX_INTENTS,
-                max_contexts: MAX_CONTEXTS,
-                max_context_messages: MAX_CONTEXT_MESSAGES,
-                max_thread_summaries: MAX_THREAD_SUMMARIES,
-                eligible_kinds: ELIGIBLE_KINDS,
-            });
-        }
-        info.read_state_snapshot = Some(serde_json::json!({
-            "version": 1,
-            "community_id": tenant.community().as_uuid(),
-            "max_events": buzz_db::read_state::MAX_SNAPSHOT_EVENTS,
-            "max_event_array_bytes": buzz_db::read_state::MAX_SNAPSHOT_BYTES,
-        }));
     }
     let tenant_host = if state.config.push_enabled {
         crate::tenant::bind_community(&state.db, raw_host)
@@ -552,7 +462,6 @@ const _RELAY_INFO_BUILD_STATIC_INPUT_FENCE: fn(
     Option<&str>,
     RelayCapabilityFlags,
     usize,
-    Option<&str>,
     Option<&str>,
 ) -> RelayInfo = RelayInfo::build;
 
@@ -655,7 +564,6 @@ mod postgres_tests {
             RelayCapabilityFlags::default(),
             DEFAULT_MAX_FRAME_BYTES,
             None,
-            None,
         );
         assert_eq!(info.software, "https://github.com/block/buzz");
     }
@@ -668,7 +576,6 @@ mod postgres_tests {
             RelayCapabilityFlags::default(),
             DEFAULT_MAX_FRAME_BYTES,
             Some("wss://pairing.buzz.xyz"),
-            None,
         );
         let json = serde_json::to_value(&info).expect("serialize");
         assert_eq!(
@@ -683,46 +590,9 @@ mod postgres_tests {
             RelayCapabilityFlags::default(),
             DEFAULT_MAX_FRAME_BYTES,
             None,
-            None,
         );
         let json = serde_json::to_value(&info).expect("serialize");
         assert!(json.get("pairing_relay_url").is_none());
-    }
-
-    #[test]
-    fn gif_descriptor_and_extension_are_config_gated_and_credential_free() {
-        let info = RelayInfo::build(
-            None,
-            None,
-            RelayCapabilityFlags::default(),
-            DEFAULT_MAX_FRAME_BYTES,
-            None,
-            Some("klipy"),
-        );
-
-        let json = serde_json::to_value(&info).expect("serialize");
-        assert_eq!(json["gif"]["provider"], "klipy");
-        assert_eq!(json["gif"]["search"], "/gifs/search");
-        assert_eq!(json["gif"]["share"], "/gifs/share");
-        assert!(json["supported_extensions"]
-            .as_array()
-            .expect("extensions")
-            .contains(&serde_json::json!("buzz-gif")));
-        assert!(!json.to_string().contains("api_key"));
-
-        let unconfigured = RelayInfo::build(
-            None,
-            None,
-            RelayCapabilityFlags::default(),
-            DEFAULT_MAX_FRAME_BYTES,
-            None,
-            None,
-        );
-        assert!(unconfigured.gif.is_none());
-        assert!(!unconfigured
-            .supported_extensions
-            .expect("extensions")
-            .contains(&"buzz-gif".to_string()));
     }
 
     /// The information document says who may join this community, so a person (or a client) can tell "invite only"
@@ -819,7 +689,6 @@ mod postgres_tests {
             RelayCapabilityFlags::default(),
             DEFAULT_MAX_FRAME_BYTES,
             None,
-            None,
         );
         assert_eq!(
             info.icon.as_deref(),
@@ -837,7 +706,6 @@ mod postgres_tests {
                 icon,
                 RelayCapabilityFlags::default(),
                 DEFAULT_MAX_FRAME_BYTES,
-                None,
                 None,
             );
             assert!(info.icon.is_none());
@@ -859,14 +727,7 @@ mod postgres_tests {
 
     #[test]
     fn max_message_length_uses_configured_frame_limit() {
-        let info = RelayInfo::build(
-            None,
-            None,
-            RelayCapabilityFlags::default(),
-            262_144,
-            None,
-            None,
-        );
+        let info = RelayInfo::build(None, None, RelayCapabilityFlags::default(), 262_144, None);
         let limitation = info.limitation.expect("limitation");
         assert_eq!(limitation.max_message_length, Some(262_144));
     }
@@ -903,7 +764,6 @@ mod postgres_tests {
             RelayCapabilityFlags::default(),
             DEFAULT_MAX_FRAME_BYTES,
             None,
-            None,
         );
         assert!(info.relay_self.is_none());
         assert!(!info.supported_nips.contains(&NIP_RELAY_MEMBERSHIP));
@@ -923,7 +783,6 @@ mod postgres_tests {
             RelayCapabilityFlags::default(),
             DEFAULT_MAX_FRAME_BYTES,
             None,
-            None,
         );
         assert_eq!(info.relay_self.as_deref(), Some(pk));
         assert!(!info.supported_nips.contains(&NIP_RELAY_MEMBERSHIP));
@@ -941,7 +800,6 @@ mod postgres_tests {
                 advertise_fi: false,
             },
             DEFAULT_MAX_FRAME_BYTES,
-            None,
             None,
         );
         assert_eq!(info.relay_self.as_deref(), Some(pk));
@@ -962,7 +820,6 @@ mod postgres_tests {
                 advertise_fi: false,
             },
             DEFAULT_MAX_FRAME_BYTES,
-            None,
             None,
         );
     }

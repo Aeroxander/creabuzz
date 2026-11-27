@@ -11,26 +11,25 @@ use uuid::Uuid;
 
 use buzz_auth::Scope;
 use buzz_core::kind::{
-    event_kind_u32, is_identity_archive_request_kind, is_parameterized_replaceable,
-    is_relay_admin_kind, KIND_AGENT_CAPABILITIES, KIND_AGENT_ENGRAM, KIND_AGENT_PROFILE,
-    KIND_AGENT_TASK, KIND_AGENT_TURN_METRIC, KIND_AGENT_WIKI_PAGE, KIND_APPROVAL_DENY,
-    KIND_APPROVAL_GRANT, KIND_AUDIT_ENTRY, KIND_AUTH, KIND_BLOSSOM_SERVER_LIST, KIND_BOOKMARK_LIST,
-    KIND_BOOKMARK_SET, KIND_BUDGET_SPEND_RECEIPT, KIND_CANVAS, KIND_COMMENT, KIND_CONTACT_LIST,
-    KIND_CONTRIBUTION_RECORD, KIND_DELETION, KIND_DEPLOYMENT_RECORD, KIND_DM_ADD_MEMBER,
-    KIND_DM_HIDE, KIND_DM_OPEN, KIND_DM_RELAY_LIST, KIND_EMOJI_LIST, KIND_EMOJI_SET,
-    KIND_EVENT_REMINDER, KIND_EVM_BINDING, KIND_FOLLOW_SET, KIND_FORECAST, KIND_FORUM_COMMENT,
-    KIND_FORUM_POST, KIND_FORUM_VOTE, KIND_GENERIC_REPOST, KIND_GIFT_WRAP, KIND_GIT_ISSUE,
-    KIND_GIT_PATCH, KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT,
-    KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED,
-    KIND_GIT_STATUS_OPEN, KIND_HIGHLIGHT, KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES,
-    KIND_HUDDLE_PARTICIPANT_JOINED, KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED,
-    KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST, KIND_LAUNCH_BID, KIND_LAUNCH_PROPOSAL,
-    KIND_LAUNCH_RECEIPT, KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE, KIND_LONG_FORM,
-    KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION,
-    KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT,
-    KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST, KIND_NIP29_CREATE_GROUP,
-    KIND_NIP29_DELETE_EVENT, KIND_NIP29_DELETE_GROUP, KIND_NIP29_EDIT_METADATA,
-    KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST, KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER,
+    event_kind_u32, is_parameterized_replaceable, is_relay_admin_kind, KIND_AGENT_CAPABILITIES,
+    KIND_AGENT_ENGRAM, KIND_AGENT_PROFILE, KIND_AGENT_TASK, KIND_AGENT_TURN_METRIC,
+    KIND_AGENT_WIKI_PAGE, KIND_APPROVAL_DENY, KIND_APPROVAL_GRANT, KIND_AUDIT_ENTRY, KIND_AUTH,
+    KIND_BLOSSOM_SERVER_LIST, KIND_BOOKMARK_LIST, KIND_BOOKMARK_SET, KIND_BUDGET_SPEND_RECEIPT,
+    KIND_CANVAS, KIND_COMMENT, KIND_CONTACT_LIST, KIND_CONTRIBUTION_RECORD, KIND_DELETION,
+    KIND_DEPLOYMENT_RECORD, KIND_DM_ADD_MEMBER, KIND_DM_HIDE, KIND_DM_OPEN, KIND_DM_RELAY_LIST,
+    KIND_EMOJI_LIST, KIND_EMOJI_SET, KIND_EVENT_REMINDER, KIND_EVM_BINDING, KIND_FOLLOW_SET,
+    KIND_FORECAST, KIND_FORUM_COMMENT, KIND_FORUM_POST, KIND_FORUM_VOTE, KIND_GENERIC_REPOST,
+    KIND_GIFT_WRAP, KIND_GIT_ISSUE, KIND_GIT_PATCH, KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST,
+    KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT,
+    KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN, KIND_HIGHLIGHT, KIND_HUDDLE_ENDED,
+    KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED, KIND_HUDDLE_PARTICIPANT_LEFT,
+    KIND_HUDDLE_STARTED, KIND_LAUNCH_BID, KIND_LAUNCH_PROPOSAL, KIND_LAUNCH_RECEIPT,
+    KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE, KIND_LONG_FORM, KIND_MANAGED_AGENT,
+    KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION, KIND_MODERATION_BAN,
+    KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT, KIND_MODERATION_UNBAN,
+    KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST, KIND_NIP29_CREATE_GROUP, KIND_NIP29_DELETE_EVENT,
+    KIND_NIP29_DELETE_GROUP, KIND_NIP29_EDIT_METADATA, KIND_NIP29_JOIN_REQUEST,
+    KIND_NIP29_LEAVE_REQUEST, KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER,
     KIND_NIP43_LEAVE_REQUEST, KIND_NIP65_RELAY_LIST_METADATA, KIND_ORG_BUDGET, KIND_ORG_GRANT,
     KIND_ORG_JOIN_REQUEST, KIND_ORG_NODE, KIND_ORG_PITCH, KIND_PERSONA, KIND_PIN_LIST, KIND_POLL,
     KIND_POLL_RESPONSE, KIND_PRESENCE_UPDATE, KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK,
@@ -574,15 +573,6 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         {
             Ok(Scope::AdminUsers)
         }
-        // NIP-IA: identity archive/unarchive requests (9035/9036).
-        // Scope is intentionally UsersWrite, not AdminUsers: NIP-IA's self and
-        // owner-of-agent paths are open to ordinary users (a user retiring their
-        // own key, or an owner archiving their agent). Real authorization is the
-        // consent-path check inside handle_identity_archive_event — the relay
-        // verifies self / admin-role / owner-via-live-kind:0 there. This gate
-        // only ensures the actor can write user-scoped state, which any
-        // profile-publishing user already holds.
-        KIND_IA_ARCHIVE_REQUEST | KIND_IA_UNARCHIVE_REQUEST => Ok(Scope::UsersWrite),
         KIND_NIP29_EDIT_METADATA => {
             // kind:9002 scope split: archived tag → AdminChannels, else ChannelsWrite
             let has_archived = event
@@ -945,11 +935,6 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             | RELAY_ADMIN_SET_WORKSPACE_PROFILE
             | RELAY_ADMIN_SET_ACCESS
             | KIND_NIP43_LEAVE_REQUEST
-            // NIP-IA: identity archive/unarchive requests drive relay-global
-            // archive state (8002/8003/13535) and are audited as global request
-            // events. A stray `h` tag must not channel-scope them.
-            | KIND_IA_ARCHIVE_REQUEST
-            | KIND_IA_UNARCHIVE_REQUEST
             // NIP-AM: agent turn metrics are owner-scoped global events.
             // Channel identity is encrypted inside the payload — no `h` tag.
             | KIND_AGENT_TURN_METRIC
@@ -2101,7 +2086,7 @@ fn is_canonical_decimal(value: &str) -> bool {
 /// authorized the binding still authorizes withdrawing it, so an expired
 /// attestation may revoke but may never activate (a live record always goes
 /// through [`AttestationEnvelope::verify_for_npub`] — expiry, npub, and
-/// signature — exactly as `POST /auth/siwe/register` does).
+/// signature).
 ///
 /// Returns `true` when a live binding's signature belongs to a **contract account** (a smart account such as a
 /// passkey account, whose signature is not a 65-byte `r‖s‖v`): `ecrecover` cannot check it, so the cheap checks here
@@ -2241,8 +2226,8 @@ pub(crate) async fn validate_evm_binding(state: &AppState, event: &Event) -> Res
 ///   the same 20 bytes (`d` lowercase — the NIP-33 coordinate).
 /// * **EIP-712 attestation** — required whenever the record is live
 ///   (`content.revoked` is not `true`): signature, npub, and expiry, via the
-///   same `verify_for_npub` call `POST /auth/siwe/register` makes. An
-///   unverifiable claim never lands; the worst case is a rejected event.
+///   `verify_for_npub` call. An unverifiable claim never lands; the worst case
+///   is a rejected event.
 /// * **SIWE** — *not* re-verifiable here, and ingest does not pretend
 ///   otherwise: the record carries only `siweMessageHash` (a commitment to
 ///   the EIP-4361 message), not the message + signature, so only its shape is
@@ -2250,8 +2235,7 @@ pub(crate) async fn validate_evm_binding(state: &AppState, event: &Event) -> Res
 ///   (`buzz_evm_auth::personal_sign_digest`) and compare.
 /// * **Revocation** — `content.revoked: true` (same `(author, d)`
 ///   republication as NIP-ORG kind:37011 §Revocation) needs no attestation:
-///   withdrawal requires only control of the npub, mirroring
-///   `POST /auth/siwe/revoke`. An attestation that *is* present must still
+///   withdrawal requires only control of the npub. An attestation that *is* present must still
 ///   verify signature/npub/account (expiry excluded).
 ///
 /// Readers resolve per `(author, d)` (NIP-33 is author-keyed): a foreign
@@ -4831,16 +4815,6 @@ async fn ingest_event_inner(
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
-    // Processed here (verify consent, mutate archived_identities, emit the
-    // relay-signed 8002/8003 delta + 13535 snapshot), then — unlike the
-    // NIP-43 admin commands above — the request itself falls through to normal
-    // storage so the delta's `["e", request_id]` audit reference resolves.
-    if is_identity_archive_request_kind(kind_u32) {
-        crate::handlers::identity_archive::handle_identity_archive_event(tenant, state, &event)
-            .await
-            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
-    }
-
     if kind_u32 == KIND_DELETION {
         crate::handlers::side_effects::validate_standard_deletion_event(tenant, &event, state)
             .await
@@ -6233,19 +6207,6 @@ mod postgres_tests {
             steps[0].action,
             TraceAction::WriteInsertGlobal { .. }
         ));
-    }
-
-    #[test]
-    fn nip_ia_requests_are_global_only() {
-        // NIP-IA requests drive relay-global archive state; a stray `h` tag
-        // must not channel-scope them, or the global audit trail breaks.
-        for kind in [KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST] {
-            assert!(is_global_only_kind(kind), "kind {kind} must be global-only");
-            assert!(
-                !requires_h_channel_scope(kind),
-                "kind {kind} must not require an h tag"
-            );
-        }
     }
 
     #[test]
@@ -10019,7 +9980,7 @@ mod postgres_tests {
     }
 
     /// An EIP-712 `NostrSigner` attestation authorizing `npub` from `account`,
-    /// signed by `key` — the exact envelope `POST /auth/siwe/register` stores
+    /// signed by `key` — the exact envelope the app puts in a wallet-link record
     /// and kind:37017 ingest verifies.
     fn binding_attestation(
         key: &SigningKey,
@@ -10483,8 +10444,7 @@ mod postgres_tests {
             8453,
         );
 
-        // Withdrawal with no attestation: control of the npub is the proof,
-        // mirroring `POST /auth/siwe/revoke` (which requires no EVM signature).
+        // Withdrawal with no attestation: control of the npub is the proof.
         let content = binding_content(BINDING_ADDRESS, None, true);
         let tags = binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS, Some("8453"));
         assert!(

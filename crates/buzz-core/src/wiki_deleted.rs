@@ -5,10 +5,9 @@
 //! tombstone so an authorized editor can restore the page by republishing a
 //! revision. The "Recently deleted" UI lists those tombstones, so a query
 //! filter may opt in with `"include_deleted": true` — accepted only on
-//! wiki-page queries, exactly the strict-extension pattern of
-//! [`crate::thread_window`]: an unknown or unusable constraint fails closed
-//! rather than silently describing different rows from the ones the caller
-//! requested.
+//! wiki-page queries, a strict extension: an unknown or unusable
+//! constraint fails closed rather than silently describing different rows from
+//! the ones the caller requested.
 
 use serde_json::Value;
 

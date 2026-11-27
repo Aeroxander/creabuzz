@@ -76,19 +76,14 @@ back to the writer.
 3. Remove dependencies on the retired per-community series before increasing
    community count.
 
-`buzz_total_messages` and `buzz_total_active_channels` are emitted only by the
-`all` collection. In the default fleet-only mode they stop updating, so move
-dashboards off them before rollout.
+`buzz_total_messages`, `buzz_total_active_channels` and `buzz_communities_total`
+are no longer emitted: they came only from the per-community database
+collection, which has been removed.
 
-`BUZZ_USAGE_METRICS_PER_COMMUNITY=all` temporarily restores the prior
-per-community emission for rollback or dashboard migration. It also restores
-the associated memory and monitoring-cardinality growth, so it is not the
-steady-state configuration. In this mode every leader tick collects all
-families, so a successful collection reports both availability gauges as `1`
-and a failed one demotes the leader and reports `0`; dashboards gated on
-availability or `buzz_usage_snapshot_age_seconds` keep working through a
-rollback. It emits the exact
-`buzz_communities_total` instead of `buzz_communities_estimated`.
+`BUZZ_USAGE_METRICS_PER_COMMUNITY=all` now restores only the per-community
+connection, subscription and storage series. It also restores the associated
+memory and monitoring-cardinality growth, so it is not the steady-state
+configuration. The database-backed totals are always the fleet ones above.
 
 ## Leader election
 

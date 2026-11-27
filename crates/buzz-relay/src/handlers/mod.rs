@@ -26,7 +26,6 @@ pub mod close;
 /// Command executor — transactional processing for command kinds.
 pub mod command_executor;
 /// Relay-operator community provisioning HTTP support.
-pub mod community_provisioning;
 /// NIP-45 COUNT handler.
 pub mod count;
 /// EVENT handler — WS dispatcher → ingest pipeline → fan-out.
@@ -35,8 +34,6 @@ pub mod event;
 pub mod home_moderation;
 #[cfg(test)]
 mod home_moderation_postgres_tests;
-/// NIP-IA identity archive request handler (kinds 9035–9036).
-pub mod identity_archive;
 /// imeta tag validation helpers.
 pub mod imeta;
 /// Transport-neutral event ingestion pipeline.

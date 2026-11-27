@@ -26,7 +26,7 @@ use crate::erc6492::{
     ERC1271_SUCCESS,
 };
 use crate::error::EvmAuthError;
-use crate::siwe::{personal_sign_digest, recover_address};
+use crate::personal_sign::{personal_sign_digest, recover_address};
 use crate::EvmAddress;
 
 /// Minimal Ethereum JSON-RPC surface needed for signature verification.
@@ -275,7 +275,7 @@ impl RpcSignatureVerifier {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::siwe::personal_sign_digest;
+    use crate::personal_sign::personal_sign_digest;
     use k256::ecdsa::SigningKey;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;

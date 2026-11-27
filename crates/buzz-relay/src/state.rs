@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -1231,8 +1231,6 @@ pub struct AppState {
     pub community_connections: Arc<CommunityConnectionRegistry>,
     /// Stops only the periodic lifecycle revalidator during graceful shutdown.
     pub community_revalidator_cancel: CancellationToken,
-    /// Test/telemetry counter for archive disconnect publication attempts.
-    pub community_disconnect_publish_attempts: Arc<AtomicU64>,
     /// Semaphore limiting total concurrent connections.
     pub conn_semaphore: Arc<Semaphore>,
     /// Semaphore limiting concurrent message handler tasks.
@@ -1327,9 +1325,6 @@ pub struct AppState {
     /// replace this with process-local caching; replay freshness must survive
     /// cross-pod routing.
     pub nip98_replay: Arc<dyn Nip98ReplayGuard>,
-    /// Shared HTTP client for relay-proxied GIF provider requests. Reusing the
-    /// connection pool avoids a fresh TLS handshake for every search/share.
-    pub gif_http_client: reqwest::Client,
     /// Shared HTTP client for the relay-owned LLM gateway, built once at
     /// startup (redirects disabled: a provider 3xx must never replay the
     /// key-bearing request elsewhere). `None` when the gateway is not
@@ -1365,9 +1360,6 @@ pub struct AppState {
     /// was when it did. The periodic revalidation closes the sockets of anyone who is not a member of a community that
     /// became members-only without this pod hearing of it (a lost cross-server message), once per change.
     pub membership_sweep_seen: Arc<DashMap<CommunityId, bool>>,
-    /// Caps on self-serve community creation (`POST /self-serve/communities`): attempts per signing key and creations per
-    /// hour across the deployment.
-    pub self_serve_limiter: Arc<crate::api::self_serve::SelfServeLimiter>,
     /// Current in-flight media uploads per (community, uploader pubkey).
     pub media_uploads_in_flight: Arc<DashMap<ScopedPubkeyKey, u32>>,
     /// Cache for observer agent-owner authorization (kind 24200).
@@ -1530,7 +1522,6 @@ impl AppState {
             Arc::new(RedisNip98ReplayGuard::new(redis_pool.clone()));
         let nip_fi_command_replay =
             crate::api::nip_fi::command_replay_guard(redis_pool.clone(), config.nip_fi.mode);
-        let gif_http_client = crate::api::gifs::build_gif_http_client();
         let llm_http_client = if config.llm.is_some() {
             match crate::api::llm_gateway::build_llm_http_client() {
                 Ok(client) => Some(client),
@@ -1561,7 +1552,6 @@ impl AppState {
             conn_manager: Arc::new(ConnectionManager::new()),
             community_connections: Arc::new(CommunityConnectionRegistry::new()),
             community_revalidator_cancel: CancellationToken::new(),
-            community_disconnect_publish_attempts: Arc::new(AtomicU64::new(0)),
             conn_semaphore: Arc::new(Semaphore::new(max_connections)),
             handler_semaphore: Arc::new(Semaphore::new(max_concurrent_handlers)),
             git_semaphore: Arc::new(Semaphore::new(git_max_concurrent_ops)),
@@ -1618,7 +1608,6 @@ impl AppState {
             partition_audit: Arc::new(std::sync::RwLock::new(None)),
             started_at: Instant::now(),
             nip98_replay,
-            gif_http_client,
             llm_http_client,
             admission_rate_limiter,
             observer_rate_limiter: Arc::new(DashMap::new()),
@@ -1638,7 +1627,6 @@ impl AppState {
             ),
             public_reads,
             membership_sweep_seen: Arc::new(DashMap::new()),
-            self_serve_limiter: Arc::new(crate::api::self_serve::SelfServeLimiter::new()),
             media_uploads_in_flight: Arc::new(DashMap::new()),
             observer_owner_cache: Arc::new(
                 moka::sync::Cache::builder()
@@ -2101,36 +2089,6 @@ impl AppState {
         });
 
         closed
-    }
-
-    /// Disconnect a community locally and publish the command to every relay pod.
-    ///
-    /// Publication is awaited so the archive API can distinguish durable state
-    /// from propagation completion and offer a retryable response on failure.
-    pub async fn disconnect_community_clusterwide(
-        &self,
-        tenant: &TenantContext,
-        archived_at: DateTime<Utc>,
-    ) -> anyhow::Result<usize> {
-        let closed = self
-            .db
-            .with_community_archive_fence(tenant.community(), archived_at, || {
-                self.community_connections
-                    .disconnect_archived_community(tenant.community())
-            })
-            .await?
-            .unwrap_or(0);
-        self.community_disconnect_publish_attempts
-            .fetch_add(1, Ordering::Relaxed);
-        self.pubsub
-            .publish_conn_control(
-                tenant,
-                &ConnControl::DisconnectCommunity {
-                    archived_at: Some(archived_at),
-                },
-            )
-            .await?;
-        Ok(closed)
     }
 
     /// Consumes cross-pod connection-control commands until the broadcast closes.

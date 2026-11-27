@@ -1462,15 +1462,6 @@ pub const fn is_relay_admin_kind(kind: u32) -> bool {
     )
 }
 
-/// Returns `true` if `kind` is a NIP-IA identity archival request (9035–9036).
-///
-/// Only the user-signed *request* kinds are matched. The relay-signed delta and
-/// snapshot kinds (8002/8003/13535) are emitted by the relay, never ingested as
-/// commands, so they are intentionally excluded.
-pub const fn is_identity_archive_request_kind(kind: u32) -> bool {
-    matches!(kind, KIND_IA_ARCHIVE_REQUEST | KIND_IA_UNARCHIVE_REQUEST)
-}
-
 /// Returns `true` if `kind` is a Buzz command kind that requires transactional execution.
 pub const fn is_command_kind(kind: u32) -> bool {
     matches!(

@@ -94,8 +94,7 @@ $EDITOR .env               # every CHANGE_ME; the Creaton part says what each se
 - The server has no admin API or admin bundle (`./run.sh reports` lists the reports passed on to the owner).
 - Any `VITE_*` value still holding `CHANGE_ME` stops the build. The server's secrets may still be `CHANGE_ME` at a first
   build; `start` refuses those.
-- The server turns on read state (`BUZZ_V1_ENABLED`, unread markers) and the app's page routes (`BUZZ_WEB_SPA=full`),
-  and shows the terms and privacy note named by `BUZZ_TERMS_FILE` and `BUZZ_PRIVACY_FILE` at sign-up. `run.sh` refuses
+- The server turns on the app's page routes (`BUZZ_WEB_SPA=full`), and shows the terms and privacy note named by `BUZZ_TERMS_FILE` and `BUZZ_PRIVACY_FILE` at sign-up. `run.sh` refuses
   a policy file that still has a draft's `[placeholders]`.
   It also shows the "I am 18 years of age or older" box at sign-up (`BUZZ_AGE_ATTESTATION_REQUIRED=true` in the Creaton
   part of `.env`; `compose.creaton.yml` turns it on even when `.env` leaves it out). Set it to `false` only if counsel
@@ -200,7 +199,7 @@ and posting anything. Records signed by someone muted or banned are left out.
 
 It opens records only on a server whose operator made the whole server invite-only (`BUZZ_REQUIRE_RELAY_MEMBERSHIP=true`,
 as the bundle's `.env.example` does), and there it covers every community the server hosts: it is one setting for the
-server, not one per community. On a server that lets communities choose (`docs/self-serve-communities.md`), a
+server, not one per community. A
 community that chose invite-only for itself is not opened by this setting: its owner decided who reads there, and has no
 way yet to choose public records.
 

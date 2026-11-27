@@ -6,7 +6,6 @@
 //!
 //! | Path | Transport | Description |
 //! |------|-----------|-------------|
-//! | SIWE (EIP-4361) | HTTP | `personal_sign` login; EOA verified via `ecrecover` |
 //! | Signer attestation (EIP-712) | Nostr event | EVM account authorizes a Nostr signer key |
 //!
 //! ## Design
@@ -26,8 +25,8 @@ pub mod address;
 pub mod attestation;
 /// Error types.
 pub mod error;
-/// EIP-4361 "Sign-In with Ethereum" parsing and verification.
-pub mod siwe;
+/// EIP-191 `personal_sign` digests and `ecrecover`.
+pub mod personal_sign;
 /// Pluggable signature verification (EOA now; EIP-1271/6492 later).
 pub mod verifier;
 
@@ -41,12 +40,7 @@ pub mod rpc;
 pub use address::EvmAddress;
 pub use attestation::{AttestationEnvelope, Eip712Domain, NostrSignerAttestation};
 pub use error::EvmAuthError;
-pub use siwe::{
-    personal_sign_digest, verify as verify_siwe, SiweMessage, SiweRequirements, DEFAULT_LEEWAY_SECS,
-};
-
-#[cfg(feature = "rpc")]
-pub use siwe::verify_siwe_smart;
+pub use personal_sign::personal_sign_digest;
 pub use verifier::{EoaVerifier, SignatureVerifier};
 
 #[cfg(feature = "rpc")]

@@ -26,14 +26,13 @@ use buzz_relay_mesh::endpoint::MeshEndpoint;
 use buzz_relay_mesh::gossip::GossipRecord;
 use buzz_relay_mesh::registry::{ReadyRecord, ReadyRegistry};
 use buzz_relay_mesh::{
-    GoodbyeReason, InboundHandler, MeshDatagram, MeshMembership, MeshRuntime, MeshStatus,
-    MeshStream, Profile, RelayMeshMembership, RelayPeerTransport, RuntimeId, StreamHello,
-    StreamRole,
+    InboundHandler, MeshDatagram, MeshMembership, MeshRuntime, MeshStatus, MeshStream, Profile,
+    RelayMeshMembership, RelayPeerTransport, RuntimeId, StreamHello, StreamRole,
 };
 
 use crate::config::Config;
 use crate::tunnel::directory::SessionDirectory;
-use crate::tunnel::reliable::{ReliableFrame, ReliableInbound, ReliableStreamRouter};
+use crate::tunnel::reliable::ReliableStreamRouter;
 
 /// Handler for one inbound session-stream profile. Called on the accept task;
 /// implementations must hand off promptly (spawn) rather than block.
@@ -283,12 +282,7 @@ impl MeshHandle {
     ///
     /// Called once from `main.rs` right after [`boot_mesh`]; see
     /// [`wire_mesh_consumers`] for what gets wired.
-    pub fn wire_consumers(
-        &self,
-        rooms: Arc<crate::audio::AudioRoomManager>,
-        demo_echo: bool,
-        shutting_down: Arc<AtomicBool>,
-    ) {
+    pub fn wire_consumers(&self, rooms: Arc<crate::audio::AudioRoomManager>) {
         wire_mesh_consumers(
             &self.dispatcher,
             self.directory.clone(),
@@ -297,8 +291,6 @@ impl MeshHandle {
             Arc::clone(&self.audio_fence),
             rooms,
             Arc::clone(&self.owners),
-            demo_echo,
-            shutting_down,
         )
     }
 }
@@ -311,9 +303,7 @@ impl MeshHandle {
 /// - `HuddleControl` streams → [`HuddleControlAcceptor::accept_inbound`]
 ///   (owner-side register/unregister control loop).
 /// - `ReliableStream` streams → [`ReliableStreamRouter::accept_inbound`], then
-///   either the `BUZZ_MESH_DEMO_ECHO` consumer (testbed evidence runs: echo
-///   every validated `Data` frame back) or accept/log/close (default — no
-///   product session consumer is wired yet).
+///   accept/log/close (no product session consumer is wired yet).
 ///
 /// Owner-side lease renewal is NOT spawned here: `spawn_observable_renewer`
 /// attaches on the *join* path's [`ReliableJoin::Owned`] arm (the pod that
@@ -335,8 +325,6 @@ pub fn wire_mesh_consumers(
     audio_fence: Arc<crate::audio::mesh::GenerationFloor>,
     rooms: Arc<crate::audio::AudioRoomManager>,
     owners: Arc<crate::audio::join::HuddleOwnerRegistry>,
-    demo_echo: bool,
-    shutting_down: Arc<AtomicBool>,
 ) {
     // RealtimeMedia datagrams: huddle media fan-in over the shared fence.
     // `on_media_datagram` is synchronous and non-blocking (fence check +
@@ -382,7 +370,6 @@ pub fn wire_mesh_consumers(
     ));
     dispatcher.register_reliable_stream(Box::new(move |from, hello, stream| {
         let router = Arc::clone(&reliable);
-        let shutting_down = Arc::clone(&shutting_down);
         tokio::spawn(async move {
             let inbound = match router.accept_inbound(from, hello, stream).await {
                 Ok(inbound) => inbound,
@@ -391,82 +378,13 @@ pub fn wire_mesh_consumers(
                     return;
                 }
             };
-            if demo_echo {
-                run_demo_echo(router.directory().clone(), inbound, shutting_down).await;
-            } else {
-                tracing::info!(
-                    session_id = %inbound.fenced.session_id,
-                    peer = %inbound.from,
-                    "reliable stream accepted; no session consumer wired — closing"
-                );
-            }
+            tracing::info!(
+                session_id = %inbound.fenced.session_id,
+                peer = %inbound.from,
+                "reliable stream accepted; no session consumer wired — closing"
+            );
         });
     }));
-}
-
-/// `BUZZ_MESH_DEMO_ECHO` consumer: echo every validated `Data` frame back to
-/// the sender. A transport/session-routing smoke for cross-pod evidence runs —
-/// each echoed frame proves fenced validation (Redis directory hit included)
-/// on the owner and delivery in both mesh directions. Not a product flow.
-/// `pub(crate)` so the join-side probe (`api::mesh_demo`) can exercise the
-/// real consumer in its round-trip test.
-pub(crate) async fn run_demo_echo(
-    directory: SessionDirectory,
-    inbound: ReliableInbound,
-    shutting_down: Arc<AtomicBool>,
-) {
-    let session_id = inbound.fenced.session_id;
-    let peer = inbound.from;
-    let mut stream = inbound.stream;
-    tracing::info!(%session_id, %peer, "mesh demo echo: session open");
-    let mut drain_tick = tokio::time::interval(std::time::Duration::from_millis(100));
-    loop {
-        let frame = tokio::select! {
-            _ = drain_tick.tick() => {
-                if shutting_down.load(Ordering::Relaxed) {
-                    if let Some(community_id) = stream.community_id() {
-                        if let Err(e) = stream.send_goodbye(community_id, GoodbyeReason::Draining).await {
-                            tracing::warn!(%session_id, "mesh demo echo: draining goodbye failed: {e}");
-                        } else {
-                            tracing::info!(%session_id, "mesh demo echo: sent draining goodbye");
-                        }
-                    } else {
-                        let _ = stream.finish();
-                        tracing::info!(%session_id, "mesh demo echo: drain before community latch — closing");
-                    }
-                    return;
-                }
-                continue;
-            }
-            frame = stream.recv_validated(&directory) => frame,
-        };
-        match frame {
-            Ok(Some(ReliableFrame::Data(payload))) => {
-                // recv_validated latched the community from the frame it just
-                // validated, so it is always present here.
-                let Some(community_id) = stream.community_id() else {
-                    tracing::warn!(%session_id, "demo echo: no community after validated Data");
-                    return;
-                };
-                if let Err(e) = stream.send_bytes(community_id, &payload).await {
-                    tracing::warn!(%session_id, "demo echo: send failed: {e}");
-                    return;
-                }
-            }
-            Ok(Some(ReliableFrame::Goodbye(reason))) => {
-                tracing::info!(%session_id, ?reason, "mesh demo echo: goodbye");
-                return;
-            }
-            Ok(None) => {
-                tracing::info!(%session_id, "mesh demo echo: stream closed");
-                return;
-            }
-            Err(e) => {
-                tracing::warn!(%session_id, "mesh demo echo: recv failed: {e}");
-                return;
-            }
-        }
-    }
 }
 
 /// Wire protocol version advertised in registry/gossip records.
@@ -832,8 +750,6 @@ mod tests {
             Arc::clone(&fence),
             Arc::new(crate::audio::AudioRoomManager::new()),
             Arc::new(crate::audio::join::HuddleOwnerRegistry::new()),
-            false,
-            Arc::new(AtomicBool::new(false)),
         );
 
         let session = uuid::Uuid::new_v4();

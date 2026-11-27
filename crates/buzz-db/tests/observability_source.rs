@@ -417,22 +417,6 @@ fn p0_pool_acquisitions_use_typed_operation_pairs_without_other() {
     assert!(!thread_summary.contains("fetch_optional(pool)"));
     assert!(!thread_summary.contains("fetch_all(pool)"));
 
-    let archived_identities = include_str!("../src/store/archived_identities.rs");
-    let archived_identity_production = archived_identities
-        .split("\n#[cfg(test)]")
-        .next()
-        .expect("archived identity production source");
-    assert_eq!(
-        archived_identity_production
-            .matches("WriterOperation::EventWrite")
-            .count(),
-        4,
-        "all four archived identity operations must be attributed to event writes"
-    );
-    assert!(!archived_identity_production.contains("fetch_optional(pool)"));
-    assert!(!archived_identity_production.contains("fetch_all(pool)"));
-    assert!(!archived_identity_production.contains("execute(pool)"));
-
     let relay_main = include_str!("../../buzz-relay/src/main.rs");
     assert!(relay_main.contains("pool_state.db.refresh_pool_waiter_metrics();"));
     assert!(relay_main.contains(".ensure_configured_community_for_bootstrap("));
@@ -469,15 +453,15 @@ fn p0_pool_acquisitions_use_typed_operation_pairs_without_other() {
         .split_once("pub async fn try_lock_usage_metrics(")
         .expect("usage store must expose the legacy leader-lock acquisition")
         .1
-        .split_once("pub async fn usage_community_count(")
-        .expect("usage leader lock must precede counter reads")
+        .split_once("pub async fn usage_fleet_stock_snapshot(")
+        .expect("usage leader lock must precede fleet reads")
         .0;
     assert!(usage_leader_lock.contains("acquire_writer_with_legacy_metrics("));
     assert!(
         usage_production
             .matches("WriterOperation::Maintenance")
             .count()
-            >= 11,
+            >= 3,
         "every periodic usage checkout must be maintenance-attributed"
     );
     for bypass in [
@@ -595,7 +579,6 @@ fn p0_pool_acquisitions_use_typed_operation_pairs_without_other() {
             "channel_members",
             include_str!("../src/store/channel_members.rs"),
         ),
-        ("archived_identities", archived_identities),
         ("event", event),
         ("git_repo", include_str!("../src/store/git_repo.rs")),
         ("push", include_str!("../src/store/push.rs")),
@@ -1325,9 +1308,7 @@ fn serving_table_policy_skips_standalone_test_modules() {
         "`tests.rs` is a standalone test-only module"
     );
     assert!(
-        !should_scan_guarded_write_source_file(Path::new(
-            "src/store/thread_window/postgres_tests.rs",
-        )),
+        !should_scan_guarded_write_source_file(Path::new("src/store/artifact_postgres_tests.rs",)),
         "`*_tests.rs` modules are standalone test-only sources, not production seams"
     );
     assert!(

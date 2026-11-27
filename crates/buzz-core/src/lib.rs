@@ -12,8 +12,6 @@ pub mod channel;
 /// NIP-AE Agent Engrams — slug grammar, conversation key, d-tag derivation,
 /// body parse/serialize, envelope build/validate, head selection.
 pub mod engram;
-/// Buzz kind number registry — custom event type constants.
-pub mod erc4824;
 /// Relay-side error types.
 pub mod error;
 /// Relay-side event wrapper with verification tracking.
@@ -48,8 +46,6 @@ pub mod season;
 pub mod task_result;
 /// Tenant identity — the server-resolved community key carried on scoped paths.
 pub mod tenant;
-/// NIP-CW thread-mode normalized newest-first window contract.
-pub mod thread_window;
 /// Schnorr signature and event ID verification.
 pub mod verification;
 pub mod wiki_deleted;

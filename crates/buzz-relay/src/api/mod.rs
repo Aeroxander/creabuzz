@@ -1,25 +1,17 @@
 //! HTTP API — media, git, NIP-05, and the Nostr HTTP bridge.
 
 pub mod bridge;
-pub mod buzz_v1;
-pub mod communities;
 pub mod community_access;
-pub mod dao_json;
 pub mod events;
-pub mod evm_auth;
-pub mod gifs;
 pub mod git;
 pub mod invites;
 pub mod llm_gateway;
 /// The AI manager: drafts for a project's founder, through the honesty envelope.
 pub mod manager;
 pub mod media;
-pub mod mesh_demo;
 pub mod nip05;
 pub mod nip_fi;
-pub mod operator;
 pub(crate) mod public_read;
-pub mod self_serve;
 /// The sponsored-fee limit: `POST /sponsor`, off unless the operator names an upstream.
 pub mod sponsor;
 /// Web push subscriptions: `PUT` and `DELETE /push/web`.

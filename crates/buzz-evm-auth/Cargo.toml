@@ -5,13 +5,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "EVM identity for Buzz: SIWE (EIP-4361) login and EIP-712 signer attestations"
+description = "EVM identity for Buzz: EIP-712 signer attestations and smart-account signature checks"
 
 [dependencies]
 serde      = { workspace = true }
 serde_json = { workspace = true }
 thiserror  = { workspace = true }
-chrono     = { workspace = true }
 hex        = { workspace = true }
 k256       = { workspace = true }
 sha3       = { workspace = true }

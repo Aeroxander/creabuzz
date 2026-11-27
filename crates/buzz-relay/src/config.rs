@@ -1,11 +1,11 @@
 //! Relay configuration from environment variables.
 
+use std::net::SocketAddr;
 use std::time::Duration;
-use std::{collections::HashMap, net::SocketAddr};
 
 use sha2::{Digest, Sha256};
 use thiserror::Error;
-use tracing::{error, warn};
+use tracing::warn;
 
 /// Default maximum inbound WebSocket frame size in bytes.
 ///
@@ -45,7 +45,7 @@ pub struct JoinPolicyConfig {
 
 #[derive(Clone, Debug)]
 pub struct EvmAuthConfig {
-    /// EIP-155 chain id the SIWE message must claim.
+    /// EIP-155 chain id a smart account's attestation must claim.
     pub chain_id: Option<u64>,
     /// Optional EIP-6492 validator address (smart-account verification).
     pub erc6492_validator: Option<String>,
@@ -275,30 +275,6 @@ impl std::fmt::Debug for LlmConfig {
     }
 }
 
-/// Optional KLIPY GIF-search integration owned by the relay operator.
-///
-/// The API key deliberately stays private and its [`Debug`] implementation is
-/// redacted so dumping [`Config`] cannot disclose it.
-#[derive(Clone)]
-pub struct KlipyConfig {
-    api_key: String,
-}
-
-impl KlipyConfig {
-    /// Return the key only to the outbound KLIPY client.
-    pub(crate) fn api_key(&self) -> &str {
-        &self.api_key
-    }
-}
-
-impl std::fmt::Debug for KlipyConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("KlipyConfig")
-            .field("api_key", &"[REDACTED]")
-            .finish()
-    }
-}
-
 /// Maximum configured jitter, leaving ten seconds of the hard-drain budget for
 /// WebSocket close-frame delivery after the final delayed cancellation.
 pub const MAX_DRAIN_JITTER_MS: u64 = 20_000;
@@ -375,10 +351,6 @@ pub struct Config {
     /// Whether REST API requests must present a valid token. Independent of
     /// WebSocket protocol auth, which is *always* required by REQ/EVENT/COUNT.
     pub require_auth_token: bool,
-    /// Opt-in private accessory API; disabled until explicitly deployed.
-    pub buzz_v1_enabled: bool,
-    /// Author-time unread tracking duration, independent of NIP-RS retention.
-    pub buzz_v1_retention_seconds: u32,
     /// Comma-separated list of allowed CORS origins.
     /// If empty, permissive CORS is used (dev mode).
     /// Example: "tauri://localhost,http://localhost:3000"
@@ -450,45 +422,10 @@ pub struct Config {
     /// no-regression rollout.
     pub mesh: buzz_relay_mesh::MeshConfig,
 
-    /// Testbed-only reliable-stream echo consumer (`BUZZ_MESH_DEMO_ECHO`).
-    /// When `on`, the owner side of an inbound reliable mesh stream echoes
-    /// every validated `Data` frame back to the sender — a transport/
-    /// session-routing smoke for cross-pod evidence runs, NOT a product flow.
-    /// Same strict opt-in as `BUZZ_MESH`; default off means inbound reliable
-    /// streams are accepted, logged, and closed (no session consumer yet).
-    pub mesh_demo_echo: bool,
-
     /// Optional hex-encoded pubkey of the relay owner.
     /// When set, this pubkey is automatically bootstrapped into `relay_members`
     /// with the `owner` role on first startup.
     pub relay_owner_pubkey: Option<String>,
-
-    /// Canonical HTTP origin of the deployment-global operator API.
-    ///
-    /// Every operator NIP-98 `u` tag is verified against this origin, independent
-    /// of the inbound HTTP `Host` header and tenant registry. Required only to
-    /// *use* the community-provisioning endpoints: when it is unset, those
-    /// endpoints fail closed at request time (see
-    /// `api::operator::authorize_operator_request`). It is NOT required at boot
-    /// even when `RELAY_OPERATOR_PUBKEYS` is set, because that allowlist also
-    /// names the operators of season records, which need no origin. Set via
-    /// `RELAY_OPERATOR_API_ORIGIN` as an `http://` or `https://` origin with no
-    /// path, query, or fragment.
-    pub relay_operator_api_origin: Option<String>,
-
-    /// The domain people's own communities are created under, e.g. `creaton.example`: someone who picks the name `acme`
-    /// gets `acme.creaton.example`. Set via `BUZZ_SELF_SERVE_COMMUNITY_DOMAIN` as a bare authority (`localhost:3000` for
-    /// a local run).
-    ///
-    /// Unset (the default) turns self-serve creation off entirely: `POST /self-serve/communities` answers 404. Needs
-    /// `RELAY_OPERATOR_API_ORIGIN`, which is the origin the signed request is checked against; setting one without the
-    /// other is a startup error rather than an endpoint that silently refuses everyone.
-    pub self_serve_community_domain: Option<String>,
-
-    /// The most communities self-serve creation makes across the whole deployment in an hour
-    /// (`BUZZ_SELF_SERVE_MAX_PER_HOUR`, default 30). A signing key costs nothing to make, so a per-person limit alone
-    /// would not stop a script; this one does.
-    pub self_serve_max_per_hour: u32,
 
     /// The most boards one person who is not a community owner or admin may start in a day
     /// (`BUZZ_BOARDS_PER_PERSON_PER_DAY`, default 5; 0 turns the limit off). Anyone in a community may start a board;
@@ -526,21 +463,17 @@ pub struct Config {
     /// server received from it.
     pub new_account_hours: u32,
 
-    /// Deployment-level relay operator pubkeys allowed to use the
-    /// `/operator/communities` management endpoints.
+    /// Deployment-level relay operator pubkeys, who sign season records and
+    /// other operator-only records.
     ///
     /// Unlike `relay_owner_pubkey` (a role *within* the deployment community),
-    /// operators span tenants: they may create new communities and bootstrap
-    /// initial owners, but hold no implicit tenant membership row.
-    /// Empty (the default) disables community provisioning entirely — fail closed.
+    /// operators span tenants, but hold no implicit tenant membership row.
+    /// Empty (the default) means nobody holds the operator role — fail closed.
     ///
     /// Set via `RELAY_OPERATOR_PUBKEYS` as a comma-separated list of 64-char
     /// hex pubkeys. Invalid entries are rejected at startup (config error), not
     /// skipped — a typo must not silently disable an operator.
     pub relay_operator_pubkeys: Vec<String>,
-
-    /// Configured operator-listener identities and their HTTPS delivery URLs.
-    pub operator_listener_delivery_urls: HashMap<String, url::Url>,
 
     /// Allow NIP-OA owner attestation for relay membership.
     ///
@@ -559,8 +492,8 @@ pub struct Config {
     /// Relay-owned LLM gateway. Unset means `/llm/chat/completions` returns 404.
     pub llm: Option<LlmConfig>,
 
-    /// SIWE onboarding (creabuzz). Unset means the /auth/siwe routes 404
-    /// and the relay stays stock-compatible.
+    /// Wallet-link attestations (kind 37017): the chain connection the relay uses to check a smart account's
+    /// signature. Unset means smart-account links are refused.
     pub evm_auth: Option<EvmAuthConfig>,
 
     /// The chain reader (plan v2, milestone 5): reads the contracts' events
@@ -575,10 +508,6 @@ pub struct Config {
     /// The sponsored-fee limit (`BUZZ_SPONSOR_*`): `POST /sponsor` in front of the operator's own sponsor. Unset (no
     /// `BUZZ_SPONSOR_UPSTREAM_URL`) means the path does not exist.
     pub sponsor: Option<crate::api::sponsor::SponsorConfig>,
-
-    /// Relay-owned KLIPY integration. Unset means GIF search is not advertised
-    /// and its proxy routes return 404.
-    pub klipy: Option<KlipyConfig>,
 
     /// Media storage configuration (S3/MinIO).
     pub media: buzz_media::MediaConfig,
@@ -642,8 +571,6 @@ pub struct Config {
     pub push_gateway_delivery_url: Option<url::Url>,
     /// Hard timeout for one push gateway delivery request.
     pub push_gateway_timeout: Duration,
-    /// Hard timeout for one operator-listener delivery request.
-    pub operator_listener_timeout: Duration,
 
     /// Optional relay-hosted policy shown on join surfaces. Disabled when no
     /// documents or age attestation are configured.
@@ -669,13 +596,6 @@ pub struct Config {
     /// itself falls back to the web bundle's `index.html`, enabling arbitrary
     /// client-side routing in the web SPA.
     pub web_spa_full: bool,
-    /// Whether the unauthenticated `GET /communities` directory is served
-    /// (`BUZZ_PUBLIC_COMMUNITY_DIRECTORY=1`). Default off: on a multi-tenant
-    /// deployment the directory lists every hosted community's host, icon and
-    /// member count to anyone, so it is an explicit operator choice. When
-    /// off the route answers 404, exactly like a relay that predates it (the
-    /// web client already falls back gracefully).
-    pub public_community_directory: bool,
     /// Whether anyone may read a public project's record on a server that
     /// requires membership (`BUZZ_PUBLIC_PROJECT_READS=1`). Default off: a
     /// caller who is not a member is refused exactly as before. It opens
@@ -744,10 +664,6 @@ fn rate_limit_config_from_env() -> Result<buzz_auth::RateLimitConfig, ConfigErro
             "BUZZ_RATE_LIMIT_HUMAN_MESSAGES_PER_MIN",
             defaults.human_messages_per_min,
         )?,
-        gif_searches_per_min: positive_u64_from_env(
-            "BUZZ_RATE_LIMIT_GIF_SEARCHES_PER_MIN",
-            defaults.gif_searches_per_min,
-        )?,
         human_api_calls_per_min: positive_u64_from_env(
             "BUZZ_RATE_LIMIT_HUMAN_API_CALLS_PER_MIN",
             defaults.human_api_calls_per_min,
@@ -775,27 +691,6 @@ fn rate_limit_config_from_env() -> Result<buzz_auth::RateLimitConfig, ConfigErro
     })
 }
 
-fn parse_operator_api_origin(raw: &str) -> Result<String, ConfigError> {
-    let raw = raw.trim();
-    let url = url::Url::parse(raw).map_err(|e| {
-        ConfigError::InvalidValue(format!("RELAY_OPERATOR_API_ORIGIN is not a valid URL: {e}"))
-    })?;
-    if !matches!(url.scheme(), "http" | "https")
-        || url.host().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.path() != "/"
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(ConfigError::InvalidValue(
-            "RELAY_OPERATOR_API_ORIGIN must be an http(s) origin with no credentials, path, query, or fragment"
-                .to_string(),
-        ));
-    }
-    Ok(raw.trim_end_matches('/').to_string())
-}
-
 fn parse_push_gateway_delivery_url(raw: &str) -> Result<url::Url, ConfigError> {
     let url = url::Url::parse(raw.trim()).map_err(|e| {
         ConfigError::InvalidValue(format!(
@@ -817,58 +712,6 @@ fn parse_push_gateway_delivery_url(raw: &str) -> Result<url::Url, ConfigError> {
         ));
     }
     Ok(url)
-}
-
-fn parse_operator_listener_delivery_urls(
-    raw: &str,
-) -> Result<HashMap<String, url::Url>, ConfigError> {
-    let mut endpoints = HashMap::new();
-    let entries: Vec<&str> = raw
-        .split(';')
-        .map(str::trim)
-        .filter(|entry| !entry.is_empty())
-        .collect();
-    if !raw.trim().is_empty() && entries.is_empty() {
-        return Err(ConfigError::InvalidValue(
-            "BUZZ_OPERATOR_LISTENERS must contain pubkey:delivery_url pairs".to_string(),
-        ));
-    }
-    for entry in entries {
-        let (pubkey, delivery_url) = entry.split_once(':').ok_or_else(|| {
-            ConfigError::InvalidValue(
-                "BUZZ_OPERATOR_LISTENERS entries must be pubkey:delivery_url pairs".to_string(),
-            )
-        })?;
-        let pubkey = pubkey.trim().to_ascii_lowercase();
-        if pubkey.len() != 64 || !pubkey.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(ConfigError::InvalidValue(format!(
-                "BUZZ_OPERATOR_LISTENERS entry has an invalid pubkey: {pubkey:?}"
-            )));
-        }
-        let url = url::Url::parse(delivery_url.trim()).map_err(|e| {
-            ConfigError::InvalidValue(format!(
-                "BUZZ_OPERATOR_LISTENERS endpoint is not a valid URL: {e}"
-            ))
-        })?;
-        if url.scheme() != "https"
-            || url.host().is_none()
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || url.query().is_some()
-            || url.fragment().is_some()
-        {
-            return Err(ConfigError::InvalidValue(
-                "BUZZ_OPERATOR_LISTENERS endpoints must be HTTPS URLs without credentials, query, or fragment"
-                    .to_string(),
-            ));
-        }
-        if endpoints.insert(pubkey.clone(), url).is_some() {
-            return Err(ConfigError::InvalidValue(format!(
-                "BUZZ_OPERATOR_LISTENERS contains duplicate pubkey: {pubkey}"
-            )));
-        }
-    }
-    Ok(endpoints)
 }
 
 fn parse_bool(name: &str, default: bool) -> Result<bool, ConfigError> {
@@ -1127,12 +970,6 @@ impl Config {
             registry_refresh: std::time::Duration::from_secs(15),
         };
 
-        // Demo echo opt-in: same strict pattern as BUZZ_MESH — explicit
-        // `on`/`true`/`1` only, anything else (absent, `off`, typos) is off.
-        let mesh_demo_echo = std::env::var("BUZZ_MESH_DEMO_ECHO")
-            .map(|v| v.eq_ignore_ascii_case("on") || v == "true" || v == "1")
-            .unwrap_or(false);
-
         let allow_nip_oa_auth = std::env::var("BUZZ_ALLOW_NIP_OA_AUTH")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
@@ -1275,11 +1112,6 @@ impl Config {
                     .to_owned(),
             ));
         }
-        let klipy = std::env::var("BUZZ_KLIPY_API_KEY")
-            .ok()
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-            .map(|api_key| KlipyConfig { api_key });
 
         // Note: intentionally not prefixed with BUZZ_ — this is a relay-identity
         // config that may be shared across multiple services (e.g., ACP agent).
@@ -1311,37 +1143,6 @@ impl Config {
         // pubkeys. Unlike RELAY_OWNER_PUBKEY (warn-and-ignore), an invalid
         // entry here is a hard config error: silently dropping an operator
         // pubkey would silently disable provisioning for that operator.
-        let relay_operator_api_origin = std::env::var("RELAY_OPERATOR_API_ORIGIN")
-            .ok()
-            .filter(|raw| !raw.trim().is_empty())
-            .map(|raw| parse_operator_api_origin(&raw))
-            .transpose()?;
-
-        let self_serve_community_domain = std::env::var("BUZZ_SELF_SERVE_COMMUNITY_DOMAIN")
-            .ok()
-            .filter(|raw| !raw.trim().is_empty())
-            .map(|raw| {
-                crate::handlers::community_provisioning::normalize_self_serve_domain(&raw).map_err(
-                    |e| ConfigError::InvalidValue(format!("BUZZ_SELF_SERVE_COMMUNITY_DOMAIN: {e}")),
-                )
-            })
-            .transpose()?;
-        if self_serve_community_domain.is_some() && relay_operator_api_origin.is_none() {
-            return Err(ConfigError::InvalidValue(
-                "BUZZ_SELF_SERVE_COMMUNITY_DOMAIN needs RELAY_OPERATOR_API_ORIGIN: the signed create request is checked \
-                 against that origin"
-                    .to_string(),
-            ));
-        }
-        let self_serve_max_per_hour = match std::env::var("BUZZ_SELF_SERVE_MAX_PER_HOUR") {
-            Ok(raw) if !raw.trim().is_empty() => raw.trim().parse::<u32>().map_err(|_| {
-                ConfigError::InvalidValue(format!(
-                    "BUZZ_SELF_SERVE_MAX_PER_HOUR must be a whole number, got {raw:?}"
-                ))
-            })?,
-            _ => 30,
-        };
-
         let boards_per_person_per_day = match std::env::var("BUZZ_BOARDS_PER_PERSON_PER_DAY") {
             Ok(raw) if !raw.trim().is_empty() => raw.trim().parse::<u32>().map_err(|_| {
                 ConfigError::InvalidValue(format!(
@@ -1391,39 +1192,6 @@ impl Config {
             }
             Err(_) => Vec::new(),
         };
-        if !relay_operator_pubkeys.is_empty() && relay_operator_api_origin.is_none() {
-            // Do NOT fail closed at boot: RELAY_OPERATOR_PUBKEYS is the shared
-            // allowlist for BOTH the community-provisioning endpoints and the
-            // season records. Only provisioning needs the canonical origin, so
-            // requiring it at boot would force season operators to configure a
-            // provisioning surface they never use.
-            // The provisioning endpoints stay fail-closed at request time
-            // (see `api::operator::authorize_operator_request`, which rejects
-            // when the origin is unconfigured); this warning names that so an
-            // operator who *did* want provisioning knows why it 500s.
-            warn!(
-                "RELAY_OPERATOR_PUBKEYS is set but RELAY_OPERATOR_API_ORIGIN is not — \
-                 the community-provisioning endpoints (POST /operator/communities) will \
-                 reject every request until RELAY_OPERATOR_API_ORIGIN is set. Season \
-                 records do not require it and are unaffected."
-            );
-        }
-
-        let operator_listener_delivery_urls = match std::env::var("BUZZ_OPERATOR_LISTENERS") {
-            Ok(raw) => parse_operator_listener_delivery_urls(&raw)?,
-            Err(std::env::VarError::NotPresent) => HashMap::new(),
-            Err(error) => {
-                return Err(ConfigError::InvalidValue(format!(
-                    "BUZZ_OPERATOR_LISTENERS must be valid UTF-8: {error}"
-                )));
-            }
-        };
-        if !operator_listener_delivery_urls.is_empty() && relay_operator_api_origin.is_none() {
-            error!(
-                "BUZZ_OPERATOR_LISTENERS is set but RELAY_OPERATOR_API_ORIGIN is not — operator-listener registration requests will reject every request until RELAY_OPERATOR_API_ORIGIN is set"
-            );
-        }
-
         let auth = buzz_auth::AuthConfig {
             rate_limits: rate_limit_config_from_env()?,
         };
@@ -1654,34 +1422,6 @@ impl Config {
             Err(_) => 2_000,
         };
         let push_gateway_timeout = Duration::from_millis(push_gateway_timeout_millis);
-        let operator_listener_timeout_millis = match std::env::var(
-            "BUZZ_OPERATOR_LISTENER_TIMEOUT_MS",
-        ) {
-            Ok(raw) => match raw
-                .parse::<u64>()
-                .ok()
-                .filter(|millis| (100..=10_000).contains(millis))
-            {
-                Some(millis) => millis,
-                None => {
-                    error!(
-                        value = %raw,
-                        "invalid BUZZ_OPERATOR_LISTENER_TIMEOUT_MS; using default 5000ms (expected integer in 100..=10000)"
-                    );
-                    5_000
-                }
-            },
-            Err(std::env::VarError::NotPresent) => 5_000,
-            Err(err) => {
-                error!(
-                    error = %err,
-                    "invalid BUZZ_OPERATOR_LISTENER_TIMEOUT_MS; using default 5000ms"
-                );
-                5_000
-            }
-        };
-        let operator_listener_timeout = Duration::from_millis(operator_listener_timeout_millis);
-
         const MAX_POLICY_MARKDOWN_BYTES: usize = 256 * 1024;
         let read_policy_markdown = |name: &str| -> Result<Option<String>, ConfigError> {
             let value = std::env::var(name)
@@ -1732,9 +1472,6 @@ impl Config {
             .unwrap_or(false);
         let web_spa_full = std::env::var("BUZZ_WEB_SPA")
             .map(|value| value.eq_ignore_ascii_case("full"))
-            .unwrap_or(false);
-        let public_community_directory = std::env::var("BUZZ_PUBLIC_COMMUNITY_DIRECTORY")
-            .map(|value| value == "true" || value == "1")
             .unwrap_or(false);
 
         let public_project_reads = std::env::var("BUZZ_PUBLIC_PROJECT_READS")
@@ -1790,15 +1527,6 @@ impl Config {
             ));
         }
 
-        let buzz_v1_enabled = std::env::var("BUZZ_V1_ENABLED").is_ok_and(|v| v == "true");
-        // Read only when enabled: a disabled relay ignores every v1 setting.
-        let buzz_v1_retention_seconds = match std::env::var("BUZZ_V1_RETENTION_SECONDS") {
-            Ok(v) if buzz_v1_enabled => v.parse().ok().filter(|s| *s > 0).ok_or_else(|| {
-                ConfigError::InvalidValue("BUZZ_V1_RETENTION_SECONDS must be positive".into())
-            })?,
-            _ => buzz_db::personal_read::DEFAULT_RETENTION_SECONDS,
-        };
-
         Ok(Self {
             bind_addr,
             database_url,
@@ -1819,8 +1547,6 @@ impl Config {
             slow_client_grace_limit,
             auth,
             require_auth_token,
-            buzz_v1_enabled,
-            buzz_v1_retention_seconds,
             cors_origins,
             relay_private_key,
             uds_path,
@@ -1834,11 +1560,7 @@ impl Config {
             org_grant_enforcement,
             huddle_audio_available,
             mesh,
-            mesh_demo_echo,
             relay_owner_pubkey,
-            relay_operator_api_origin,
-            self_serve_community_domain,
-            self_serve_max_per_hour,
             boards_per_person_per_day,
             new_account_posts_per_hour,
             new_account_project_records_per_day,
@@ -1846,14 +1568,12 @@ impl Config {
             investing,
             new_account_hours,
             relay_operator_pubkeys,
-            operator_listener_delivery_urls,
             allow_nip_oa_auth,
             llm,
             evm_auth,
             chain_reader,
             web_push,
             sponsor,
-            klipy,
             media,
             media_max_concurrent_uploads,
             media_max_concurrent_uploads_per_pubkey,
@@ -1873,13 +1593,11 @@ impl Config {
             push_executor_key_id,
             push_gateway_delivery_url,
             push_gateway_timeout,
-            operator_listener_timeout,
             join_policy,
             web_dir,
             serve_git_web_gui,
             nip_fi: crate::nip_fi_config::NipFiRelayConfig::from_env()?,
             web_spa_full,
-            public_community_directory,
             public_project_reads,
             public_project_reads_per_min,
             public_project_reads_per_address_min,
@@ -1928,17 +1646,6 @@ pub(crate) static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn klipy_config_debug_redacts_the_api_key() {
-        let config = KlipyConfig {
-            api_key: "private-klipy-key".to_string(),
-        };
-
-        let debug = format!("{config:?}");
-        assert!(debug.contains("[REDACTED]"));
-        assert!(!debug.contains("private-klipy-key"));
-    }
 
     /// Acquire both the FI env lock and the config-test env lock in a consistent
     /// order so concurrent FI writers never observe a partially-written env state.
@@ -2075,20 +1782,6 @@ mod tests {
             config.huddle_audio_available,
             "huddle_audio_available should default to true so single-pod (N=1) keeps today's huddle behavior"
         );
-    }
-
-    fn config_with_operator_listeners(raw: Option<&str>) -> Result<Config, ConfigError> {
-        let previous = std::env::var_os("BUZZ_OPERATOR_LISTENERS");
-        match raw {
-            Some(value) => std::env::set_var("BUZZ_OPERATOR_LISTENERS", value),
-            None => std::env::remove_var("BUZZ_OPERATOR_LISTENERS"),
-        }
-        let result = Config::from_env();
-        match previous {
-            Some(value) => std::env::set_var("BUZZ_OPERATOR_LISTENERS", value),
-            None => std::env::remove_var("BUZZ_OPERATOR_LISTENERS"),
-        }
-        result
     }
 
     #[test]
@@ -2697,33 +2390,6 @@ mod tests {
     }
 
     #[test]
-    fn buzz_v1_retention_is_validated_only_when_enabled() {
-        let _guards = env_guards();
-        const KEYS: [&str; 2] = ["BUZZ_V1_ENABLED", "BUZZ_V1_RETENTION_SECONDS"];
-        let previous = KEYS.map(std::env::var_os);
-        std::env::set_var("BUZZ_V1_RETENTION_SECONDS", "0");
-        std::env::remove_var("BUZZ_V1_ENABLED");
-        let disabled = Config::from_env();
-        std::env::set_var("BUZZ_V1_ENABLED", "true");
-        let enabled = Config::from_env();
-        for (key, value) in KEYS.into_iter().zip(previous) {
-            match value {
-                Some(value) => std::env::set_var(key, value),
-                None => std::env::remove_var(key),
-            }
-        }
-        assert!(
-            disabled.is_ok(),
-            "a disabled relay ignores it: {disabled:?}"
-        );
-        assert!(matches!(
-            enabled,
-            Err(ConfigError::InvalidValue(ref message))
-                if message.contains("BUZZ_V1_RETENTION_SECONDS")
-        ));
-    }
-
-    #[test]
     fn malformed_relay_owner_pubkey_is_a_startup_error_not_warn_and_ignore() {
         let _guards = env_guards();
         let previous = std::env::var_os("RELAY_OWNER_PUBKEY");
@@ -3199,18 +2865,15 @@ mod tests {
     fn rate_limits_can_be_overridden() {
         let _guards = env_guards();
         std::env::set_var("BUZZ_RATE_LIMIT_HUMAN_MESSAGES_PER_MIN", "1001");
-        std::env::set_var("BUZZ_RATE_LIMIT_GIF_SEARCHES_PER_MIN", "1004");
         std::env::set_var("BUZZ_RATE_LIMIT_HUMAN_API_CALLS_PER_MIN", "1002");
         std::env::set_var("BUZZ_RATE_LIMIT_HUMAN_WS_EVENTS_PER_SEC", "1003");
 
         let config = Config::from_env().expect("config");
 
         std::env::remove_var("BUZZ_RATE_LIMIT_HUMAN_MESSAGES_PER_MIN");
-        std::env::remove_var("BUZZ_RATE_LIMIT_GIF_SEARCHES_PER_MIN");
         std::env::remove_var("BUZZ_RATE_LIMIT_HUMAN_API_CALLS_PER_MIN");
         std::env::remove_var("BUZZ_RATE_LIMIT_HUMAN_WS_EVENTS_PER_SEC");
         assert_eq!(config.auth.rate_limits.human_messages_per_min, 1001);
-        assert_eq!(config.auth.rate_limits.gif_searches_per_min, 1004);
         assert_eq!(config.auth.rate_limits.human_api_calls_per_min, 1002);
         assert_eq!(config.auth.rate_limits.human_ws_events_per_sec, 1003);
     }
@@ -3236,13 +2899,8 @@ mod tests {
             "RELAY_OPERATOR_PUBKEYS",
             "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         );
-        std::env::set_var(
-            "RELAY_OPERATOR_API_ORIGIN",
-            "http://buzz.mesh.bb-production.com",
-        );
         let config = Config::from_env().expect("config");
         std::env::remove_var("RELAY_OPERATOR_PUBKEYS");
-        std::env::remove_var("RELAY_OPERATOR_API_ORIGIN");
 
         assert_eq!(
             config.relay_operator_pubkeys,
@@ -3264,96 +2922,6 @@ mod tests {
             result,
             Err(ConfigError::InvalidValue(ref msg)) if msg.contains("RELAY_OPERATOR_PUBKEYS")
         ));
-    }
-
-    #[test]
-    fn relay_operator_pubkeys_without_api_origin_boots_and_warns() {
-        // Regression: RELAY_OPERATOR_PUBKEYS is the shared allowlist for both
-        // community provisioning and season records. Configuring the
-        // operators (pubkeys) must NOT force the provisioning origin — boot
-        // succeeds; provisioning stays fail-closed at request time.
-        let _guards = env_guards();
-        std::env::set_var(
-            "RELAY_OPERATOR_PUBKEYS",
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        );
-        std::env::remove_var("RELAY_OPERATOR_API_ORIGIN");
-        let result = Config::from_env();
-        std::env::remove_var("RELAY_OPERATOR_PUBKEYS");
-
-        let config = result.expect("pubkeys-set/origin-unset must boot, not fail closed");
-        assert_eq!(
-            config.relay_operator_pubkeys,
-            vec!["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()]
-        );
-        assert!(
-            config.relay_operator_api_origin.is_none(),
-            "origin stays unset — only the provisioning path requires it, at request time"
-        );
-    }
-
-    #[test]
-    fn self_serve_is_off_by_default_with_a_hourly_cap_of_thirty() {
-        let _guards = env_guards();
-        std::env::remove_var("BUZZ_SELF_SERVE_COMMUNITY_DOMAIN");
-        std::env::remove_var("BUZZ_SELF_SERVE_MAX_PER_HOUR");
-        let config = Config::from_env().expect("default config");
-        assert_eq!(config.self_serve_community_domain, None);
-        assert_eq!(config.self_serve_max_per_hour, 30);
-    }
-
-    #[test]
-    fn self_serve_domain_is_normalized_and_needs_the_management_origin() {
-        let _guards = env_guards();
-        std::env::set_var("BUZZ_SELF_SERVE_COMMUNITY_DOMAIN", " Creaton.Example ");
-        std::env::set_var("RELAY_OPERATOR_API_ORIGIN", "https://creaton.example");
-        let ok = Config::from_env();
-        std::env::remove_var("RELAY_OPERATOR_API_ORIGIN");
-        let without_origin = Config::from_env();
-        std::env::remove_var("BUZZ_SELF_SERVE_COMMUNITY_DOMAIN");
-
-        assert_eq!(
-            ok.expect("config").self_serve_community_domain.as_deref(),
-            Some("creaton.example")
-        );
-        assert!(matches!(
-            without_origin,
-            Err(ConfigError::InvalidValue(ref msg)) if msg.contains("needs RELAY_OPERATOR_API_ORIGIN")
-        ));
-    }
-
-    #[test]
-    fn self_serve_domain_that_is_not_a_host_is_a_startup_error() {
-        let _guards = env_guards();
-        std::env::set_var("RELAY_OPERATOR_API_ORIGIN", "https://creaton.example");
-        std::env::set_var(
-            "BUZZ_SELF_SERVE_COMMUNITY_DOMAIN",
-            "https://creaton.example/x",
-        );
-        let result = Config::from_env();
-        std::env::remove_var("BUZZ_SELF_SERVE_COMMUNITY_DOMAIN");
-        std::env::remove_var("RELAY_OPERATOR_API_ORIGIN");
-
-        assert!(matches!(
-            result,
-            Err(ConfigError::InvalidValue(ref msg)) if msg.contains("BUZZ_SELF_SERVE_COMMUNITY_DOMAIN")
-        ));
-    }
-
-    #[test]
-    fn self_serve_hourly_cap_must_be_a_whole_number() {
-        let _guards = env_guards();
-        std::env::set_var("BUZZ_SELF_SERVE_MAX_PER_HOUR", "lots");
-        let bad = Config::from_env();
-        std::env::set_var("BUZZ_SELF_SERVE_MAX_PER_HOUR", "5");
-        let good = Config::from_env();
-        std::env::remove_var("BUZZ_SELF_SERVE_MAX_PER_HOUR");
-
-        assert!(matches!(
-            bad,
-            Err(ConfigError::InvalidValue(ref msg)) if msg.contains("BUZZ_SELF_SERVE_MAX_PER_HOUR")
-        ));
-        assert_eq!(good.expect("config").self_serve_max_per_hour, 5);
     }
 
     #[test]
@@ -3465,19 +3033,6 @@ mod tests {
     }
 
     #[test]
-    fn relay_operator_api_origin_rejects_paths() {
-        let _guards = env_guards();
-        std::env::set_var("RELAY_OPERATOR_API_ORIGIN", "https://buzz.example/operator");
-        let result = Config::from_env();
-        std::env::remove_var("RELAY_OPERATOR_API_ORIGIN");
-
-        assert!(matches!(
-            result,
-            Err(ConfigError::InvalidValue(ref msg)) if msg.contains("must be an http(s) origin")
-        ));
-    }
-
-    #[test]
     fn push_is_opt_in_and_gateway_is_required_when_enabled() {
         let _guards = env_guards();
         let previous_enabled = std::env::var_os("BUZZ_PUSH_ENABLED");
@@ -3578,93 +3133,6 @@ mod tests {
                 "{invalid}"
             );
         }
-    }
-
-    #[test]
-    fn operator_listener_routes_parse_and_normalize() {
-        let routes = parse_operator_listener_delivery_urls(
-            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:https://one.example/mentions;bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:https://two.example/mentions",
-        )
-        .expect("valid operator-listener routes");
-        assert_eq!(routes.len(), 2);
-        assert!(
-            routes.contains_key("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-        );
-        assert!(
-            routes.contains_key("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
-        );
-    }
-
-    #[test]
-    fn operator_listener_routes_reject_unsafe_or_duplicate_entries() {
-        let key = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        for raw in [
-            format!("{key}:http://listener.example/mentions"),
-            format!("{key}:https://user:pass@listener.example/mentions"),
-            format!("{key}:https://listener.example/mentions?token=secret"),
-            format!("{key}:https://listener.example/mentions;{key}:https://other.example"),
-        ] {
-            assert!(
-                parse_operator_listener_delivery_urls(&raw).is_err(),
-                "unsafe or duplicate route accepted: {raw}"
-            );
-        }
-    }
-
-    #[test]
-    fn malformed_operator_listener_config_prevents_startup() {
-        let _guards = env_guards();
-        let result = config_with_operator_listeners(Some(";"));
-
-        assert!(matches!(
-            result,
-            Err(ConfigError::InvalidValue(ref message))
-                if message.contains("BUZZ_OPERATOR_LISTENERS")
-        ));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn non_utf8_operator_listener_config_prevents_startup() {
-        use std::os::unix::ffi::OsStringExt;
-
-        let _guards = env_guards();
-        let previous = std::env::var_os("BUZZ_OPERATOR_LISTENERS");
-        std::env::set_var(
-            "BUZZ_OPERATOR_LISTENERS",
-            std::ffi::OsString::from_vec(vec![0xff]),
-        );
-
-        let result = Config::from_env();
-
-        match previous {
-            Some(value) => std::env::set_var("BUZZ_OPERATOR_LISTENERS", value),
-            None => std::env::remove_var("BUZZ_OPERATOR_LISTENERS"),
-        }
-
-        assert!(matches!(
-            result,
-            Err(ConfigError::InvalidValue(ref message))
-                if message.contains("BUZZ_OPERATOR_LISTENERS must be valid UTF-8")
-        ));
-    }
-
-    #[test]
-    fn valid_and_absent_operator_listener_config_preserve_routes() {
-        let _guards = env_guards();
-        let key = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        let raw = format!("{key}:https://listener.example/mentions");
-        let config = config_with_operator_listeners(Some(&raw)).expect("valid listener config");
-        assert_eq!(
-            config
-                .operator_listener_delivery_urls
-                .get(key)
-                .map(url::Url::as_str),
-            Some("https://listener.example/mentions")
-        );
-
-        let config = config_with_operator_listeners(None).expect("absent listener config");
-        assert!(config.operator_listener_delivery_urls.is_empty());
     }
 
     #[test]

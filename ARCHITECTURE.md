@@ -14,8 +14,10 @@ EVENT, REQ, REST, media, git, search, workflow, or pub/sub handling. Unknown
 hosts fail closed, and NIP-98/API-token stamps must agree with the host-derived
 community rather than overriding it.
 
-Deployment-root community management uses operator-signed NIP-98 HTTP requests.
-`POST /operator/communities/delete` accepts only an exact normalized, archived
+Deployment-root community management used operator-signed NIP-98 HTTP requests;
+that HTTP surface (`/operator/communities*`) has been removed, and `buzz-admin`
+now archives and unarchives communities. The deletion request below is what
+`POST /operator/communities/delete` accepted: only an exact normalized, archived
 community whose asserted pubkey is its sole current owner. The caller supplies the
 request UUID as the stable correlation/idempotency identity; the durable row
 records operator-attested owner intent, mediating operator, and acknowledgement

@@ -125,12 +125,6 @@ const NIP_FI_EXEMPT_PREFIXES: &[&str] = &[
     "/hooks/",
     // Huddle audio WebSocket — WS-NIP-FI governs WebSocket; subtree
     "/huddle/",
-    // Testbed-only mesh probe — no auth; subtree
-    "/_mesh/",
-    // Operator admin plane — keypair-in-config auth; subtree
-    "/operator/",
-    // Self-serve community creation — NIP-98 by someone who has no community (so no tenant, and no assertion) yet; subtree
-    "/self-serve/",
     // NIP-FI admin disconnect — authenticated by its own command JWT
     // (`nip-fi-command+jwt` in the same header), which the assertion verifier
     // would reject.  No trailing slash, so the matcher exempts the exact path
@@ -290,33 +284,11 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 
     let git_policy_router = api::git::git_policy_router(state.clone());
 
-    // Unmounted when disabled, so every /buzz/v1 path answers exactly as it
-    // did before the accessory API existed.
-    let accessory_router = state
-        .config
-        .buzz_v1_enabled
-        .then(|| Router::new().nest(api::buzz_v1::BASE_PATH, api::buzz_v1::router(state.clone())));
-
     let api_router = Router::new()
-        // SIWE onboarding (creabuzz) — handlers 404 when BUZZ_EVM_AUTH is off.
-        .route("/auth/siwe/nonce", get(api::evm_auth::issue_nonce))
-        .route("/auth/siwe/register", post(api::evm_auth::register))
-        .route("/auth/siwe/revoke", post(api::evm_auth::revoke))
         // WebSocket + NIP-11
         .route("/", get(nip11_or_ws_handler))
         .route("/info", get(relay_info_handler))
-        .route("/communities", get(api::communities::directory))
         .route("/.well-known/nostr.json", get(api::nip05::nostr_nip05))
-        // ERC-4824 dao.json + the charter flatfile (OA.md Phase 2) — public
-        // discovery; tenant binds from Host like NIP-05, path segment is
-        // URL shape only.
-        .route("/dao.json", get(api::dao_json::serve_root))
-        .route("/governance.md", get(api::dao_json::governance_md_root))
-        .route("/{community}/dao.json", get(api::dao_json::serve))
-        .route(
-            "/{community}/governance.md",
-            get(api::dao_json::governance_md),
-        )
         // Health endpoints
         .route("/health", get(health_handler))
         .route("/_liveness", get(liveness_handler))
@@ -325,8 +297,6 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/events", post(api::bridge::submit_event))
         .route("/query", post(api::bridge::query_events))
         .route("/count", post(api::bridge::count_events))
-        // Relay-owned third-party GIF metadata proxy (NIP-98 auth).
-        .route(api::gifs::SEARCH_PATH, post(api::gifs::search))
         // Relay-owned LLM gateway for browser agents (NIP-98 auth, opt-in).
         .route(
             api::llm_gateway::LLM_CHAT_PATH,
@@ -334,7 +304,6 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         )
         // The AI manager's draft for a project's founder (NIP-98 auth, behind the same gateway setting).
         .route(api::manager::MANAGER_DRAFT_PATH, post(api::manager::draft))
-        .route(api::gifs::SHARE_PATH, post(api::gifs::share))
         // Web push subscriptions (NIP-98 auth): `PUT` keeps a device, `DELETE` removes it. They answer "not switched on"
         // unless the operator turned push on.
         .route(
@@ -348,41 +317,6 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/workflows/{workflow_id}/runs/{run_id}/approvals",
             get(api::workflows::run_approvals),
-        )
-        .route(
-            "/operator/communities",
-            get(api::operator::list_owned_communities).post(api::operator::provision_community),
-        )
-        // Self-serve communities: off unless BUZZ_SELF_SERVE_COMMUNITY_DOMAIN is set. No tenant is resolved: the caller
-        // has none yet.
-        .route(
-            "/self-serve/communities",
-            get(api::self_serve::status).post(api::self_serve::create),
-        )
-        .route(
-            "/operator/listener/pubkeys",
-            post(api::operator::register_listener_pubkeys)
-                .delete(api::operator::remove_listener_pubkeys),
-        )
-        .route(
-            "/operator/communities/archive",
-            post(api::operator::archive_community),
-        )
-        .route(
-            "/operator/communities/unarchive",
-            post(api::operator::unarchive_community),
-        )
-        .route(
-            "/operator/communities/delete",
-            post(api::operator::delete_community),
-        )
-        .route(
-            "/operator/communities/availability",
-            get(api::operator::community_availability),
-        )
-        .route(
-            "/operator/communities/transfer",
-            post(api::operator::transfer_community),
         )
         // Relay invites: mint (owner/admin) + claim (membership-gate exempt)
         .route("/api/invites", post(api::invites::mint_invite))
@@ -417,9 +351,6 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         )
         // Webhook trigger (secret-authenticated, no NIP-98)
         .route("/hooks/{id}", post(api::bridge::workflow_webhook))
-        // Mesh demo echo probe — testbed-only; 404 unless BUZZ_MESH=on and
-        // BUZZ_MESH_DEMO_ECHO=on (see api::mesh_demo).
-        .route("/_mesh/demo/echo", post(api::mesh_demo::demo_echo))
         // Huddle audio WebSocket route
         .route(
             "/huddle/{channel_id}/audio",
@@ -437,13 +368,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(git_policy_router);
     // The sponsored-fee limit exists only when the operator named an upstream (`BUZZ_SPONSOR_UPSTREAM_URL`); it carries
     // its own body bound.
-    let sponsor_router = state.config.sponsor.is_some().then(|| {
-        Router::new()
-            .route(api::sponsor::PATH, post(api::sponsor::sponsor))
-            .with_state(state.clone())
-    });
-    for optional in [accessory_router, sponsor_router].into_iter().flatten() {
-        merged = merged.merge(optional);
+    if state.config.sponsor.is_some() {
+        merged = merged.merge(
+            Router::new()
+                .route(api::sponsor::PATH, post(api::sponsor::sponsor))
+                .with_state(state.clone()),
+        );
     }
 
     let web_dir = state.config.web_dir.clone();
@@ -3046,12 +2976,6 @@ mod tests {
                 ("GET", format!("/media/{sha}"), Vec::new()),
                 ("GET", branch.clone(), Vec::new()),
                 ("POST", branch, br#"{"branch":"main"}"#.to_vec()),
-                (
-                    "POST",
-                    "/gifs/search".to_owned(),
-                    br#"{"q":"cat"}"#.to_vec(),
-                ),
-                ("POST", "/gifs/share".to_owned(), br#"{"id":"x"}"#.to_vec()),
                 ("POST", "/api/invites".to_owned(), b"{}".to_vec()),
                 ("POST", "/api/invites/list".to_owned(), b"{}".to_vec()),
                 (
@@ -3430,10 +3354,6 @@ mod tests {
         );
         assert!(!is_exempt("/push/web"), "a push subscription is protected");
 
-        // Operator subtrees
-        assert!(is_exempt("/operator/communities"));
-        assert!(is_exempt("/self-serve/communities"));
-
         // SPA / assets
         assert!(is_exempt("/assets/main.js"));
         assert!(is_exempt("/invite/abc"));
@@ -3447,14 +3367,6 @@ mod tests {
         assert!(!is_exempt("/events"), "POST /events must be protected");
         assert!(!is_exempt("/query"), "POST /query must be protected");
         assert!(!is_exempt("/count"), "POST /count must be protected");
-        assert!(
-            !is_exempt("/gifs/search"),
-            "POST /gifs/search must be protected"
-        );
-        assert!(
-            !is_exempt("/gifs/share"),
-            "POST /gifs/share must be protected"
-        );
         assert!(
             !is_exempt("/workflows/abc/runs"),
             "GET /workflows must be protected"
@@ -3984,8 +3896,6 @@ mod tests {
             ("GET", git.clone(), Some(&signed)),
             ("GET", git.clone(), None),
             ("GET", git, Some("Nostr !!not-base64!!")),
-            ("POST", "/gifs/search".to_owned(), Some(&signed)),
-            ("POST", "/gifs/share".to_owned(), Some(&signed)),
             ("GET", branch.clone(), Some(&signed)),
             ("POST", branch, Some(&signed)),
             ("POST", "/api/invites".to_owned(), Some(&signed)),

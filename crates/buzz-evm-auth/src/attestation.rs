@@ -7,7 +7,7 @@
 
 use crate::address::{keccak256, EvmAddress};
 use crate::error::EvmAuthError;
-use crate::siwe::recover_address;
+use crate::personal_sign::recover_address;
 
 /// EIP-712 domain for creabuzz attestations.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -79,7 +79,7 @@ impl NostrSignerAttestation {
     /// Verify a 65-byte hex signature over the attestation digest and require
     /// the recovered signer to be `account`.
     pub fn verify(&self, domain: &Eip712Domain, signature_hex: &str) -> Result<(), EvmAuthError> {
-        let sig = crate::siwe::parse_signature(signature_hex)?;
+        let sig = crate::personal_sign::parse_signature(signature_hex)?;
         let recovered = recover_address(&self.digest(domain), &sig)?;
         if recovered != self.account {
             return Err(EvmAuthError::SignerMismatch {

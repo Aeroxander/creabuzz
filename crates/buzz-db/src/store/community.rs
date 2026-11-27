@@ -17,22 +17,6 @@ pub struct CommunityRecord {
     pub host: String,
 }
 
-/// Directory row returned by [`Db::list_directory_communities`] — the public,
-/// non-sensitive community metadata exposed by the discovery endpoint.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DirectoryCommunityRecord {
-    /// Stable server-resolved community id.
-    pub id: CommunityId,
-    /// Normalized host that maps to this community.
-    pub host: String,
-    /// Workspace icon URL when configured.
-    pub icon: Option<String>,
-    /// True when the community has been archived by its owner.
-    pub archived: bool,
-    /// Number of relay members (public aggregate, never identities).
-    pub member_count: i64,
-}
-
 /// Community row returned by idempotent community ensure/create operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnsuredCommunityRecord {
@@ -162,53 +146,8 @@ impl Db {
         .transpose()
     }
 
-    /// Returns whether a community id still exists in the active lifecycle state.
-    #[datastore_span(name = "is_community_active", system = "postgresql")]
-    /// List active communities with public directory data and live member
-    /// counts. Used by the unauthenticated `GET /communities` discovery
-    /// endpoint; never exposes signing keys, tokens, or operator state.
-    ///
-    /// A community whose owner made it invite-only is not listed: the directory is open to anyone, and a private
-    /// community's name, icon and size are not for anyone.
-    #[datastore_span(name = "list_directory_communities", system = "postgresql")]
-    pub async fn list_directory_communities(&self) -> Result<Vec<DirectoryCommunityRecord>> {
-        let mut connection = crate::observability::acquire_writer(
-            &self.pool,
-            crate::observability::WriterOperation::TenantResolution,
-        )
-        .await?;
-        let rows = sqlx::query_as::<_, (Uuid, String, Option<String>, bool, i64)>(
-            r#"
-            SELECT
-                c.id,
-                c.host,
-                c.icon,
-                c.archived_at IS NOT NULL AS archived,
-                (SELECT COUNT(*) FROM relay_members r WHERE r.community_id = c.id)
-                    AS member_count
-            FROM communities c
-            WHERE c.deletion_state = 'active'
-              AND NOT c.membership_required
-            ORDER BY c.created_at
-            "#,
-        )
-        .fetch_all(&mut *connection)
-        .await?;
-        Ok(rows
-            .into_iter()
-            .map(
-                |(id, host, icon, archived, member_count)| DirectoryCommunityRecord {
-                    id: CommunityId::from_uuid(id),
-                    host,
-                    icon,
-                    archived,
-                    member_count,
-                },
-            )
-            .collect())
-    }
-
     /// Whether the community is past soft-deletion and still serving traffic.
+    #[datastore_span(name = "is_community_active", system = "postgresql")]
     pub async fn is_community_active(&self, community_id: CommunityId) -> Result<bool> {
         let mut connection = crate::observability::acquire_writer(
             &self.pool,
@@ -987,94 +926,12 @@ mod postgres_tests {
         .expect("insert channel");
     }
 
-    /// An invite-only community is not in the public directory, and is again once it is opened. An open one on the
-    /// same server stays listed. Mutation: drop the filter from the query → RED.
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn the_public_directory_leaves_out_invite_only_communities() {
-        let db = setup_db().await;
-        let owner = "ab".repeat(32);
-        let listed = |host: String| {
-            let db = db.clone();
-            async move {
-                db.list_directory_communities()
-                    .await
-                    .expect("directory query")
-                    .into_iter()
-                    .any(|c| c.host == host)
-            }
-        };
-        let make = |closed: bool| {
-            let db = db.clone();
-            let owner = owner.clone();
-            async move {
-                let host = format!("dir-{}.example", Uuid::new_v4().simple());
-                match db
-                    .create_community_with_owner_and_access(&host, &owner, closed)
-                    .await
-                    .expect("create community")
-                {
-                    crate::CreateCommunityWithOwnerResult::Created(record) => (host, record.id),
-                    other => panic!("expected a created community, got {other:?}"),
-                }
-            }
-        };
-
-        let (private_host, private_id) = make(true).await;
-        let (open_host, _) = make(false).await;
-        assert!(!listed(private_host.clone()).await, "private stays out");
-        assert!(listed(open_host).await, "open is listed");
-
-        db.set_community_membership_required(private_id, false)
-            .await
-            .expect("open it");
-        assert!(listed(private_host).await, "listed once it is opened");
-    }
-
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn list_directory_communities_reports_public_aggregates_only() {
-        let db = setup_db().await;
-        let database_url = crate::test_support::database_url();
-        let pool = PgPool::connect(&database_url)
-            .await
-            .expect("connect to test DB");
-        let id = make_community(&pool).await;
-        let expected_id = CommunityId::from_uuid(id);
-        assert!(db
-            .list_directory_communities()
-            .await
-            .expect("directory query")
-            .iter()
-            .any(|c| c.id == expected_id));
-        // Adding members must move the public aggregate without exposing them.
-        sqlx::query(
-            "INSERT INTO relay_members (community_id, pubkey, role) VALUES ($1, $2, 'member')",
-        )
-        .bind(id)
-        .bind("aa".repeat(32))
-        .execute(&pool)
-        .await
-        .expect("insert member");
-        let entry = db
-            .list_directory_communities()
-            .await
-            .expect("directory query")
-            .into_iter()
-            .find(|c| c.id == expected_id)
-            .expect("community listed");
-        assert_eq!(entry.member_count, 1);
-        assert!(!entry.archived);
-        assert_eq!(entry.icon, None);
-    }
-
     #[test]
     fn community_implementation_tests_and_spans_have_single_owners() {
         let community_source = include_str!("community.rs");
         let lib_source = include_str!("../lib.rs");
         let operations = [
             "lookup_community_by_host",
-            "list_directory_communities",
             "is_community_active",
             "with_community_archive_fence",
             "with_inactive_community_fence",
@@ -1118,7 +975,6 @@ mod postgres_tests {
 
         let records = [
             "CommunityRecord",
-            "DirectoryCommunityRecord",
             "EnsuredCommunityRecord",
             "CreatedCommunityRecord",
             "OwnedCommunityRecord",

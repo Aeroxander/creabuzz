@@ -3,8 +3,6 @@
 //! These endpoints provide HTTP access to the relay's Nostr protocol,
 //! authenticated via NIP-98 signed events.
 
-mod read_state_snapshot;
-
 use std::sync::Arc;
 
 use axum::{
@@ -25,7 +23,6 @@ use crate::state::AppState;
 use super::{api_error, db_read_error, internal_error, not_found, parse_query_or_400};
 
 mod thread_roots;
-mod thread_window;
 
 pub(crate) async fn enforce_http_admission(
     state: &AppState,
@@ -89,8 +86,7 @@ type BridgeAuthResult = Result<VerifiedBridgeAuth, (StatusCode, Json<Value>)>;
 /// a zero hash and the timestamp is absent.
 ///
 /// Most callers use [`make_nip98_closure_for_admission`] (admitted surfaces),
-/// [`verify_nip98_exempt_invite_claim`] / [`verify_nip98_exempt_operator`]
-/// (explicitly-named exempt paths), or the `pub(crate)` form below for
+/// [`verify_nip98_exempt_invite_claim`] (the explicitly-named exempt path), or the `pub(crate)` form below for
 /// git-settings and other crate-local specialized handlers.
 pub(crate) fn verify_bridge_auth(
     headers: &HeaderMap,
@@ -182,9 +178,9 @@ pub(crate) fn verify_bridge_auth_with_options(
 //     admission. The closure is passed directly to `admit_nip_fi_http_on_state`
 //     and its result is never projected outside a `NipFiAdmission`.
 //
-//   • `verify_nip98_exempt_invite_claim` / `verify_nip98_exempt_operator` —
-//     for the two explicitly NIP-FI-exempt paths that pre-date NIP-FI and must
-//     continue to run independently of the NIP-FI state machine.
+//   • `verify_nip98_exempt_invite_claim` — for the explicitly NIP-FI-exempt
+//     path that pre-dates NIP-FI and must continue to run independently of the
+//     NIP-FI state machine.
 //
 // [FI-TRACE-AUTHORITY-EXEMPT]: grep this tag to audit all exempt call sites.
 
@@ -244,26 +240,6 @@ pub(crate) fn verify_nip98_exempt_invite_claim(
         headers, method, url, body,
         true, // invite-claim always requires NIP-98; no X-Pubkey dev fallback
         true, // POST bodies must be covered by a payload tag
-    )
-}
-
-/// NIP-FI-exempt NIP-98 verifier for operator-management endpoints.
-///
-/// Operator endpoints use a separate auth origin and are structurally outside
-/// the per-tenant NIP-FI state machine. [FI-TRACE-AUTHORITY-EXEMPT]
-pub(crate) fn verify_nip98_exempt_operator(
-    headers: &HeaderMap,
-    method: &str,
-    url: &str,
-    body: Option<&[u8]>,
-) -> BridgeAuthResult {
-    verify_bridge_auth_with_options(
-        headers,
-        method,
-        url,
-        body,
-        true, // operator endpoints always require NIP-98; no X-Pubkey dev fallback
-        body.is_some(),
     )
 }
 
@@ -1378,7 +1354,6 @@ async fn query_events_authed(
     {
         return result;
     }
-    let thread_windows = thread_window::parse(&raw_filters)?;
     let filters: Vec<nostr::Filter> = raw_filters
         .iter()
         .map(|v| serde_json::from_value(v.clone()))
@@ -1407,30 +1382,6 @@ async fn query_events_authed(
             StatusCode::FORBIDDEN,
             "restricted: author-only kinds require authors=[self]",
         ));
-    }
-
-    if thread_windows.iter().any(Option::is_some) {
-        if thread_windows.iter().any(Option::is_none) {
-            return Err(api_error(
-                StatusCode::BAD_REQUEST,
-                "thread_window cannot mix with other query modes",
-            ));
-        }
-        return tokio::time::timeout(
-            thread_window::DEADLINE,
-            thread_window::query_batch(state, tenant, &pubkey, thread_windows.iter().flatten()),
-        )
-        .await
-        .map_err(|_| {
-            api_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "thread window deadline exceeded",
-            )
-        })?
-        .map(|events| Json(Value::Array(events)));
-    }
-    if read_state_snapshot::requested(&raw_filters) {
-        return read_state_snapshot::query(state, tenant, &pubkey, &raw_filters).await;
     }
 
     // Get channels this user can access — same enforcement as WS REQ handler.
@@ -1781,9 +1732,8 @@ async fn query_events_authed(
         }
         // `include_deleted` wiki extension ("Recently deleted"): surface
         // TOMBSTONED wiki page rows, whose content is preserved on tombstone
-        // by design. Strictly validated (wiki kinds only) exactly like the
-        // `thread_window` extension — a malformed opt-in is a deterministic
-        // client mistake and 400s before any DB work.
+        // by design. Strictly validated (wiki kinds only) — a malformed
+        // opt-in is a deterministic client mistake and 400s before any DB work.
         match buzz_core::wiki_deleted::parse(raw) {
             Ok(true) => query.include_deleted_wiki = true,
             Ok(false) => {}
@@ -3529,7 +3479,7 @@ pub(crate) mod postgres_tests {
     #[test]
     fn verify_bridge_auth_can_require_payload_tag_for_json_body_endpoints() {
         let keys = Keys::generate();
-        let signed_url = "https://host-a.example/operator/communities";
+        let signed_url = "https://host-a.example/api/invites/claim";
         let event_json = build_nip98_event_json(&keys, signed_url, "POST");
         let headers = nip98_auth_headers(&event_json);
 
@@ -3537,11 +3487,11 @@ pub(crate) mod postgres_tests {
             &headers,
             "POST",
             signed_url,
-            Some(br#"{"host":"created.example"}"#),
+            Some(br#"{"token":"abc"}"#),
             true,
             true,
         )
-        .expect_err("body-bearing operator requests must require a payload tag");
+        .expect_err("body-bearing requests must require a payload tag");
 
         assert_eq!(status, StatusCode::UNAUTHORIZED);
         let msg = body
@@ -5207,10 +5157,6 @@ pub(crate) mod postgres_tests {
         config.nip_fi.mode = buzz_auth::NipFiMode::Enforce;
         config.nip_fi.communities =
             crate::nip_fi_core::test_support::any_host("https://relay.example");
-        // Pin the GIF provider absent: `Config::from_env()` imports
-        // `BUZZ_KLIPY_API_KEY`, and the GIF positive control's exact 404
-        // (`gifs.rs` "GIF search is not configured") depends on `klipy = None`.
-        config.klipy = None;
         // No issuers configured → nip_fi_verifier = None (startup-race path).
         // The seam test fires before verifier is needed (missing assertion → 401).
 
@@ -5834,85 +5780,6 @@ pub(crate) mod postgres_tests {
         );
     }
 
-    // ── F4: GIF search — enforce mode, no assertion → 401 ───────────────────
-    //
-    // Shared witness for both GIF routes (search + share both go through
-    // `authenticate` which calls `admit_nip_fi_http_on_state`).
-    //
-    // The 401 is produced by the OUTER `nip_fi_assertion_guard` layer in
-    // `build_router`: no `Nostr-Federated-Identity` header → MissingEvidence →
-    // 401 `authentication required\n`.
-    //
-    // Note: removing only the outer guard does NOT change this test — the
-    // handler's own `admit_nip_fi_http_on_state` in `gifs::authenticate` also
-    // fires 401 on missing assertion.  This test witnesses the outer guard fires
-    // first and its error path is exercised; it does not claim the outer guard is
-    // the sole denial point.  The same-key positive (below) is the complement witness.
-    //
-    // The exact body/CT/challenge oracles discriminate any implementation that
-    // returns a different status or body (e.g. 404 if BOTH admission layers were
-    // removed and Klipy config was absent).
-    #[test]
-    #[ignore = "requires Postgres"]
-    fn nip_fi_enforce_gif_search_no_assertion_is_401() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("current_thread runtime");
-
-        let Some(state) = rt.block_on(nip_fi_enforce_test_state()) else {
-            panic!("local Postgres not reachable");
-        };
-        let host = format!("nip-fi-seam-{}.local", uuid::Uuid::new_v4().simple());
-        rt.block_on(state.db.ensure_configured_community(&host))
-            .expect("ensure community");
-
-        let keys = Keys::generate();
-        let url = format!("https://{host}{}", crate::api::gifs::SEARCH_PATH);
-        let auth_headers = make_nip98_headers(&keys, &url, "POST", b"{}");
-
-        let (status, resp_headers, body) = rt.block_on(oneshot_request_full(
-            state,
-            "POST",
-            crate::api::gifs::SEARCH_PATH,
-            &host,
-            auth_headers,
-            b"{}",
-        ));
-
-        assert_eq!(
-            status,
-            axum::http::StatusCode::UNAUTHORIZED,
-            "NIP-FI enforce mode: POST {} with valid NIP-98 + no assertion MUST deny 401 \
-             [FI-TRACE-HTTP-INGRESS]; outer nip_fi_assertion_guard fires on missing \
-             Nostr-Federated-Identity header → MissingEvidence → 401.",
-            crate::api::gifs::SEARCH_PATH
-        );
-        assert_eq!(
-            body.as_ref(),
-            b"authentication required\n",
-            "GIF search: exact MissingEvidence body must be 'authentication required\\n'. \
-             Note: GIF 404 → NIP-FI 401 is a known exception (gifs.rs → bridge → api_error() \
-             for the Off path); Enforce must still produce exact NIP-FI bytes."
-        );
-        let ct = resp_headers
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
-        assert_eq!(
-            ct, "text/plain; charset=utf-8",
-            "GIF search: 401 content-type must be text/plain; charset=utf-8"
-        );
-        let www_auth = resp_headers
-            .get("www-authenticate")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
-        assert_eq!(
-            www_auth, "Nostr",
-            "GIF search: 401 must carry WWW-Authenticate: Nostr"
-        );
-    }
-
     // ── F4: workflow runs — enforce mode, no assertion → 401 ────────────────
     //
     // Shared witness for both workflow routes (`authorize_workflow_read`
@@ -5984,70 +5851,6 @@ pub(crate) mod postgres_tests {
         assert_eq!(
             www_auth, "Nostr",
             "{path}: 401 must carry WWW-Authenticate: Nostr"
-        );
-    }
-
-    // ── GIF search — Enforce mode, same-key admission → reaches handler ───────
-    //
-    // Positive control for `nip_fi_enforce_gif_search_no_assertion_is_401`:
-    // a valid NIP-FI assertion + valid same-key NIP-98 MUST pass admission and
-    // reach the GIF handler.  The handler returns 404 (GIF search not configured)
-    // — which is NOT 401/403, proving the NIP-FI gate did not deny the request.
-    //
-    // Falsifying mutation: make the NIP-FI verifier always-deny → same-key
-    // request returns 403 AuthorizationDenied → 404 assertion fires.
-    #[test]
-    #[ignore = "requires Postgres"]
-    fn nip_fi_enforce_gif_search_same_key_admission_succeeds() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("current_thread runtime");
-
-        let Some(state) = rt.block_on(nip_fi_enforce_test_state_with_verifier()) else {
-            panic!("local Postgres not reachable");
-        };
-        let host = format!(
-            "nip-fi-gif-positive-{}.local",
-            uuid::Uuid::new_v4().simple()
-        );
-        rt.block_on(state.db.ensure_configured_community(&host))
-            .expect("ensure community");
-
-        // `nip_fi_enforce_test_state` pins `config.klipy = None`.
-        let keys = Keys::generate();
-        let url = format!("https://{host}{}", crate::api::gifs::SEARCH_PATH);
-        let headers = same_key_nip98_and_assertion_headers(&keys, &url, "POST", b"{}");
-
-        let (status, _resp_headers, body) = rt.block_on(oneshot_request_full(
-            state,
-            "POST",
-            crate::api::gifs::SEARCH_PATH,
-            &host,
-            headers,
-            b"{}",
-        ));
-
-        // Admission passes → handler fires → GIF config absent → exact 404.
-        // Falsifying mutation: make verifier always-deny → 403 AuthorizationDenied.
-        assert_eq!(
-            status,
-            axum::http::StatusCode::NOT_FOUND,
-            "GIF search same-key positive: NIP-FI MUST admit and handler MUST return 404 \
-             (GIF provider not configured). \
-             If 401: NIP-FI MissingEvidence — outer guard or assertion check denying. \
-             If 403: NIP-FI AuthorizationDenied — verifier or pairing denying. \
-             Body: {body:?}"
-        );
-        // Verify exact body: api_error(NOT_FOUND, "GIF search is not configured") → JSON.
-        let body_json: serde_json::Value =
-            serde_json::from_slice(&body).expect("404 body must be valid JSON");
-        assert_eq!(
-            body_json.get("error").and_then(|v| v.as_str()),
-            Some("GIF search is not configured"),
-            "GIF search same-key positive: exact 404 body must be JSON \
-             {{\"error\":\"GIF search is not configured\"}}. \
-             Falsifying mutation: make handler always-deny → 403 body differs."
         );
     }
 
@@ -6184,299 +5987,6 @@ pub(crate) mod postgres_tests {
              401 = NIP-FI MissingEvidence; 403 = NIP-FI AuthDenied/Cardinality. \
              Falsifying mutation: make verifier always-deny → 403 instead of 404."
         );
-    }
-
-    // ── Caller key-pairing witness: GIF mismatched key → 403 AuthorizationDenied ─
-    //
-    // Valid assertion signed for key_a, NIP-98 signed by key_b.  The key-pairing
-    // check in `admit_nip_fi_http_on_state` fires → 403 `authorization denied\n`.
-    //
-    // This is the handler-level denial witness: the same-key positive above proves
-    // admission passes when keys match; this proves the pairing check fires when
-    // they don't.  Together they bound removing the pairing check from both sides.
-    //
-    // Falsifying mutation: remove key-pairing check from `admit_nip_fi_http` →
-    // mismatched keys pass admission → 404 (GIF not configured) ≠ 403.
-    #[test]
-    #[ignore = "requires Postgres"]
-    fn nip_fi_enforce_gif_search_mismatched_key_is_403() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("current_thread runtime");
-
-        let Some(state) = rt.block_on(nip_fi_enforce_test_state_with_verifier()) else {
-            panic!("local Postgres not reachable");
-        };
-        let host = format!(
-            "nip-fi-gif-mismatch-{}.local",
-            uuid::Uuid::new_v4().simple()
-        );
-        rt.block_on(state.db.ensure_configured_community(&host))
-            .expect("ensure community");
-
-        // key_nip98: signs the NIP-98 Authorization header.
-        // key_assertion: signs the NIP-FI assertion (different pubkey → pairing mismatch).
-        let key_nip98 = Keys::generate();
-        let key_assertion = Keys::generate();
-        let url = format!("https://{host}{}", crate::api::gifs::SEARCH_PATH);
-        let assertion = signed_assertion_for_pubkey(&key_assertion.public_key().to_hex());
-
-        let mut headers = make_nip98_headers(&key_nip98, &url, "POST", b"{}");
-        headers.insert(
-            buzz_auth::CLIENT_ATTACHED_HEADER,
-            format!("Bearer {assertion}").parse().expect("valid header"),
-        );
-
-        let (status, _resp_headers, body) = rt.block_on(oneshot_request_full(
-            state,
-            "POST",
-            crate::api::gifs::SEARCH_PATH,
-            &host,
-            headers,
-            b"{}",
-        ));
-
-        assert_eq!(
-            status,
-            axum::http::StatusCode::FORBIDDEN,
-            "GIF mismatched key MUST return 403 AuthorizationDenied. \
-             Falsifying mutation: remove key-pairing check → admission passes \
-             → 404 (GIF not configured) returned instead."
-        );
-        assert_eq!(
-            body.as_ref(),
-            b"authorization denied\n",
-            "GIF mismatched key 403 MUST carry exact body 'authorization denied\\n'."
-        );
-    }
-
-    // All accessory methods must preserve the shared admission wire contract.
-    // Keep each route independent so the unfixed adapter fails all three tests.
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn nip_fi_buzz_v1_sidebar_wire_contract() {
-        buzz_v1_wire_contract("GET", "/buzz/v1/me/sidebar?limit=1", b"").await;
-    }
-
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn nip_fi_buzz_v1_contexts_wire_contract() {
-        let targets = serde_json::json!([{"target":{"channel_id":uuid::Uuid::new_v4()}}]);
-        let encoded: String = targets
-            .to_string()
-            .bytes()
-            .map(|b| format!("%{b:02X}"))
-            .collect();
-        buzz_v1_wire_contract(
-            "GET",
-            &format!("/buzz/v1/me/read-state?targets={encoded}"),
-            b"",
-        )
-        .await;
-    }
-
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn nip_fi_buzz_v1_write_wire_contract() {
-        let body = serde_json::to_vec(&serde_json::json!({"intents":[{
-            "type":"mark_channel_read", "channel_id":uuid::Uuid::new_v4(),
-            "message_id":"ab".repeat(32)
-        }]}))
-        .expect("serialize intent");
-        buzz_v1_wire_contract("POST", "/buzz/v1/me/read-state", &body).await;
-    }
-
-    async fn buzz_v1_wire_contract(method: &str, path: &str, request_body: &[u8]) {
-        use axum::http::{header, StatusCode};
-        use buzz_auth::{CrossPodMergeResult, IssuerCapacity, NipFiDenyMap, NipFiMode};
-
-        let fixture = nip_fi_enforce_test_state_with_verifier()
-            .await
-            .expect("local Postgres");
-        let mut state = (*fixture).clone();
-        Arc::make_mut(&mut state.config).buzz_v1_enabled = true;
-        let deny_map = Arc::new(NipFiDenyMap::new(
-            10,
-            vec![IssuerCapacity {
-                issuer: HANDLER_TEST_ISSUER.to_owned(),
-                capacity: 10,
-            }],
-        ));
-        state.nip_fi_deny_map = Some(deny_map.clone());
-        let state = Arc::new(state);
-        let host = format!("bffv1-{}.local", uuid::Uuid::new_v4().simple());
-        state
-            .db
-            .ensure_configured_community(&host)
-            .await
-            .expect("ensure community");
-        let url = format!("https://{host}{path}");
-        let actor = Keys::generate();
-        let other = Keys::generate();
-        let paired = same_key_nip98_and_assertion_headers(&actor, &url, method, request_body);
-        let (status, headers, body) = oneshot_request_full(
-            state.clone(),
-            method,
-            path,
-            &host,
-            paired.clone(),
-            request_body,
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK, "admitted control: {body:?}");
-        assert_eq!(headers[header::CONTENT_TYPE], "application/json");
-        assert_eq!(headers[header::CACHE_CONTROL], "private, no-store");
-        let value: serde_json::Value = serde_json::from_slice(&body).expect("control JSON");
-        if method == "POST" {
-            assert_eq!(
-                body.as_ref(),
-                br#"{"outcomes":[{"status":"blocked"}],"projection_status":"not_requested"}"#
-            );
-        } else {
-            assert!(value["account"]["cutoff_ms"].is_i64());
-            assert_eq!(
-                value["account"]["retention_seconds"],
-                state.config.buzz_v1_retention_seconds
-            );
-            if path.contains("sidebar") {
-                assert_eq!(value["channels"], serde_json::json!([]));
-                assert_eq!(value["next_cursor"], serde_json::Value::Null);
-            } else {
-                assert_eq!(
-                    value["contexts"],
-                    serde_json::json!([{"status":"unavailable"}])
-                );
-            }
-        }
-
-        for case in [
-            "mismatch",
-            "denied",
-            "missing_nip98",
-            "invalid_nip98",
-            "missing_assertion",
-            "invalid_assertion",
-        ] {
-            let mut request_headers = paired.clone();
-            match case {
-                "mismatch" => {
-                    let assertion = signed_assertion_for_pubkey(&other.public_key().to_hex());
-                    request_headers.insert(
-                        buzz_auth::CLIENT_ATTACHED_HEADER,
-                        format!("Bearer {assertion}")
-                            .parse()
-                            .expect("assertion header"),
-                    );
-                }
-                "denied" => {
-                    let now = chrono::Utc::now();
-                    assert_eq!(
-                        deny_map.merge_cross_pod_deny(
-                            HANDLER_TEST_ISSUER,
-                            &actor.public_key(),
-                            now + chrono::Duration::minutes(5),
-                            now
-                        ),
-                        CrossPodMergeResult::Merged
-                    );
-                }
-                "missing_nip98" => {
-                    request_headers.remove(header::AUTHORIZATION);
-                }
-                "invalid_nip98" => {
-                    request_headers.insert(header::AUTHORIZATION, "Nostr invalid".parse().unwrap());
-                }
-                "missing_assertion" => {
-                    request_headers.remove(buzz_auth::CLIENT_ATTACHED_HEADER);
-                }
-                "invalid_assertion" => {
-                    request_headers.insert(
-                        buzz_auth::CLIENT_ATTACHED_HEADER,
-                        "Bearer invalid".parse().unwrap(),
-                    );
-                }
-                _ => unreachable!(),
-            }
-            let (status, headers, body) = oneshot_request_full(
-                state.clone(),
-                method,
-                path,
-                &host,
-                request_headers,
-                request_body,
-            )
-            .await;
-            let missing = case.starts_with("missing_");
-            assert_eq!(
-                status,
-                if missing {
-                    StatusCode::UNAUTHORIZED
-                } else {
-                    StatusCode::FORBIDDEN
-                },
-                "{case}"
-            );
-            assert_eq!(
-                headers[header::CONTENT_TYPE],
-                "text/plain; charset=utf-8",
-                "{case}"
-            );
-            assert_eq!(
-                body.as_ref(),
-                if missing {
-                    b"authentication required\n".as_slice()
-                } else if case.starts_with("invalid_") {
-                    b"evidence rejected\n".as_slice()
-                } else {
-                    b"authorization denied\n".as_slice()
-                },
-                "{case}"
-            );
-            assert_eq!(
-                headers
-                    .get(header::WWW_AUTHENTICATE)
-                    .map(|v| v.to_str().unwrap()),
-                missing.then_some("Nostr"),
-                "{case}"
-            );
-            // Outer assertion middleware owns its own cache policy.
-            if !case.ends_with("assertion") {
-                assert_eq!(
-                    headers[header::CACHE_CONTROL],
-                    "private, no-store",
-                    "{case}"
-                );
-            }
-        }
-
-        // Off ignores the same real deny entry, and retains application JSON for
-        // missing request auth rather than leaking the bridge's error envelope.
-        let mut off = (*state).clone();
-        Arc::make_mut(&mut off.config).nip_fi.mode = NipFiMode::Off;
-        let off = Arc::new(off);
-        assert_eq!(
-            oneshot_request_full(off.clone(), method, path, &host, paired, request_body)
-                .await
-                .0,
-            StatusCode::OK
-        );
-        let (status, headers, body) = oneshot_request_full(
-            off,
-            method,
-            path,
-            &host,
-            axum::http::HeaderMap::new(),
-            request_body,
-        )
-        .await;
-        assert_eq!(status, StatusCode::UNAUTHORIZED);
-        assert_eq!(headers[header::CONTENT_TYPE], "application/json");
-        assert_eq!(headers[header::CACHE_CONTROL], "private, no-store");
-        assert!(!headers.contains_key(header::WWW_AUTHENTICATE));
-        let error: serde_json::Value = serde_json::from_slice(&body).expect("Off JSON");
-        assert_eq!(error["error"]["code"], "unauthorized");
-        assert!(uuid::Uuid::parse_str(error["error"]["request_id"].as_str().unwrap()).is_ok());
     }
 
     // ── Caller key-pairing witness: moderation mismatched key → 403 ─────────

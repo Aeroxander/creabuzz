@@ -9,7 +9,7 @@
 //! | EIP-6492 wrapper | counterfactual (undeployed) ERC-4337 accounts | planned (`rpc` feature) |
 
 use crate::error::EvmAuthError;
-use crate::siwe::{parse_signature, personal_sign_digest, recover_address};
+use crate::personal_sign::{parse_signature, personal_sign_digest, recover_address};
 use crate::EvmAddress;
 
 /// Verifies that `signature` over `message` was produced by `address`.

@@ -73,7 +73,6 @@ BUZZ_S3_ACCESS_KEY=$(openssl rand -hex 10)
 BUZZ_S3_SECRET_KEY=$(openssl rand -hex 20)
 BUZZ_S3_BUCKET=buzz-media
 BUZZ_HTTP_PORT=$PORT
-BUZZ_V1_ENABLED=true
 BUZZ_TERMS_FILE=policies/terms.md
 BUZZ_PRIVACY_FILE=policies/privacy.md
 BUZZ_BACKUP_ALLOW_UNENCRYPTED=true

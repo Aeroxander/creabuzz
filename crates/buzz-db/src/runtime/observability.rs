@@ -1560,7 +1560,6 @@ mod tests {
         let _ = writer_db
             .huddle_started_link_exists(test_scope, Uuid::new_v4(), Uuid::new_v4(), &[13; 32])
             .await;
-        let _ = writer_db.list_archived(test_scope).await;
         let _ = writer_db
             .query_events_routed("pool_operation_matrix_writer", &query)
             .await;
@@ -1570,7 +1569,6 @@ mod tests {
         let _ = writer_db
             .with_inactive_community_fence(test_scope, |_| ())
             .await;
-        let _ = writer_db.usage_community_count().await;
         let _ = writer_db.reap_expired_ephemeral_channels().await;
         let deletion_store = writer_db.deletion_store();
         let _ = deletion_store.reap_expired_serving_write_leases(1).await;

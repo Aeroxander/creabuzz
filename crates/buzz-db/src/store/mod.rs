@@ -4,9 +4,6 @@
 pub mod admin_moderation;
 /// Community-scoped authentication allowlist persistence.
 pub mod allowlist;
-/// API token storage and lookup.
-/// Relay-scoped archived identity persistence (NIP-IA).
-pub mod archived_identities;
 /// Board moderation: locked and pinned threads, rules, board mutes, board moderators.
 pub mod board_moderation;
 /// NIP-ORG budget enforcement — windowed consumption counters.
@@ -31,22 +28,16 @@ pub mod git_repo;
 pub mod home_moderation;
 /// Community moderation: reports, bans/timeouts, audit actions.
 pub mod moderation;
-/// Deployment-global operator-listener mention registrations and delivery queues.
-pub mod operator_listener;
 /// NIP-ORG authority resolver adapter (R1 anchoring over the org graph).
 pub mod org_graph;
 /// Monthly table partition management.
 pub mod partition;
-/// Private signer-owned accessory read progress.
-pub mod personal_read;
 /// Buzz product-feedback sidecar persistence.
 pub mod product_feedback;
 /// Community-scoped push lease and durable wake-outbox persistence.
 pub mod push;
 /// Reaction persistence.
 pub mod reaction;
-/// Complete own-author read-state snapshots.
-pub mod read_state;
 /// HTTP report-resolution enforcement state machine persistence.
 pub mod relay_admin_actions;
 /// Use-limited relay invite persistence (v2 opaque tokens).
@@ -62,8 +53,6 @@ pub mod replaceable;
 pub mod storage_accounting;
 /// Thread metadata persistence.
 pub mod thread;
-/// Strict newest-first thread windows and auxiliary scans.
-pub mod thread_window;
 /// Per-community usage rollup queries for Prometheus gauges.
 pub mod usage;
 /// User profile persistence.

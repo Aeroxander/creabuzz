@@ -497,11 +497,7 @@ pub async fn insert_event_in_transaction(
     event: &Event,
     channel_id: Option<Uuid>,
 ) -> Result<(StoredEvent, bool)> {
-    let result = insert_event_on(tx, event, channel_id).await?;
-    if result.1 {
-        crate::operator_listener::enqueue_mentions_in_transaction(tx, event).await?;
-    }
-    Ok(result)
+    insert_event_on(tx, event, channel_id).await
 }
 
 async fn insert_event_on(
@@ -2239,8 +2235,6 @@ pub(crate) async fn insert_event_with_thread_metadata_tx(
                 }
             }
         }
-
-        crate::operator_listener::enqueue_mentions_in_transaction(tx, event).await?;
     }
 
     Ok((
