@@ -1,5 +1,5 @@
 /**
- * The app's service worker: it shows the short alerts the server sends when the app is closed (below), and it keeps the shell (the page, its scripts, styles, fonts and icons) so the app opens
+ * The app's service worker: it keeps the shell (the page, its scripts, styles, fonts and icons) so the app opens
  * from the home screen without a network, and caches nothing else. Every read and write to the server (WebSocket,
  * /api, /query, /info, media) goes straight to the network, never to a cache: what a person sees is never stale.
  *
@@ -102,81 +102,5 @@ self.addEventListener("fetch", (event) => {
           return response;
         }),
     ),
-  );
-});
-
-/*
- * Alerts away from the app. The server sends a short encrypted message {"v":1,"k":"planned"|"taken"|"ended","r":"<project link>"}:
- * a kind and the project's link, never an amount, a name or a date. This file turns it into one of three fixed sentences, so
- * nothing it shows can be anything else. A message of any other shape is dropped without showing anything. The same sentences
- * and kinds are in the app (`src/features/alerts/push/push-words.ts`); a test holds the two together.
- */
-const PUSH_TITLE = "News about a project you back";
-const PUSH_WORDS = {
-  planned:
-    "A task was planned on a project you back. You can take your money out first.",
-  taken: "A task was started on a project you back.",
-  ended: "A task ended on a project you back.",
-};
-/** A project's link: its id, then the first 16 hex characters of its founder (the part of /p/<link> after /p/). */
-const PROJECT_LINK = /^[A-Za-z0-9._~-]{1,120}-[0-9a-f]{16}$/;
-
-/** What a message says, or null when it is not the one shape this file shows. */
-function readPush(data) {
-  let message;
-  try {
-    message = data ? data.json() : null;
-  } catch (_error) {
-    return null;
-  }
-  if (!message || typeof message !== "object" || Array.isArray(message))
-    return null;
-  const kind = message.k;
-  if (message.v !== 1 || typeof kind !== "string") return null;
-  if (!Object.hasOwn(PUSH_WORDS, kind)) return null;
-  const link = message.r;
-  if (typeof link !== "string" || !PROJECT_LINK.test(link)) return null;
-  return { kind, link };
-}
-
-self.addEventListener("push", (event) => {
-  const push = readPush(event.data);
-  if (!push) return;
-  event.waitUntil(
-    self.registration.showNotification(PUSH_TITLE, {
-      body: PUSH_WORDS[push.kind],
-      icon: "/assets/icons/icon-192.png",
-      // One alert of a kind for a project at a time: a newer one replaces one the person has not looked at.
-      tag: `${push.kind}:${push.link}`,
-      data: { url: `/p/${push.link}` },
-    }),
-  );
-});
-
-self.addEventListener("notificationclick", (event) => {
-  event.notification.close();
-  const wanted = event.notification.data?.url;
-  // Only the app's own project pages: anything else opens Home.
-  const url =
-    typeof wanted === "string" &&
-    wanted.startsWith("/p/") &&
-    !wanted.includes("//")
-      ? wanted
-      : "/";
-  event.waitUntil(
-    self.clients
-      .matchAll({ type: "window", includeUncontrolled: true })
-      .then((windows) => {
-        const open = windows.find((w) =>
-          w.url.startsWith(self.location.origin),
-        );
-        if (open) {
-          return open
-            .focus()
-            .then((focused) => (focused || open).navigate(url))
-            .catch(() => self.clients.openWindow(url));
-        }
-        return self.clients.openWindow(url);
-      }),
   );
 });

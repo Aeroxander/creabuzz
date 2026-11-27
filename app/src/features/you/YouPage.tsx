@@ -5,7 +5,6 @@ import {
   removePasskeyIdentity,
 } from "@creaton/core/account/passkey-identity.ts";
 import { forgetIdentity } from "@creaton/core/client/identity.ts";
-import { serverWebPushKey } from "@creaton/core/client/server-settings.ts";
 import { Link } from "@tanstack/react-router";
 import {
   Bookmark,
@@ -31,7 +30,6 @@ import { useToast } from "../../ui/toast";
 import { BACKED_UP_KEY, RecoveryKeyPanel } from "../account/RecoveryKeyPanel";
 import { ProjectCard } from "../home/ProjectCard";
 import { SenderChoice } from "../money/SenderChoice";
-import { NotificationsList } from "../notifications/NotificationsList";
 import { ProfileHead } from "../profile/ProfilePage";
 import { HiddenSheet } from "../room/HiddenSheet";
 import { NOT_SAVED } from "../room/room-words";
@@ -40,17 +38,10 @@ import { forgetAllHiddenPictures } from "../pictures/hidden-pictures";
 import { forgetAllReported } from "../safety/reported";
 import { useProjectsBy } from "../profile/use-own-projects";
 
-// What is planned, taken and finished on the projects this account holds, and what it is owed (the record only, no money call).
-const NewsSection = lazy(() => import("../alerts/NewsSection"));
-// Alerts when the app is closed (a short message when a task is planned, taken or ended): the card is drawn only where the
-// server says it can send them.
-const PushCard = lazy(() =>
-  import("../alerts/push/PushCard").then((m) => ({ default: m.PushCard })),
-);
 // What this account holds across projects (money calls and ABIs load only where investing is on).
 const YourSharesList = lazy(() => import("../pot/YourSharesList"));
 
-/** You: your profile, notifications, messages, your projects and your account. */
+/** You: your profile, messages, your projects and your account. */
 export function YouPage() {
   const { pubkey } = useAccount();
   if (!pubkey) return <SignedOut />;
@@ -87,7 +78,7 @@ function SignedOut() {
 }
 
 function SignedIn({ me }: { me: string }) {
-  const [tab, setTab] = useState("notifications");
+  const [tab, setTab] = useState("projects");
   const [editing, setEditing] = useState(false);
   const projects = useProjectsBy(me).data ?? [];
   const profiles = useProfiles([me]).data;
@@ -130,27 +121,12 @@ function SignedIn({ me }: { me: string }) {
       </Link>
       {investingOn() ? (
         <Suspense fallback={null}>
-          <NewsSection />
-        </Suspense>
-      ) : null}
-      {investingOn() && serverWebPushKey() ? (
-        <Suspense fallback={null}>
-          <PushCard me={me} />
-        </Suspense>
-      ) : null}
-      {investingOn() ? (
-        <Suspense fallback={null}>
           <YourSharesList />
         </Suspense>
       ) : null}
       {investingOn() ? <SenderChoice /> : null}
       <Tabs
         items={[
-          {
-            value: "notifications",
-            label: "Notifications",
-            content: <NotificationsList />,
-          },
           {
             value: "projects",
             label: "Projects",
@@ -254,32 +230,7 @@ function EditProfileSheet({
   );
 }
 
-/** How long a sign-out waits for the server to forget the device before it goes on without it. */
-const STOP_ALERTS_WAIT_MS = 5_000;
-
-/**
- * Turn this device's alerts off for the account that is leaving. It has to come first: the server's forgetting is a call
- * the account signs, and the key is gone after sign-out. A browser that is no longer subscribed gets nothing more, so a
- * shared phone is never left showing one person's news to the next. It never holds a sign-out up for long and never throws.
- */
-async function stopAlertsBeforeSignOut(me: string | null): Promise<void> {
-  if (!me) return;
-  try {
-    const { alertsSavedBy, turnOff } = await import(
-      "../alerts/push/push-device"
-    );
-    if (!alertsSavedBy(me)) return;
-    await Promise.race([
-      turnOff(me),
-      new Promise((resolve) => setTimeout(resolve, STOP_ALERTS_WAIT_MS)),
-    ]);
-  } catch {
-    // Nothing more can be done here: the sign-out goes on.
-  }
-}
-
 function AccountTab() {
-  const { pubkey } = useAccount();
   const [showKey, setShowKey] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [hiddenOpen, setHiddenOpen] = useState(false);
@@ -341,22 +292,20 @@ function AccountTab() {
           <Button
             data-testid="sign-out-confirm"
             onClick={() => {
-              void stopAlertsBeforeSignOut(pubkey).then(() => {
-                clearPasskeySession();
-                if (hasPasskeyIdentity()) removePasskeyIdentity();
-                forgetIdentity();
-                forgetRoomDrafts();
-                forgetAllReported();
-                forgetAllHiddenPictures();
-                try {
-                  localStorage.removeItem(BACKED_UP_KEY);
-                } catch {
-                  // Storage refused: there is nothing kept to remove.
-                }
-                // A full page load, as web/ does: it drops everything held in memory for this account (opened
-                // messages, notifications, follows), so nothing of it stays readable on a shared phone.
-                window.location.assign("/");
-              });
+              clearPasskeySession();
+              if (hasPasskeyIdentity()) removePasskeyIdentity();
+              forgetIdentity();
+              forgetRoomDrafts();
+              forgetAllReported();
+              forgetAllHiddenPictures();
+              try {
+                localStorage.removeItem(BACKED_UP_KEY);
+              } catch {
+                // Storage refused: there is nothing kept to remove.
+              }
+              // A full page load, as web/ does: it drops everything held in memory for this account (opened
+              // messages, follows), so nothing of it stays readable on a shared phone.
+              window.location.assign("/");
             }}
             variant="secondary"
           >

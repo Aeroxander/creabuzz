@@ -288,11 +288,9 @@ test("you", async ({ page }) => {
   seed(relay);
   await install(page, relay, FAY_KEY);
   await page.goto("/you");
-  await expect(page.getByTestId("notification").first()).toBeVisible({
+  await expect(page.getByTestId("you-page")).toBeVisible({
     timeout: 20_000,
   });
-  // Names arrive after the list: wait for them so the shot shows people, not "Someone".
-  await expect(page.getByTestId("notifications")).not.toContainText("Someone");
   await shoot(page, "06-you");
 });
 

@@ -40,7 +40,7 @@ const TABS: readonly Tab[] = [
 ];
 
 /** The four tabs at the bottom of every screen: Home (and the projects reached from it), Start, This week, You. */
-export function TabBar({ badge }: { badge?: number }) {
+export function TabBar() {
   const path = useRouterState({ select: (s) => s.location.pathname });
   return (
     <nav
@@ -65,16 +65,6 @@ export function TabBar({ badge }: { badge?: number }) {
               >
                 <Icon aria-hidden size={22} />
                 <span>{tab.label}</span>
-                {tab.to === "/you" && badge ? (
-                  <span
-                    className="num absolute top-2 left-1/2 ml-2 min-w-4 rounded-full bg-mint px-1 text-center text-2xs text-on-mint"
-                    data-testid="you-badge"
-                  >
-                    <span className="sr-only">, </span>
-                    {badge > 9 ? "9+" : badge}
-                    <span className="sr-only"> new</span>
-                  </span>
-                ) : null}
               </Link>
             </li>
           );

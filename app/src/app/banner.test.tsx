@@ -36,9 +36,6 @@ vi.mock("../features/account/UnlockBar", () => ({ UnlockBar: () => null }));
 vi.mock("../features/account/RecoveryKeySheet", () => ({
   RecoveryOfferHost: () => null,
 }));
-vi.mock("../features/notifications/use-notifications", () => ({
-  useUnseenCount: () => 0,
-}));
 
 const BANNER = "money-banner";
 const bannerCount = () => screen.queryAllByTestId(BANNER).length;

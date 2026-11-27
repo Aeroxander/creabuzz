@@ -47,9 +47,7 @@ const moneyKeys = {
 };
 
 /** Newest first, ties broken by id. */
-export function newest<T extends { created_at: number; id: string }>(
-  events: T[],
-) {
+function newest<T extends { created_at: number; id: string }>(events: T[]) {
   return [...events].sort(
     (a, b) => b.created_at - a.created_at || (a.id < b.id ? 1 : -1),
   );

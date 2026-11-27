@@ -241,9 +241,7 @@ test("a post opens with its comments", async ({ page }) => {
   await expectAtMostOneGreen(page, "Post");
 });
 
-test("You shows notifications, projects and the account, signed in", async ({
-  page,
-}) => {
+test("You shows projects and the account, signed in", async ({ page }) => {
   const relay = createMockRelay();
   seed(relay);
   await install(page, relay, FOUNDER_KEY);
@@ -251,9 +249,7 @@ test("You shows notifications, projects and the account, signed in", async ({
   await expect(page.getByTestId("profile-head")).toContainText("Fay Founder", {
     timeout: 20_000,
   });
-  await expect(page.getByTestId("notification").first()).toContainText(
-    "replied to you",
-  );
+  await expect(page.getByTestId("project-card").first()).toBeVisible();
   await page.getByTestId("tab-account").click();
   await expect(page.getByTestId("sign-out")).toBeVisible();
   await expectNoSidewaysScroll(page, "You");

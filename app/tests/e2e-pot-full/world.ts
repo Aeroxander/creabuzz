@@ -521,27 +521,6 @@ export function startMiner(): () => void {
   return () => clearInterval(timer);
 }
 
-// --- Things the step 3 journeys do in the app and with a stand-in push service ---------------------------------------
-
-/** The local stand-in for a push service the loop started (empty when this world has none). */
-export const STANDIN_URL = process.env.POT_STANDIN_URL ?? "";
-
-/** Say something to the push stand-in (its own small HTTP interface) and read the answer as JSON. */
-export async function standin<T = unknown>(
-  path: string,
-  body?: unknown,
-): Promise<T> {
-  const res = await fetch(`${STANDIN_URL}${path}`, {
-    method: body === undefined ? "GET" : "POST",
-    headers: { "content-type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!res.ok)
-    throw new Error(`the stand-in answered ${res.status} for ${path}`);
-  return (await res.json()) as T;
-}
-
 /** A project started in the app and launched on the chain, as its founder's page sees it. */
 export interface StartedProject {
   name: string;

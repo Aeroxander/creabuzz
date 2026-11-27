@@ -86,18 +86,6 @@ async function fetchProjectTasks(project: Project) {
   };
 }
 
-/**
- * The query one project's tasks are read with, for a screen that reads several projects at once (`useQueries`): the same
- * key and read as `useProjectTasks`, so the Tasks tab and the news share one snapshot per project.
- */
-export function projectTasksQuery(project: Project) {
-  return {
-    queryKey: taskKeys.project(project.coordinate),
-    staleTime: 15_000,
-    queryFn: () => fetchProjectTasks(project),
-  };
-}
-
 /** The project's tasks, newest first. `enabled` false (or no project) reads nothing. */
 export function useProjectTasks(project: Project | null, enabled = true) {
   return useQuery({

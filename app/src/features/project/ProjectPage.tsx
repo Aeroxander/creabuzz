@@ -17,7 +17,6 @@ import {
   useProjectNumbers,
   useWalletAddress,
 } from "../money/use-money";
-import { useMarkProjectSeen } from "../alerts/use-news";
 import { ProjectFeed } from "../feed/ProjectFeed";
 import { useRoomNews } from "../room/use-room-news";
 import { PlannedStrips } from "../tasks/chain/holder/PlannedStrips";
@@ -127,8 +126,6 @@ function ProjectView({
       : null;
   const now = Math.floor(Date.now() / 1000);
   const walletAddress = useWalletAddress().data ?? null;
-  // The strips below are this project's news: opening the page reads it.
-  useMarkProjectSeen(numbers, walletAddress);
   const roomNews = useRoomNews(project, investing, activity.data);
   const team = [project.author, ...accepted.map((m) => m.pubkey)];
   return (

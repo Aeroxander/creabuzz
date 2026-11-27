@@ -35,9 +35,6 @@ let currentSigner: string | null = null;
 /** What the document said about checking a phone account's wallet link (`smartAccountLinks`), or null. */
 let currentSmartLinks: boolean | null = null;
 
-/** The operator's web push public key from the same document (`webPush.publicKey`), or null when push is not switched on. */
-let currentWebPush: string | null = null;
-
 const HEX64 = /^[0-9a-f]{64}$/;
 
 /**
@@ -63,30 +60,6 @@ export function smartAccountLinksFromInfo(info: unknown): boolean | null {
 /** What the server said about checking phone accounts' wallet links, or null when it said nothing. */
 export function serverSmartAccountLinks(): boolean | null {
   return currentSmartLinks;
-}
-
-/**
- * The operator's web push public key from the information document (`webPush.publicKey`): an uncompressed P-256 point, 65
- * bytes starting `0x04`, written in base64url with no padding (87 characters), exactly as a browser's push manager wants it.
- * Anything else is "says nothing": the app never draws the alerts card for a key it cannot use.
- */
-export function webPushKeyFromInfo(info: unknown): string | null {
-  if (!info || typeof info !== "object" || Array.isArray(info)) return null;
-  const push = (info as { webPush?: unknown }).webPush;
-  if (!push || typeof push !== "object" || Array.isArray(push)) return null;
-  const key = (push as { publicKey?: unknown }).publicKey;
-  if (typeof key !== "string" || !/^[A-Za-z0-9_-]{87}$/.test(key)) return null;
-  try {
-    const bytes = atob(`${key.replace(/-/g, "+").replace(/_/g, "/")}=`);
-    return bytes.length === 65 && bytes.charCodeAt(0) === 4 ? key : null;
-  } catch {
-    return null;
-  }
-}
-
-/** The web push public key the server said, or null when it said none (push is off, or the key could not be used). */
-export function serverWebPushKey(): string | null {
-  return currentWebPush;
 }
 
 /** The server's own signing key, or null when it said none (or has not been asked yet). */
@@ -122,7 +95,6 @@ export function applyServerSettings(info: unknown): void {
   current = parseServerSettings(info);
   currentSigner = relaySignerFromInfo(info);
   currentSmartLinks = smartAccountLinksFromInfo(info);
-  currentWebPush = webPushKeyFromInfo(info);
 }
 
 /**

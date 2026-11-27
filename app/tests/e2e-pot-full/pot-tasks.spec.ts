@@ -384,24 +384,6 @@ test("a task from its plan to its claim: the page, the server and the contracts 
     await stranger.goto(link);
     await lines(stranger, "a stranger signed out");
 
-    // The news on You: one row for the plan, with the date money can first move and the way out.
-    await viewer.goto("/you");
-    const news = viewer.getByTestId("news-row").first();
-    await expect(news).toBeVisible({ timeout: 30_000 });
-    await expect(news.getByTestId("news-sentence")).toContainText(
-      `${name}: the team plans to pay up to ${mostWords} dollars for “${WHAT}”, from ${noticeDate}.`,
-    );
-    await expect(news.getByTestId("news-urgent")).toContainText(
-      `You can take your money out before ${noticeDate}.`,
-    );
-    await expect(viewer.getByTestId("news-play-money")).toContainText(
-      "play money",
-    );
-    ok(
-      "the news on You tells the holder about the plan, with the date and the way out",
-    );
-    await shot(viewer, "03-holder-news");
-
     // ── step 6: the chain's clock moves past the notice; the worker hands work in and sets the money aside ───────
     await worker.goto(link);
     await worker.getByTestId("tab-tasks").click();
@@ -754,16 +736,6 @@ test("a task from its plan to its claim: the page, the server and the contracts 
       ),
       `field-by-field checks of the record against the contracts at block ${afterClaim.content.asOf.block} (a note claimed)`,
     );
-    // The holder who stayed reads how the task ended: paid in part, and the rest went back (the server's figures, in the page's words).
-    await viewer.goto("/you");
-    await expect(
-      viewer.getByTestId("news-row").filter({
-        hasText: `was paid ${dollarsPhrase(pay)} of the ${dollarsPhrase(BigInt(paidRow.setAside))} set aside; the rest went back.`,
-      }),
-    ).toHaveCount(1, { timeout: 30_000 });
-    ok(
-      "the holder who stayed reads how the first task ended: paid in part, the rest went back",
-    );
     // The team's own Tasks tab reads the same ending in the network's words, with the part that was paid and what went back.
     await founder.goto(link);
     await founder.getByTestId("tab-tasks").click();
@@ -855,21 +827,8 @@ test("a task from its plan to its claim: the page, the server and the contracts 
       ),
       `field-by-field checks of the record against the contracts at block ${afterRun.content.asOf.block} (a task that ran out)`,
     );
-    // What the pages say at the end is what the record says. The holder's news names the ending (a task that ended more than 28
-    // days before the record is no longer news, so the first one has left the list by now); the Money tab says how much room is
-    // left for tasks, in the record's own number; the team's Tasks tab reads each task in the network's words.
-    await viewer.goto("/you");
-    const ended = viewer.getByTestId("news-row");
-    await expect(
-      ended.filter({
-        hasText:
-          "ended and nothing was paid. The money went back to the project.",
-      }),
-    ).toHaveCount(1);
-    ok(
-      "the holder's news tells both endings: the task paid in part, and the one that ran out",
-    );
-    await shot(viewer, "09-holder-news-end");
+    // What the pages say at the end is what the record says: the Money tab says how much room is left for tasks, in the
+    // record's own number; the team's Tasks tab reads each task in the network's words.
     const last = (await newestRecord(project.key)) as NonNullable<
       Awaited<ReturnType<typeof newestRecord>>
     >;

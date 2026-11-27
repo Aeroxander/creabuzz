@@ -4,7 +4,6 @@
 import { describe, expect, it } from "vitest";
 import { numbersFor } from "../../../../../tests/helpers/pot-harness";
 import { withTasks } from "../../../../../tests/helpers/numbers-v2-fixture";
-import { alertsResult } from "../../../alerts/alerts";
 import { plannedBackLine } from "../../../pot/back-tasks";
 import { claimableNow, nowOf, phaseOf, stateWords } from "../state";
 import { atMostNowLine, endedLine, plannedLines } from "../words";
@@ -57,14 +56,6 @@ describe("parser-valid extremes never throw in the holder functions", () => {
       parsed += 1;
       const queue = numbers.tasks;
       const now = pick([nowOf(numbers.asOf.time), 0, 2 ** 40]);
-      alertsResult({
-        numbers: [numbers],
-        names: new Map(),
-        me: ["0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc"],
-        held: () => true,
-        tasksOf: () => undefined,
-        now,
-      });
       plannedBackLine(numbers);
       stripRows(queue, now, null);
       noteCandidates({

@@ -21,14 +21,11 @@
 # The two journeys do not share a world because the first moves the chain's clock by days (a record is dated by the server's own
 # clock, so a chain that is days ahead of it reads as an old record for the rest of that world).
 #
-# Step 3's journeys (app/tests/e2e-pot-full/pot-room.spec.ts, pot-push.spec.ts), each in a world of its own:
+# Step 3's journey (app/tests/e2e-pot-full/pot-room.spec.ts), in a world of its own:
 #   pot-room      a visitor opens a project's link and reads the page (one banner, the line "not a return", play money, one Back);
 #                 two people back and one takes out, and the live feed shows it rounded, with no names and the net money in; a holder
 #                 writes in the room, a stranger is refused in the server's own words, and after taking out and one time unit the
 #                 person is read-only (the server says so too);
-#   pot-push      the relay with web push on and a local stand-in for a push service: a holder turns alerts on from You, a task is
-#                 planned, and the stand-in receives the message the device decrypts; the real service worker shows its fixed sentence
-#                 for the same kind of news as the in-app alert; after Turn off the next task reaches nobody.
 #
 # Step 4's journey (app/tests/e2e-pot-full/pot-pause.spec.ts), in a world of its own, deployed with the setting step 4 adds (it is
 # off in every other world, as in a default deployment):
@@ -62,8 +59,7 @@
 #   this computer's network address (SERVE_HOST, default: its first address) and prints the addresses and the steps. It runs
 #   until you press Ctrl-C, then stops everything it started. The chain's development accounts are public and unlocked, so
 #   anyone on the same network can send play-money transactions to it while it runs: use a network you trust. It also leaves one
-#   planned task on the project (see the words it prints). With WORLD_PUSH=1 (and SERVE_HOST=localhost, a secure address on this
-#   computer) the server also has web push switched on, with a key made for the run, so a desktop browser can be tried with alerts.
+#   planned task on the project (see the words it prints).
 # Env:    SERVE_HOST (with --serve: the address a phone reaches this computer at), POSTGRES_ADMIN_URL (default postgres://buzz:buzz_dev@127.0.0.1:5432/postgres), REDIS_URL, RELAY_BIN, FOUNDRY_BIN,
 #         RUN_TIMEOUT (seconds for the browser run, default 900), KEEP_DB=1 (keep the scratch database),
 #         RELAY_LOG_COPY=<file>, PW_CHROMIUM_PATH / PW_CHROMIUM_EXTRA_ARGS (a Chromium other than Playwright's pinned one),
@@ -80,12 +76,10 @@ SERVE=""
 HOLD=""
 if [[ "${1:-}" == "--serve" ]]; then SERVE=1; shift; fi
 if [[ "${1:-}" == "--hold" ]]; then HOLD=1; shift; fi
-# With a journey named on the command line, the push world is the one that has the stand-in.
+# With a journey named on the command line, the pause journey is the one that gets the pause world.
 for arg in "$@"; do
-  [[ "$arg" == *pot-push* ]] && WORLD_PUSH=1
   [[ "$arg" == *pot-pause* ]] && WORLD_KIND=pause
 done
-[[ -n "${HOLD_PUSH:-}" ]] && WORLD_PUSH=1
 
 [[ -n "${FOUNDRY_BIN:-}" ]] && PATH="$FOUNDRY_BIN:$PATH"
 # Every tool this script needs, checked at once: each missing one is named in a plain sentence with how to get it.
@@ -133,9 +127,6 @@ SH
 fi
 APP_DIST="$STATE/app-dist"
 ANVIL_PID=""
-STANDIN_PID=""
-STANDIN_URL=""
-WORLD_PUSH="${WORLD_PUSH:-}"
 # What the deployment of a world is given: "default" (no switch) or "pause" (HOLDER_PAUSE=1).
 WORLD_KIND="${WORLD_KIND:-default}"
 RELAY_PID=""
@@ -175,7 +166,6 @@ stop_pid() {
 world_down() {
   stop_pid "$MINER_PID"; MINER_PID=""
   stop_pid "$RELAY_PID"; RELAY_PID=""
-  stop_pid "$STANDIN_PID"; STANDIN_PID=""; STANDIN_URL=""
   stop_pid "$ANVIL_PID"; ANVIL_PID=""
   [[ -n "${RELAY_LOG_COPY:-}" && -f "$STATE/relay.log" ]] && cp "$STATE/relay.log" "$RELAY_LOG_COPY"
   if [[ -n "$DB_MADE" && "${KEEP_DB:-}" == "1" ]]; then
@@ -293,19 +283,6 @@ world_up() {
   OPERATOR_KEY="$(openssl rand -hex 32)"
   OPERATOR_PUB="$(cd app && OPERATOR_KEY="$OPERATOR_KEY" node --input-type=module -e "import {getPublicKey} from 'nostr-tools/pure'; import {hexToBytes} from 'nostr-tools/utils'; console.log(getPublicKey(hexToBytes(process.env.OPERATOR_KEY)))")" \
     || fail "could not derive the operator's public key"
-  PUSH_ENV=()
-  if [[ -n "$WORLD_PUSH" ]]; then
-    local vapid_key
-    vapid_key="$(openssl ecparam -name prime256v1 -genkey -noout -out /dev/stdout 2>/dev/null | openssl ec -outform DER 2>/dev/null | tail -c +8 | head -c 32 | openssl base64 -A | tr '+/' '-_' | tr -d '=')"
-    [[ ${#vapid_key} -eq 43 ]] || fail "could not make a push key for this run"
-    local standin_port
-    standin_port="$(free_port)"
-    node scripts/web-push-standin.mjs --port "$standin_port" >"$STATE/standin.log" 2>&1 &
-    STANDIN_PID=$!
-    STANDIN_URL="http://127.0.0.1:$standin_port"
-    wait_for 20 curl -fsS "$STANDIN_URL/_received" || fail "the push stand-in did not start"
-    PUSH_ENV=(BUZZ_WEB_PUSH_VAPID_PRIVATE_KEY="$vapid_key" BUZZ_WEB_PUSH_SUBJECT="mailto:operator@example.org" BUZZ_WEB_PUSH_EXTRA_HOSTS="127.0.0.1:$standin_port")
-  fi
   step "starting the relay on :$PORT (the chain reader on this chain: 2 confirmations, 1 s passes, a fresh record at least every 30 s)"
   env DATABASE_URL="$DB_URL" REDIS_URL="$REDIS_URL" BUZZ_AUTO_MIGRATE=true \
     BUZZ_RELAY_PRIVATE_KEY="$(openssl rand -hex 32)" \
@@ -313,7 +290,7 @@ world_up() {
     BUZZ_HEALTH_PORT="$HEALTH" BUZZ_METRICS_PORT="$METRICS" \
     BUZZ_WEB_DIR="$APP_DIST" BUZZ_WEB_SPA=full BUZZ_MEDIA_BASE_URL="http://$PUBLIC_HOST:$PORT/media" \
     BUZZ_REQUIRE_RELAY_MEMBERSHIP=false BUZZ_GIT_CONFORMANCE_PROBE=false \
-    BUZZ_INVESTING=true RELAY_OWNER_PUBKEY="$OPERATOR_PUB" ${PUSH_ENV[@]+"${PUSH_ENV[@]}"} \
+    BUZZ_INVESTING=true RELAY_OWNER_PUBKEY="$OPERATOR_PUB" \
     BUZZ_TERMS_OF_SERVICE_MARKDOWN="$(cat docs/policies/TERMS-DRAFT.md)" \
     BUZZ_PRIVACY_POLICY_MARKDOWN="$(cat docs/policies/PRIVACY-DRAFT.md)" \
     BUZZ_AGE_ATTESTATION_REQUIRED=true \
@@ -337,12 +314,6 @@ world_up() {
   relay_up | jq -e '.investing == true and (.self | test("^[0-9a-f]{64}$"))' >/dev/null \
     || fail "the relay does not say it offers investing and its own key"
   grep -q 'chain reader started' "$STATE/relay.log" || fail "the chain reader did not start"
-  if [[ -n "$WORLD_PUSH" ]]; then
-    local public
-    public="$(relay_up | jq -r '.webPush.publicKey // empty')"
-    [[ -n "$public" ]] || fail "the relay does not carry a push key in its information"
-    curl -fsS -X POST -d "{\"publicKey\":\"$public\"}" "$STANDIN_URL/_vapid" >/dev/null || fail "could not give the stand-in the operator's public key"
-  fi
   curl -fsS -m 5 -H 'Accept: text/html' "$BASE/welcome" >"$STATE/page.html" 2>&1 || true
   grep -q '<div id="root"' "$STATE/page.html" || fail "the relay does not serve the app's page"
 }
@@ -359,7 +330,6 @@ POT_CHECKS_FILE=$CHECKS_FILE
 POT_REPO_ROOT=$REPO_ROOT
 POT_DB_URL=$DB_URL
 POT_HELPER_ADDRESS=$(cast wallet address --private-key "$K_HELPER" | tr 'A-F' 'a-f')
-POT_STANDIN_URL=$STANDIN_URL
 EOF
 }
 
@@ -381,15 +351,10 @@ if [[ -n "$SERVE" ]]; then
     STEP4_NOTE="  This world was deployed with HOLDER_PAUSE=1: the project has the holders' pause. The steps are in TRY-IT.md, part 4.8.
 "
   fi
-  PUSH_NOTE=""
-  [[ -n "$WORLD_PUSH" ]] && PUSH_NOTE="  Alerts away from the app: this server has a push key made for this run. Open the app at an address that is secure (http://localhost
-  on this computer counts) in a desktop browser with a network connection, turn alerts on from You, and plan a task.
-
-"
   cat <<EOF
 
 [pot-full-loop] READY. Everything here is a local test chain and play money. Leave this window open; press Ctrl-C to stop it all.
-The page is plain http on this network, so a passkey, alerts away from the app and the Copy press cannot be tried on it (TRY-IT.md, part 1).
+The page is plain http on this network, so a passkey and the Copy press cannot be tried on it (TRY-IT.md, part 1).
 
   The app (open this on the phone):   $PUBLIC_BASE$LINK
   The chain, for the phone's wallet:  network "Local test network", RPC $PUBLIC_RPC, chain id 31337, symbol ETH
@@ -405,7 +370,7 @@ The page is plain http on this network, so a passkey, alerts away from the app a
   The server and the page keep their own clocks, so after a jump the project's record reads as old and Back waits until the next
   record. Move the clock only when TRY-IT.md says.
 
-${PUSH_NOTE}${STEP4_NOTE}  The numbered steps, with what working looks like, are in docs/next-version/TRY-IT.md.
+${STEP4_NOTE}  The numbered steps, with what working looks like, are in docs/next-version/TRY-IT.md.
 
 EOF
   while kill -0 "$RELAY_PID" 2>/dev/null && kill -0 "$ANVIL_PID" 2>/dev/null; do sleep 2; done
@@ -421,7 +386,6 @@ run_journey() {
     env BUZZ_REAL_RELAY_URL="$BASE" POT_RPC_URL="$RPC" POT_DEPLOYMENTS_FILE="$STATE/deployments.json" \
       POT_STATE_DIR="$STATE" POT_CHECKS_FILE="$CHECKS_FILE" POT_REPO_ROOT="$REPO_ROOT" POT_DB_URL="$DB_URL" \
       POT_HELPER_ADDRESS="$(cast wallet address --private-key "$K_HELPER" | tr 'A-F' 'a-f')" \
-      POT_STANDIN_URL="$STANDIN_URL" \
       POT_WORLD_KIND="$WORLD_KIND" \
       ${SHOTS_DIR:+POT_SHOTS_DIR="$SHOTS_DIR"} \
       "$BOUNDED" "$RUN_TIMEOUT" node_modules/.bin/playwright test --config=playwright.pot-full.config.ts \
@@ -459,12 +423,10 @@ elif [[ $# -gt 0 ]]; then
   run_journey "$@"
   world_down
 else
-  # Step 1's journey, step 2's task queue, step 3's two and step 4's one, each in a world of its own (the chain's clock is moved by days in
-  # most of them, and a world that is days ahead of the server's clock cannot be reused). Only the push world has a stand-in.
-  for journey in pot-full.spec pot-tasks.spec pot-room.spec pot-push.spec pot-pause.spec; do
-    WORLD_PUSH=""
+  # Step 1's journey, step 2's task queue, step 3's one and step 4's one, each in a world of its own (the chain's clock is moved by days in
+  # most of them, and a world that is days ahead of the server's clock cannot be reused).
+  for journey in pot-full.spec pot-tasks.spec pot-room.spec pot-pause.spec; do
     WORLD_KIND=default
-    [[ "$journey" == pot-push.spec ]] && WORLD_PUSH=1
     [[ "$journey" == pot-pause.spec ]] && WORLD_KIND=pause
     world_up
     run_journey "$journey"
