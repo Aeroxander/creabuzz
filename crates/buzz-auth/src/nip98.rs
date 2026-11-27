@@ -221,9 +221,8 @@ pub fn verify_nip98_event(
 /// - Strips trailing slash from path.
 ///
 /// **No loopback aliasing.** `localhost`, `::1`, and `127.0.0.1` are three
-/// distinct hosts here. Under multi-tenant the `u`-tag host is the row-zero
-/// community binding (`docs/multi-tenant-conformance.md`, NIP-98 row): if
-/// `verify_nip98_event` collapses them, an event signed for `localhost`
+/// distinct hosts here. The `u`-tag host is the row-zero community binding:
+/// if `verify_nip98_event` collapses them, an event signed for `localhost`
 /// would pass against a `127.0.0.1`-resolved community (or vice versa) —
 /// a host-binding side door. Tests reconstruct `expected_url` from their
 /// own bound host, the same shape production does.

@@ -3431,8 +3431,7 @@ pub(crate) mod postgres_tests {
 
     /// Row 44 obligation: a NIP-98 event signed against community A's host
     /// MUST be rejected at the bridge when the request resolves to community
-    /// B's host. The conformance text in `docs/multi-tenant-conformance.md`
-    /// states: "NIP-98 `u` URL host must match `req.community`". Before this
+    /// B's host: the NIP-98 `u` URL host must match `req.community`. Before this
     /// gap closed, `expected_url` was derived from `state.config.relay_url`
     /// (one static string per deployment), so any request to *any* host on a
     /// multi-tenant deployment would verify against community A's URL — both

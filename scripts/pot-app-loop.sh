@@ -36,8 +36,7 @@
 #                         Back starts it, more Shares coming in do not move it, a take-out to nothing and a send-out of everything
 #                         reset it, an account that never held reads null;
 #   passkey-back.test.ts  a Back from a passkey account: one operation, one passkey prompt, the Shares equal the quote.
-# It prints one line with the count of tests passed, failed and skipped. Replaces scripts/m7-chain-loop.sh (the
-# Rounds-and-auction loop, retired with those screens). Cleans up after itself (anvil stopped, its state removed).
+# It prints one line with the count of tests passed, failed and skipped. Cleans up after itself (anvil stopped, its state removed).
 #
 # Needs: anvil on PATH (or ANVIL=/path/to/anvil), node and pnpm, and contracts/pot/out built (`forge build` there).
 set -euo pipefail

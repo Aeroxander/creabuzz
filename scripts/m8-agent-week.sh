@@ -15,7 +15,7 @@
 #              stranger's confirmation are all refused; no "accepted" record exists before the founder's
 #            - drafts are counted against the week, and what they cost stays under a tenth of the platform's fees
 #   not      - money. Paying is a Treasury spend the runner presses in the app (tested on a local chain by
-#              scripts/m7-chain-loop.sh and the app's journeys); here the founder's acceptance is written without a
+#              scripts/pot-app-loop.sh and the app's journeys); here the founder's acceptance is written without a
 #              payment, and the script says so. It does not check the real AI model either (scripts/m8-planted-eval.sh).
 #
 # Time: the server has no test clock. A day passes by moving every stored record one day into the past in the SCRATCH
