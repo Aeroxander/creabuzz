@@ -222,14 +222,11 @@ RUN apt-get update \
     && useradd  --system --uid 1000 --gid 1000 --home-dir /var/lib/buzz \
                 --create-home --shell /usr/sbin/nologin buzz
 
-# The web bundle is copied by the final targets below. There is no admin bundle: the Creaton stack does not serve an admin
-# host.
+# The web bundle is copied by the final targets below.
 #
 # The invite landing page is always served from the bundled web UI. Repository
-# browser routes require the separate BUZZ_SERVE_GIT_WEB_GUI=true opt-in. The
-# admin bundle is inert until BUZZ_ADMIN_HOST is configured.
-ENV BUZZ_WEB_DIR=/srv/buzz/web \
-    BUZZ_ADMIN_WEB_DIR=
+# browser routes require the separate BUZZ_SERVE_GIT_WEB_GUI=true opt-in.
+ENV BUZZ_WEB_DIR=/srv/buzz/web
 
 # 3000: app (WS + REST)  ·  8080: /_liveness, /_readiness  ·  9102: /metrics
 EXPOSE 3000 8080 9102

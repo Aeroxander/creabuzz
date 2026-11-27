@@ -107,7 +107,7 @@ enum Command {
     ///
     /// `--escalated` lists the ones a community's moderators passed on to the
     /// server's owner: check these regularly and act on them in the web app
-    /// (Moderation, Escalated reports) or the admin console.
+    /// (Moderation, Escalated reports).
     Reports {
         /// Only the reports passed on to the server's owner.
         #[arg(long)]

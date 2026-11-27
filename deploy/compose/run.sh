@@ -434,7 +434,7 @@ case "${1:-help}" in
     ;;
   reports)
     # The reports communities' moderators passed on to the server's owner (with --all, every report), newest first,
-    # read from the database. The stack serves no admin host, so this is the way to read them.
+    # read from the database. The server has no admin API, so this is the way to read them.
     require_env
     shift
     escalated_reports "$@"

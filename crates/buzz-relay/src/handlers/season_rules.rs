@@ -88,9 +88,22 @@ pub(crate) fn parse_season_record(event: &Event) -> Result<Season, &'static str>
 }
 
 /// Whether `pubkey_hex` is one of the server's operators: a key in `RELAY_OPERATOR_PUBKEYS`, or the relay's owner
-/// when that list is empty (the one rule `api::admin` uses; there is no second list).
+/// when that list is empty (there is no second list).
 pub(crate) fn is_operator(state: &AppState, pubkey_hex: &str) -> bool {
-    crate::api::admin::is_config_backed_pubkey(&state.config, pubkey_hex)
+    is_config_backed_pubkey(&state.config, pubkey_hex)
+}
+
+/// Whether `pubkey_hex` is covered by the config: a key in `RELAY_OPERATOR_PUBKEYS`, or the owner when that list is empty.
+fn is_config_backed_pubkey(config: &crate::config::Config, pubkey_hex: &str) -> bool {
+    if config
+        .relay_operator_pubkeys
+        .iter()
+        .any(|k| k == pubkey_hex)
+    {
+        return true;
+    }
+    config.relay_operator_pubkeys.is_empty()
+        && config.relay_owner_pubkey.as_deref() == Some(pubkey_hex)
 }
 
 /// Refuse a season record (kind 37021) that an operator did not sign or whose number and dates are wrong.
@@ -549,6 +562,22 @@ mod tests {
             .tags(tags)
             .sign_with_keys(&Keys::generate())
             .expect("sign")
+    }
+
+    #[test]
+    fn config_backed_pubkey_is_an_operator_or_the_owner_when_no_operators_are_listed() {
+        let mut config = crate::config::Config::for_test();
+        config.relay_owner_pubkey = Some("aa".repeat(32));
+        config.relay_operator_pubkeys = Vec::new();
+        assert!(is_config_backed_pubkey(&config, &"aa".repeat(32)));
+        assert!(!is_config_backed_pubkey(&config, &"bb".repeat(32)));
+
+        config.relay_operator_pubkeys = vec!["bb".repeat(32)];
+        assert!(is_config_backed_pubkey(&config, &"bb".repeat(32)));
+        assert!(
+            !is_config_backed_pubkey(&config, &"aa".repeat(32)),
+            "the owner stops being an operator once operators are listed"
+        );
     }
 
     fn season_event(number: u32, d: &str, start: u64, demo: u64, end: u64) -> Event {

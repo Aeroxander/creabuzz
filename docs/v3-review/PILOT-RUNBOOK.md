@@ -152,8 +152,7 @@ author without anyone explaining it.
 
 **Escalated reports**: the server's owner (the organizer, whose key is `RELAY_OWNER_PUBKEY` or in
 `RELAY_OPERATOR_PUBKEYS`) checks them every morning and evening of a run with `./run.sh reports` in `deploy/compose` on
-the server, and acts on each the same day. The web app's list (Moderation, "Escalated reports") needs `BUZZ_ADMIN_HOST`,
-which the hosted HTTPS stack does not serve, so on the pilot server `./run.sh reports` is the way to read them. `./run.sh daily`
+the server, and acts on each the same day. The server has no admin API, so on the pilot server `./run.sh reports` is the way to read them. `./run.sh daily`
 prints them under the founders who are due and the last day's activity, in one list for each morning and evening.
 
 **Restricting someone who holds Shares** (in either run): use "Mute everywhere", not a ban, for anyone who holds Shares,

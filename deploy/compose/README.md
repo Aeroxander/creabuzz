@@ -91,8 +91,7 @@ $EDITOR .env               # every CHANGE_ME; the Creaton part says what each se
   script wrote, and `run.sh` takes the chain id, Launcher and dollar from it; a value set by hand wins. Changing any
   `VITE_*` setting means `./run.sh build` and then `./run.sh restart`: they are read when the app is built, and `restart`
   alone keeps serving the old page.
-- The image has no admin bundle: the Creaton stack does not serve an admin host (`./run.sh reports` lists the reports
-  passed on to the owner). `BUZZ_ADMIN_WEB_DIR` is empty in this image, so a server that sets `BUZZ_ADMIN_HOST` still starts.
+- The server has no admin API or admin bundle (`./run.sh reports` lists the reports passed on to the owner).
 - Any `VITE_*` value still holding `CHANGE_ME` stops the build. The server's secrets may still be `CHANGE_ME` at a first
   build; `start` refuses those.
 - The server turns on read state (`BUZZ_V1_ENABLED`, unread markers) and the app's page routes (`BUZZ_WEB_SPA=full`),
@@ -113,10 +112,9 @@ $EDITOR .env               # every CHANGE_ME; the Creaton part says what each se
 - Agents signing in for a member (`BUZZ_ALLOW_NIP_OA_AUTH`) are off in the Creaton part of `.env`: the web app never
   signs in that way, and the pilot runs no agents. Turn it on only when you run command-line or hosted agents here.
 - **Escalated reports** (the ones a community's moderators pass on to you): `./run.sh reports` lists them, newest
-  first, from the database; `./run.sh reports --all` lists every report. The web app's list (Moderation, "Escalated
-  reports") needs `BUZZ_ADMIN_HOST`, a host name of its own for the admin API, which this HTTPS (Caddy) stack does not
-  serve: it serves `BUZZ_DOMAIN` alone, so the admin API is never on the public host. Check `./run.sh reports` every
-  morning and evening of a pilot run, and act on each in the web app the same day.
+  first, from the database; `./run.sh reports --all` lists every report. The server has no admin API, so this command is the
+  only place they are listed. Check `./run.sh reports` every morning and evening of a pilot run, and act on each in the
+  web app the same day.
 - **The owner's pilot commands** (read the database, change nothing; `.env` must be filled in, as for `reports`):
   - `./run.sh due` lists the founders whose last weekly update is 7 or more days old (`--days N` changes the 7), with
     the day of it and how many days late: the list to message by hand. A project with no update yet counts from the day

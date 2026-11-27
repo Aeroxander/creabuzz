@@ -264,37 +264,20 @@ test-unit:
         # replay — so it belongs in the unit job. Run all targets (lib + the
         # tests/replay_fixtures.rs integration test), not just --lib.
         cargo nextest run -p buzz-conformance
-        # Admin API auth-boundary tests (api::admin in buzz-relay): the NIP-98
-        # duplicate-tag rejections, the Host/Origin replay-ordering causal pair,
-        # the admin.localhost origin/advertisement/canonical-URL pins, and the
-        # host-oracle/credential-first checks. These are the regression guard for
-        # the /api/admin/v1 moderation auth surface. Enumerated explicitly because
-        # nothing in CI runs `cargo test --workspace`, `just test-unit` did not
-        # enumerate `buzz-relay --lib`, and Backend Integration selects only the
-        # #[ignore]d Postgres suites — so these non-ignored tests ran in no lane
-        # and a red one could ship green (exactly how a broken admin test slipped
-        # past every gate once). Scoped to api::admin, not the whole buzz-relay
-        # --lib, because api::media has non-ignored tests that require Postgres.
-        # DB-backed api::admin tests are #[ignore]d and run in the PostgreSQL
-        # lane; the non-ignored ones reject before touching the database. Any
-        # new non-ignored test here must stay DB-free: without a database, a
-        # DB fallthrough only "passes" by waiting out the ~30s sqlx acquire
-        # timeout.
-        # The second clause adds the relay's pure authorization-decision tests:
-        # the NIP-29 channel membership grid (handlers::channel_authz), the
-        # moderation capability grid (handlers::moderation_authz), and the pure
-        # helpers in handlers::side_effects. They ran in NO lane before —
-        # `test(/^api::admin::/)` never matched them, and the PostgreSQL lane
-        # pairs `--run-ignored ignored-only` with a `postgres_tests::`
-        # default-filter — so a red one shipped green, exactly the gap the
-        # api::admin clause above was added to close.
+        # The relay's pure authorization-decision tests: the NIP-29 channel
+        # membership grid (handlers::channel_authz), the moderation capability
+        # grid (handlers::moderation_authz), and the pure helpers in
+        # handlers::side_effects. Enumerated explicitly because nothing in CI
+        # runs `cargo test --workspace`, and the PostgreSQL lane pairs
+        # `--run-ignored ignored-only` with a `postgres_tests::`
+        # default-filter, so a red one would otherwise ship green.
         # Deliberately scoped to these three modules instead of all of
         # `handlers::`: the wider set is mostly Postgres-backed, and five of its
         # non-postgres_tests cases only "pass" without a database by waiting out
         # the ~30s sqlx acquire timeout, so they do not belong in the infra-free
         # unit job either. The REQ subscription-lifecycle tests are picked by
         # exact name for the same reason: the rest of handlers::req needs a DB.
-        # The third clause adds the NIP-FI HTTP ingress and its router/config
+        # The next clause adds the NIP-FI HTTP ingress and its router/config
         # neighbours: nip_fi_http, nip_fi_config, router, api::parse_query_tests,
         # and the Git transport off_mode_precedence_tests. All are infra-free
         # and finish in well under a second with no DATABASE_URL, so none wait
@@ -303,7 +286,7 @@ test-unit:
         # (JWKS source + refresh-loop composition), which `--lib` cannot reach
         # because they live in the binary target; the nested
         # `tests::postgres_tests::` stays in the PostgreSQL lane.
-        # The fourth clause adds the startup step timers (startup_steps) and the
+        # The last clause adds the startup step timers (startup_steps) and the
         # env- and log-capture tests in telemetry and config. All three modules
         # are infra-free; config parses env into a struct and never connects.
         # `^config::` is anchored so it does not also select nip_fi_config.
@@ -311,7 +294,7 @@ test-unit:
         # tests; its Postgres tests are #[ignore]d *postgres_tests and run in
         # the PostgreSQL lane.
         cargo nextest run -p buzz-relay --lib --bin buzz-relay \
-            -E 'test(/^api::admin::/) + test(/^handlers::channel_authz::/) + test(/^handlers::moderation_authz::/) + test(/^handlers::side_effects::tests::/) + test(/^storage_sweep::tests::/) + test(/^nip_fi_core::tests::/) + test(/^nip_fi_http::tests::/) + test(/^nip_fi_config::tests::/) + test(/^readiness::tests::/) + test(/^router::tests::/) + test(/^api::parse_query_tests::/) + test(/^api::git::transport::off_mode_precedence_tests::/) + test(/^audio::join::tests::/) + test(/^audio::handler::tests::/) + test(/^nip_fi_gate::tests::/) + test(/^nip_fi_session::tests::/) + test(/^nip_fi_shadow::tests::/) + test(/^nip_fi_shadow_session::tests::/) + test(/^startup_steps::tests::/) + test(/^telemetry::tests::/) + test(/^config::tests::/) + test(/^chain_reader::/) + test(=state::tests::neither_a_confirmed_inactive_community_nor_a_failed_lookup_admits_the_socket) + test(=state::tests::periodic_revalidation_disconnects_inside_the_fenced_callback) + test(=state::tests::bare_community_disconnect_fails_closed_when_the_fence_is_unavailable) + test(=connection::tests::send_loop_sends_policy_close_when_community_is_archived) + test(=state::tests::community_disconnect_then_nip_fi_keeps_community_deleted_reason) + test(=state::tests::disconnect_community_wins_reason_losing_nip_fi_does_not_enqueue_frame) + test(=handlers::req::tests::timed_out_historical_read_deregisters_before_closed) + test(=handlers::req::tests::superseded_timeout_leaves_replacement_intact) + test(=handlers::req::tests::search_claim_retires_live_and_yields_to_replacement) + test(=handlers::req::tests::concurrent_claims_and_stale_teardowns_keep_the_last_owner) + test(=handlers::req::tests::timeout_closed_is_emitted_before_a_replacement_can_claim) + test(=handlers::req::tests::revoke_then_replacement_keeps_replacement_whole) + test(=handlers::req::tests::claims_after_connection_cleanup_are_refused) + test(=handlers::req::tests::dropped_terminal_frame_cancels_connection) + test(=handlers::req::tests::revoke_dropped_terminal_frame_cancels_connection) + (kind(bin) & (test(/^tests::/) + test(/^composition_tests::/) + test(/^env_filter_tests::/)) - test(/^tests::postgres_tests::/))'
+            -E 'test(/^handlers::channel_authz::/) + test(/^handlers::moderation_authz::/) + test(/^handlers::side_effects::tests::/) + test(/^storage_sweep::tests::/) + test(/^nip_fi_core::tests::/) + test(/^nip_fi_http::tests::/) + test(/^nip_fi_config::tests::/) + test(/^readiness::tests::/) + test(/^router::tests::/) + test(/^api::parse_query_tests::/) + test(/^api::git::transport::off_mode_precedence_tests::/) + test(/^audio::join::tests::/) + test(/^audio::handler::tests::/) + test(/^nip_fi_gate::tests::/) + test(/^nip_fi_session::tests::/) + test(/^nip_fi_shadow::tests::/) + test(/^nip_fi_shadow_session::tests::/) + test(/^startup_steps::tests::/) + test(/^telemetry::tests::/) + test(/^config::tests::/) + test(/^chain_reader::/) + test(=state::tests::neither_a_confirmed_inactive_community_nor_a_failed_lookup_admits_the_socket) + test(=state::tests::periodic_revalidation_disconnects_inside_the_fenced_callback) + test(=state::tests::bare_community_disconnect_fails_closed_when_the_fence_is_unavailable) + test(=connection::tests::send_loop_sends_policy_close_when_community_is_archived) + test(=state::tests::community_disconnect_then_nip_fi_keeps_community_deleted_reason) + test(=state::tests::disconnect_community_wins_reason_losing_nip_fi_does_not_enqueue_frame) + test(=handlers::req::tests::timed_out_historical_read_deregisters_before_closed) + test(=handlers::req::tests::superseded_timeout_leaves_replacement_intact) + test(=handlers::req::tests::search_claim_retires_live_and_yields_to_replacement) + test(=handlers::req::tests::concurrent_claims_and_stale_teardowns_keep_the_last_owner) + test(=handlers::req::tests::timeout_closed_is_emitted_before_a_replacement_can_claim) + test(=handlers::req::tests::revoke_then_replacement_keeps_replacement_whole) + test(=handlers::req::tests::claims_after_connection_cleanup_are_refused) + test(=handlers::req::tests::dropped_terminal_frame_cancels_connection) + test(=handlers::req::tests::revoke_dropped_terminal_frame_cancels_connection) + (kind(bin) & (test(/^tests::/) + test(/^composition_tests::/) + test(/^env_filter_tests::/)) - test(/^tests::postgres_tests::/))'
         # Note on audio::join::tests scope: the full suite is infra-free (no DB,
         # no Redis). The infra-free audio/FI regression witnesses — bootstrap
         # ordering barrier, CommitConfirmed arm, pending-close invisibility,

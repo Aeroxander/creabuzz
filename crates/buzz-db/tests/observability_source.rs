@@ -41,16 +41,10 @@ fn database_metrics_and_slow_logs_exclude_sensitive_or_unbounded_fields() {
 
 #[test]
 fn relay_admin_db_wrappers_have_exactly_one_datastore_span() {
-    for (domain, source) in [
-        (
-            "relay_admin_actions",
-            include_str!("../src/store/relay_admin_actions.rs"),
-        ),
-        (
-            "relay_operators",
-            include_str!("../src/store/relay_operators.rs"),
-        ),
-    ] {
+    for (domain, source) in [(
+        "relay_admin_actions",
+        include_str!("../src/store/relay_admin_actions.rs"),
+    )] {
         let db_impl = source
             .split_once("impl crate::Db {")
             .unwrap_or_else(|| panic!("{domain} must own its Db wrappers"))
@@ -613,10 +607,6 @@ fn p0_pool_acquisitions_use_typed_operation_pairs_without_other() {
             include_str!("../src/store/relay_members.rs"),
         ),
         ("thread", thread),
-        (
-            "relay_operators",
-            include_str!("../src/store/relay_operators.rs"),
-        ),
         ("usage", usage),
     ] {
         let production = source.split("\n#[cfg(test)]").next().unwrap_or(source);

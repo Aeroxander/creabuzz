@@ -823,26 +823,6 @@ pub async fn execute_delete_with_marker(
     Ok(true)
 }
 
-/// Commit the core mutation step and advance the step_marker to
-/// 'mutation_committed' in one transaction. This is the idempotency point:
-/// a crash after this returns true on re-drive; re-drive skips the mutation
-/// and resumes from artifact delivery.
-///
-/// Returns false if the action was not found or not in the expected state.
-pub async fn commit_mutation_step(pool: &PgPool, action_id: Uuid) -> Result<bool> {
-    let result = sqlx::query(
-        r#"
-        UPDATE relay_admin_actions
-        SET step_marker = 'mutation_committed', updated_at = now()
-        WHERE id = $1 AND state = 'enforcing' AND step_marker IS NULL
-        "#,
-    )
-    .bind(action_id)
-    .execute(pool)
-    .await?;
-    Ok(result.rows_affected() > 0)
-}
-
 /// Atomically finalize the enforcement: action → succeeded, report → terminal status,
 /// and enqueue outbox delivery rows.
 ///
@@ -1119,216 +1099,6 @@ pub async fn record_failure(
     Ok(true)
 }
 
-/// Cancel a failed action (pre-mutation only) and return its report to 'open'.
-///
-/// This is one atomic, ownership-fenced transition: the action is cancelled
-/// only if it is `failed`/pre-mutation AND belongs to the path `report_id` +
-/// `community_id`, and the report is reopened only if it is still `processing`
-/// and still points at this exact action. Both updates must each affect
-/// exactly one row; any mismatch rolls the whole transaction back and returns
-/// `false`.
-///
-/// Returns `false` (→ 409 at the HTTP layer, no state change) when the action
-/// is not `failed`, has a `step_marker` (post-mutation cancel is forbidden),
-/// does not belong to the path report/community (cross-report cancel), or the
-/// report moved underneath the cancel.
-pub async fn cancel_action(
-    pool: &PgPool,
-    action_id: Uuid,
-    community_id: CommunityId,
-    report_id: Uuid,
-    cancelled_by: &[u8],
-) -> Result<bool> {
-    let mut tx = pool.begin().await?;
-
-    // Cancel only a pre-mutation `failed` action that BELONGS to the path
-    // report and community. Fencing on report_id + report_community_id is what
-    // blocks cross-report cancellation: `/reports/A/cancel {actionId:B}` matches
-    // zero rows because B's report_id is not A. `cancelled_by` attributes the
-    // transition — the one mutation that would otherwise carry no actor trail.
-    let updated = sqlx::query(
-        r#"
-        UPDATE relay_admin_actions
-        SET state = 'cancelled', cancelled_by = $4, updated_at = now()
-        WHERE id = $1
-          AND report_id = $2
-          AND report_community_id = $3
-          AND state = 'failed'
-          AND step_marker IS NULL
-        "#,
-    )
-    .bind(action_id)
-    .bind(report_id)
-    .bind(community_id.as_uuid())
-    .bind(cancelled_by)
-    .execute(&mut *tx)
-    .await?;
-
-    if updated.rows_affected() != 1 {
-        tx.rollback().await?;
-        return Ok(false);
-    }
-
-    // Return the report to `open`, fenced on it still being `processing` and
-    // still pointing at this exact action. Must affect exactly one row — any
-    // mismatch means the report moved underneath us, so roll back the action
-    // cancel too. This is what makes the handler's `"status":"open"` legitimate.
-    let reopened = sqlx::query(
-        r#"
-        UPDATE moderation_reports
-        SET status = 'open', active_action_id = NULL
-        WHERE community_id = $1
-          AND id = $2
-          AND status = 'processing'
-          AND active_action_id = $3
-        "#,
-    )
-    .bind(community_id.as_uuid())
-    .bind(report_id)
-    .bind(action_id)
-    .execute(&mut *tx)
-    .await?;
-
-    if reopened.rows_affected() != 1 {
-        tx.rollback().await?;
-        return Ok(false);
-    }
-
-    tx.commit().await?;
-    Ok(true)
-}
-
-/// Result of attempting to reopen a terminal report.
-#[derive(Debug)]
-pub enum ReopenResult {
-    /// Report was terminal and is now `open`; a `reopen` audit row was inserted.
-    Reopened,
-    /// This exact `request_id` already reopened the report — idempotent replay.
-    /// No state changed; the earlier reopen stands.
-    AlreadyReopened,
-    /// The report is not in a terminal state. Carries its current status.
-    NotReopenable(String),
-    /// The report was not found globally.
-    NotFound,
-}
-
-/// Reopen a terminal report (`resolved | dismissed | escalated` → `open`) in a
-/// single transaction, recording a durable `reopen` audit row.
-///
-/// The audit row is written to `relay_admin_actions` with `action = 'reopen'`
-/// and `state = 'succeeded'`: `succeeded` keeps the stranded-action recovery
-/// worker (which claims `state IN ('pending','enforcing')`) from ever driving
-/// it, and the `action` value keeps it out of the enforcement DTO join (which
-/// filters `action IN ('delete','kick','ban','timeout')`).
-///
-/// Idempotency is keyed on `request_id`: a replay after the report has been
-/// reopened (and possibly re-resolved) returns [`ReopenResult::AlreadyReopened`]
-/// without mutating, so a client network retry never re-reopens a
-/// freshly-resolved report.
-///
-/// `expected_status`, when given, fences the reopen to a report still in that
-/// status, checked under the row lock: an operator reopening an escalated report
-/// never undoes a resolution someone else made after the operator last read it.
-#[allow(clippy::too_many_arguments)]
-pub async fn reopen_report(
-    pool: &PgPool,
-    community_id: CommunityId,
-    report_id: Uuid,
-    request_id: Uuid,
-    actor_pubkey: &[u8],
-    actor_role: &str,
-    reason: Option<&str>,
-    expected_status: Option<&str>,
-) -> Result<ReopenResult> {
-    let mut tx = pool.begin().await?;
-
-    // Lock the report row to serialize concurrent reopen/resolve on it.
-    let report_row = sqlx::query(
-        r#"
-        SELECT status
-        FROM moderation_reports
-        WHERE community_id = $1 AND id = $2
-        FOR UPDATE
-        "#,
-    )
-    .bind(community_id.as_uuid())
-    .bind(report_id)
-    .fetch_optional(&mut *tx)
-    .await?;
-
-    let Some(report_row) = report_row else {
-        return Ok(ReopenResult::NotFound);
-    };
-
-    // Idempotent replay: this request_id already reopened the report. Checked
-    // before the terminal-status gate so a retry after a re-resolve still
-    // returns success rather than a spurious NotReopenable.
-    let existing = sqlx::query_scalar::<_, Uuid>(
-        r#"
-        SELECT id FROM relay_admin_actions
-        WHERE report_community_id = $1 AND report_id = $2
-          AND request_id = $3 AND action = 'reopen'
-        "#,
-    )
-    .bind(community_id.as_uuid())
-    .bind(report_id)
-    .bind(request_id)
-    .fetch_optional(&mut *tx)
-    .await?;
-
-    if existing.is_some() {
-        tx.rollback().await?;
-        return Ok(ReopenResult::AlreadyReopened);
-    }
-
-    let status: String = report_row.try_get("status")?;
-    if !matches!(status.as_str(), "resolved" | "dismissed" | "escalated")
-        || expected_status.is_some_and(|expected| expected != status)
-    {
-        tx.rollback().await?;
-        return Ok(ReopenResult::NotReopenable(status));
-    }
-
-    // Return the report to the queue. Clear the resolution stamp so an open
-    // report never carries a stale resolver/timestamp; active_action_id is
-    // already NULL on a terminal report but clear it defensively.
-    sqlx::query(
-        r#"
-        UPDATE moderation_reports
-        SET status = 'open', resolved_by = NULL, resolved_at = NULL,
-            active_action_id = NULL
-        WHERE community_id = $1 AND id = $2
-          AND status IN ('resolved', 'dismissed', 'escalated')
-        "#,
-    )
-    .bind(community_id.as_uuid())
-    .bind(report_id)
-    .execute(&mut *tx)
-    .await?;
-
-    // Durable audit row. Inserted as 'succeeded' so the recovery worker never
-    // claims it; 'reopen' keeps it out of the enforcement DTO join.
-    sqlx::query(
-        r#"
-        INSERT INTO relay_admin_actions (
-            report_id, report_community_id, request_id, actor_pubkey, actor_role,
-            action, reason, state
-        ) VALUES ($1, $2, $3, $4, $5, 'reopen', $6, 'succeeded')
-        "#,
-    )
-    .bind(report_id)
-    .bind(community_id.as_uuid())
-    .bind(request_id)
-    .bind(actor_pubkey)
-    .bind(actor_role)
-    .bind(reason)
-    .execute(&mut *tx)
-    .await?;
-
-    tx.commit().await?;
-    Ok(ReopenResult::Reopened)
-}
-
 /// Fetch an action record by ID.
 pub async fn get_action(pool: &PgPool, action_id: Uuid) -> Result<Option<AdminActionRecord>> {
     let row = sqlx::query(
@@ -1344,57 +1114,6 @@ pub async fn get_action(pool: &PgPool, action_id: Uuid) -> Result<Option<AdminAc
     .fetch_optional(pool)
     .await?;
     row.map(row_to_action).transpose()
-}
-
-/// Fetch an action record by report + request_id (idempotency lookup).
-pub async fn get_action_by_request(
-    pool: &PgPool,
-    community_id: CommunityId,
-    report_id: Uuid,
-    request_id: Uuid,
-) -> Result<Option<AdminActionRecord>> {
-    let row = sqlx::query(
-        r#"
-        SELECT id, report_id, report_community_id, request_id, actor_pubkey, actor_role,
-               action, reason, timeout_until, state, step_marker, cancelled_by, error_message,
-               enforcement_target_pubkey, enforcement_channel_id, enforcement_target_event_id,
-               created_at, updated_at
-        FROM relay_admin_actions
-        WHERE report_community_id = $1 AND report_id = $2 AND request_id = $3
-        "#,
-    )
-    .bind(community_id.as_uuid())
-    .bind(report_id)
-    .bind(request_id)
-    .fetch_optional(pool)
-    .await?;
-    row.map(row_to_action).transpose()
-}
-
-/// Insert an outbox command for artifact/notice delivery.
-/// `dedup_key` prevents re-creating an artifact that was already delivered.
-/// The INSERT is ON CONFLICT DO NOTHING so re-inserting on re-drive is a no-op.
-pub async fn enqueue_outbox(
-    pool: &PgPool,
-    action_id: Uuid,
-    task_type: &str,
-    payload: serde_json::Value,
-    dedup_key: &str,
-) -> Result<()> {
-    sqlx::query(
-        r#"
-        INSERT INTO relay_admin_outbox (action_id, task_type, payload, dedup_key)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (dedup_key) DO NOTHING
-        "#,
-    )
-    .bind(action_id)
-    .bind(task_type)
-    .bind(payload)
-    .bind(dedup_key)
-    .execute(pool)
-    .await?;
-    Ok(())
 }
 
 /// Mark an outbox record as delivered, fenced by the claim token.
@@ -1548,22 +1267,6 @@ pub async fn claim_pending_outbox_batch(
     Ok(records)
 }
 
-/// Fetch pending outbox records for a given action.
-pub async fn list_pending_outbox(pool: &PgPool, action_id: Uuid) -> Result<Vec<OutboxRecord>> {
-    let rows = sqlx::query(
-        r#"
-        SELECT id, action_id, task_type, payload, state, dedup_key, error_message, attempt_count, created_at
-        FROM relay_admin_outbox
-        WHERE action_id = $1 AND state = 'pending'
-        ORDER BY created_at ASC
-        "#,
-    )
-    .bind(action_id)
-    .fetch_all(pool)
-    .await?;
-    rows.into_iter().map(row_to_outbox).collect()
-}
-
 /// Claim a batch of stranded `relay_admin_actions` for the action recovery worker.
 ///
 /// Claims `state IN ('pending', 'enforcing')` rows whose action lease has expired
@@ -1638,216 +1341,6 @@ pub async fn claim_stranded_action_batch(
     Ok(claims)
 }
 
-/// New deployment-authority kick primitive: removes a member from a channel
-/// without requiring the caller to be an active tenant owner/admin.
-/// - `Ok(KickResult::Removed)` — member was active and is now removed.
-/// - `Ok(KickResult::AlreadyGone)` — member was already absent before this action.
-///   (The enforcement mutation landed; the member was simply not there.)
-/// - `Err(_)` — unexpected DB error.
-///
-/// Never blanket-converts "not found" to success — callers must distinguish
-/// `AlreadyGone` (expected idempotency) from `Removed` (new removal).
-#[derive(Debug, PartialEq, Eq)]
-pub enum KickResult {
-    /// Member was present and is now removed.
-    Removed,
-    /// Member was not present (already removed or never joined).
-    AlreadyGone,
-}
-
-/// Remove a member using deployment authority (no tenant owner/admin check).
-///
-/// Returns `KickResult::Removed` if the member was present,
-/// `KickResult::AlreadyGone` if already absent.
-pub async fn deploy_kick_member(
-    pool: &PgPool,
-    community_id: CommunityId,
-    channel_id: Uuid,
-    target_pubkey: &[u8],
-    actor_pubkey: &[u8],
-) -> Result<KickResult> {
-    // Use a direct UPDATE to avoid the tenant ownership check in channel::remove_member.
-    // This is the deployment-authority primitive: no actor role check.
-    let result = sqlx::query(
-        r#"
-        UPDATE channel_members
-        SET removed_at = NOW(), removed_by = $1
-        WHERE community_id = $2 AND channel_id = $3 AND pubkey = $4 AND removed_at IS NULL
-        "#,
-    )
-    .bind(actor_pubkey)
-    .bind(community_id.as_uuid())
-    .bind(channel_id)
-    .bind(target_pubkey)
-    .execute(pool)
-    .await?;
-
-    if result.rows_affected() > 0 {
-        Ok(KickResult::Removed)
-    } else {
-        Ok(KickResult::AlreadyGone)
-    }
-}
-
-/// Update product_feedback status.
-pub async fn update_feedback_status(pool: &PgPool, id: Uuid, status: &str) -> Result<bool> {
-    let result = sqlx::query("UPDATE product_feedback SET status = $2 WHERE id = $1")
-        .bind(id)
-        .bind(status)
-        .execute(pool)
-        .await?;
-    Ok(result.rows_affected() > 0)
-}
-
-/// Immutable input of a report-less ("direct") staff action.
-#[derive(Debug, Clone, Copy)]
-pub struct DirectActionInput<'a> {
-    /// Tenant the action applies to.
-    pub community_id: CommunityId,
-    /// Client idempotency key, unique per community.
-    pub request_id: Uuid,
-    /// Acting staff pubkey.
-    pub actor_pubkey: &'a [u8],
-    /// `"operator"` | `"moderator"`.
-    pub actor_role: &'a str,
-    /// `"relay_operator"` | `"relay_moderator"` (decision audit authority).
-    pub actor_authority: &'a str,
-    /// `"ban"` | `"timeout"` | `"delete"`.
-    pub action: &'a str,
-    /// Public reason.
-    pub reason: Option<&'a str>,
-    /// Requested timeout duration (timeout only).
-    pub timeout_secs: Option<i64>,
-    /// Expiry derived at acceptance (timeout only); never compared on retry.
-    pub timeout_until: Option<DateTime<Utc>>,
-    /// Ban/timeout: the client-supplied target. Delete: the event author.
-    pub target_pubkey: Option<&'a [u8]>,
-    /// Delete: the client-supplied event.
-    pub target_event_id: Option<&'a [u8]>,
-    /// Delete: the event's channel, when it has one.
-    pub channel_id: Option<Uuid>,
-}
-
-/// Outcome of accepting or looking up a direct action.
-#[derive(Debug)]
-pub enum DirectClaim {
-    /// This call durably accepted the action.
-    Claimed(AdminActionRecord),
-    /// The same request was already accepted with the same intent.
-    Existing(AdminActionRecord),
-    /// The request id was already used for a different intent.
-    Conflict,
-}
-
-/// Retry comparison: actor, action, reason, duration, and the target the
-/// client names (event for delete, pubkey otherwise). Derived context (event
-/// author, channel, expiry) is enforcement data, not client input.
-fn classify_direct(
-    row: sqlx::postgres::PgRow,
-    input: &DirectActionInput<'_>,
-) -> Result<DirectClaim> {
-    let timeout_secs: Option<i64> = row.try_get("timeout_secs")?;
-    let rec = row_to_action(row)?;
-    let target_matches = if input.action == "delete" {
-        rec.enforcement_target_event_id.as_deref() == input.target_event_id
-    } else {
-        rec.enforcement_target_pubkey.as_deref() == input.target_pubkey
-    };
-    let same = rec.actor_pubkey == input.actor_pubkey
-        && rec.action == input.action
-        && rec.reason.as_deref() == input.reason
-        && timeout_secs == input.timeout_secs
-        && target_matches;
-    Ok(if same {
-        DirectClaim::Existing(rec)
-    } else {
-        DirectClaim::Conflict
-    })
-}
-
-/// Look up an accepted direct action by `(community, request_id)`.
-pub async fn find_direct_action(
-    pool: &PgPool,
-    input: &DirectActionInput<'_>,
-) -> Result<Option<DirectClaim>> {
-    let row = sqlx::query(
-        "SELECT * FROM relay_admin_actions \
-         WHERE report_community_id = $1 AND request_id = $2 AND report_id IS NULL",
-    )
-    .bind(input.community_id.as_uuid())
-    .bind(input.request_id)
-    .fetch_optional(pool)
-    .await?;
-    row.map(|row| classify_direct(row, input)).transpose()
-}
-
-/// Accept a direct action: the action row and its decision audit row commit
-/// together, or neither does. A concurrent same-key request waits on the
-/// unique index and is then classified against the winner.
-pub async fn claim_direct_action(
-    pool: &PgPool,
-    input: &DirectActionInput<'_>,
-) -> Result<DirectClaim> {
-    let mut tx = pool.begin().await?;
-    let inserted = sqlx::query(
-        r#"
-        INSERT INTO relay_admin_actions (
-            report_community_id, request_id, actor_pubkey, actor_role, action, reason,
-            timeout_secs, timeout_until, state, enforcement_target_pubkey,
-            enforcement_target_event_id, enforcement_channel_id
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9, $10, $11)
-        ON CONFLICT (report_community_id, request_id) WHERE report_id IS NULL DO NOTHING
-        RETURNING *
-        "#,
-    )
-    .bind(input.community_id.as_uuid())
-    .bind(input.request_id)
-    .bind(input.actor_pubkey)
-    .bind(input.actor_role)
-    .bind(input.action)
-    .bind(input.reason)
-    .bind(input.timeout_secs)
-    .bind(input.timeout_until)
-    .bind(input.target_pubkey)
-    .bind(input.target_event_id)
-    .bind(input.channel_id)
-    .fetch_optional(&mut *tx)
-    .await?;
-
-    let Some(row) = inserted else {
-        tx.rollback().await?;
-        return find_direct_action(pool, input)
-            .await?
-            .ok_or_else(|| sqlx::Error::RowNotFound.into());
-    };
-    let audit_action = if input.action == "delete" {
-        "delete_message"
-    } else {
-        input.action
-    };
-    sqlx::query(
-        r#"
-        INSERT INTO moderation_actions (
-            community_id, actor_pubkey, action, target_pubkey, target_event_id,
-            channel_id, public_reason, actor_authority
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        "#,
-    )
-    .bind(input.community_id.as_uuid())
-    .bind(input.actor_pubkey)
-    .bind(audit_action)
-    .bind(input.target_pubkey)
-    .bind(input.target_event_id)
-    .bind(input.channel_id)
-    .bind(input.reason)
-    .bind(input.actor_authority)
-    .execute(&mut *tx)
-    .await?;
-    let rec = row_to_action(row)?;
-    tx.commit().await?;
-    Ok(DirectClaim::Claimed(rec))
-}
-
 fn row_to_action(row: sqlx::postgres::PgRow) -> Result<AdminActionRecord> {
     Ok(AdminActionRecord {
         id: row.try_get("id")?,
@@ -1868,22 +1361,6 @@ fn row_to_action(row: sqlx::postgres::PgRow) -> Result<AdminActionRecord> {
         enforcement_target_event_id: row.try_get("enforcement_target_event_id")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
-    })
-}
-
-fn row_to_outbox(row: sqlx::postgres::PgRow) -> Result<OutboxRecord> {
-    Ok(OutboxRecord {
-        id: row.try_get("id")?,
-        action_id: row.try_get("action_id")?,
-        task_type: row.try_get("task_type")?,
-        payload: row.try_get("payload")?,
-        state: row.try_get("state")?,
-        dedup_key: row.try_get("dedup_key")?,
-        error_message: row.try_get("error_message")?,
-        attempt_count: row.try_get("attempt_count").unwrap_or(0),
-        // For non-claim queries (e.g. list_pending_outbox), there is no claim token.
-        claim_token: Uuid::nil(),
-        created_at: row.try_get("created_at").unwrap_or_else(|_| Utc::now()),
     })
 }
 
@@ -1974,42 +1451,10 @@ impl crate::Db {
         .await
     }
 
-    /// Accept a report-less direct action (see [`claim_direct_action`]).
-    #[datastore_span(name = "claim_direct_action", system = "postgresql")]
-    pub async fn claim_direct_action(&self, input: &DirectActionInput<'_>) -> Result<DirectClaim> {
-        claim_direct_action(&self.pool, input).await
-    }
-
-    /// Look up a report action by its idempotency key (see [`get_action_by_request`]).
-    #[datastore_span(name = "get_action_by_request", system = "postgresql")]
-    pub async fn get_action_by_request(
-        &self,
-        community_id: CommunityId,
-        report_id: uuid::Uuid,
-        request_id: uuid::Uuid,
-    ) -> Result<Option<AdminActionRecord>> {
-        get_action_by_request(&self.pool, community_id, report_id, request_id).await
-    }
-
-    /// Look up an accepted direct action (see [`find_direct_action`]).
-    #[datastore_span(name = "find_direct_action", system = "postgresql")]
-    pub async fn find_direct_action(
-        &self,
-        input: &DirectActionInput<'_>,
-    ) -> Result<Option<DirectClaim>> {
-        find_direct_action(&self.pool, input).await
-    }
-
     /// Advance an action from 'pending' to 'enforcing'.
     #[datastore_span(name = "begin_enforcing_action", system = "postgresql")]
     pub async fn begin_enforcing_action(&self, action_id: uuid::Uuid) -> Result<bool> {
         begin_enforcing(&self.pool, action_id).await
-    }
-
-    /// Commit the core mutation step (advance step_marker to 'mutation_committed').
-    #[datastore_span(name = "commit_action_mutation_step", system = "postgresql")]
-    pub async fn commit_action_mutation_step(&self, action_id: uuid::Uuid) -> Result<bool> {
-        commit_mutation_step(&self.pool, action_id).await
     }
 
     /// Finalize enforcement: action → succeeded, report → terminal status,
@@ -2189,46 +1634,6 @@ impl crate::Db {
         record_failure(&self.pool, action_id, lease_token, error).await
     }
 
-    /// Cancel a pre-mutation failed action (returns report to 'open'),
-    /// attributing the cancel to `cancelled_by`.
-    #[datastore_span(name = "cancel_admin_action", system = "postgresql")]
-    pub async fn cancel_admin_action(
-        &self,
-        action_id: uuid::Uuid,
-        community_id: CommunityId,
-        report_id: uuid::Uuid,
-        cancelled_by: &[u8],
-    ) -> Result<bool> {
-        cancel_action(&self.pool, action_id, community_id, report_id, cancelled_by).await
-    }
-
-    /// Reopen a terminal report (resolved|dismissed|escalated → open) with a
-    /// durable `reopen` audit row, keyed idempotent on `request_id`.
-    #[datastore_span(name = "reopen_report", system = "postgresql")]
-    #[allow(clippy::too_many_arguments)]
-    pub async fn reopen_report(
-        &self,
-        community_id: CommunityId,
-        report_id: uuid::Uuid,
-        request_id: uuid::Uuid,
-        actor_pubkey: &[u8],
-        actor_role: &str,
-        reason: Option<&str>,
-        expected_status: Option<&str>,
-    ) -> Result<ReopenResult> {
-        reopen_report(
-            &self.pool,
-            community_id,
-            report_id,
-            request_id,
-            actor_pubkey,
-            actor_role,
-            reason,
-            expected_status,
-        )
-        .await
-    }
-
     /// Fetch an action record by ID.
     #[datastore_span(name = "get_admin_action", system = "postgresql")]
     pub async fn get_admin_action(
@@ -2236,18 +1641,6 @@ impl crate::Db {
         action_id: uuid::Uuid,
     ) -> Result<Option<AdminActionRecord>> {
         get_action(&self.pool, action_id).await
-    }
-
-    /// Enqueue an outbox artifact/notice delivery command.
-    #[datastore_span(name = "enqueue_admin_outbox", system = "postgresql")]
-    pub async fn enqueue_admin_outbox(
-        &self,
-        action_id: uuid::Uuid,
-        task_type: &str,
-        payload: serde_json::Value,
-        dedup_key: &str,
-    ) -> Result<()> {
-        enqueue_outbox(&self.pool, action_id, task_type, payload, dedup_key).await
     }
 
     /// Mark an outbox record as delivered, fenced by the claim token.
@@ -2282,40 +1675,6 @@ impl crate::Db {
         batch_size: i64,
     ) -> Result<Vec<OutboxRecord>> {
         claim_pending_outbox_batch(&self.pool, worker_id, lease_until, batch_size).await
-    }
-
-    /// List pending outbox records for an action.
-    #[datastore_span(name = "list_pending_admin_outbox", system = "postgresql")]
-    pub async fn list_pending_admin_outbox(
-        &self,
-        action_id: uuid::Uuid,
-    ) -> Result<Vec<OutboxRecord>> {
-        list_pending_outbox(&self.pool, action_id).await
-    }
-
-    /// Deployment-authority kick: remove a member without requiring tenant owner/admin actor.
-    #[datastore_span(name = "deploy_kick_member", system = "postgresql")]
-    pub async fn deploy_kick_member(
-        &self,
-        community_id: CommunityId,
-        channel_id: uuid::Uuid,
-        target_pubkey: &[u8],
-        actor_pubkey: &[u8],
-    ) -> Result<KickResult> {
-        deploy_kick_member(
-            &self.pool,
-            community_id,
-            channel_id,
-            target_pubkey,
-            actor_pubkey,
-        )
-        .await
-    }
-
-    /// Update product_feedback status (operator-managed lifecycle).
-    #[datastore_span(name = "update_feedback_status", system = "postgresql")]
-    pub async fn update_feedback_status(&self, id: uuid::Uuid, status: &str) -> Result<bool> {
-        update_feedback_status(&self.pool, id, status).await
     }
 }
 
@@ -2529,109 +1888,6 @@ mod postgres_tests {
         );
     }
 
-    // ── Mutation + step_marker atomicity: cancel rejected post-marker ─────────
-
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn cancel_after_mutation_committed_is_rejected() {
-        let pool = setup_pool().await;
-        let community_id = make_community(&pool).await;
-        let report_id = make_report(&pool, community_id).await;
-
-        let request_id = Uuid::new_v4();
-        let claimed = match do_claim(&pool, community_id, report_id, request_id).await {
-            ClaimResult::Claimed(a) => a,
-            other => panic!("expected Claimed, got {other:?}"),
-        };
-        let action_id = claimed.id;
-
-        // Advance to enforcing.
-        let advanced = begin_enforcing(&pool, action_id)
-            .await
-            .expect("begin_enforcing");
-        assert!(advanced);
-
-        // Commit the mutation step marker.
-        let committed = commit_mutation_step(&pool, action_id)
-            .await
-            .expect("commit_mutation_step");
-        assert!(committed);
-
-        // Attempt to cancel — must fail because step_marker is set.
-        let cancelled = cancel_action(
-            &pool,
-            action_id,
-            CommunityId::from_uuid(community_id),
-            report_id,
-            &[0_u8; 32],
-        )
-        .await
-        .expect("cancel_action");
-        assert!(
-            !cancelled,
-            "cancel after mutation_committed must be rejected"
-        );
-    }
-
-    // ── Crash re-drive: step_marker skips the mutation, finalize succeeds ─────
-
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn crash_redrive_with_mutation_committed_skips_to_finalization() {
-        let pool = setup_pool().await;
-        let community_id = make_community(&pool).await;
-        let report_id = make_report(&pool, community_id).await;
-
-        let request_id = Uuid::new_v4();
-        let claimed = match do_claim(&pool, community_id, report_id, request_id).await {
-            ClaimResult::Claimed(a) => a,
-            other => panic!("expected Claimed, got {other:?}"),
-        };
-        let action_id = claimed.id;
-
-        // Simulate: process advanced, mutation committed, crash before finalization.
-        let _ = begin_enforcing(&pool, action_id)
-            .await
-            .expect("begin_enforcing");
-        let _ = commit_mutation_step(&pool, action_id)
-            .await
-            .expect("commit_mutation_step");
-
-        // Re-load the record (simulates crash recovery).
-        let reloaded = get_action(&pool, action_id)
-            .await
-            .expect("get_action")
-            .expect("action exists");
-
-        // step_marker is set — re-drive should skip mutation and go to finalize.
-        assert_eq!(reloaded.step_marker.as_deref(), Some("mutation_committed"));
-
-        // Finalize succeeds (proves re-drive transitions from persisted marker).
-        let finalized = do_finalize(&pool, action_id, community_id, report_id).await;
-        assert!(
-            finalized,
-            "finalize_success must succeed from mutation_committed state"
-        );
-
-        // Report must be resolved.
-        let row: Option<String> =
-            sqlx::query_scalar("SELECT status FROM moderation_reports WHERE id = $1")
-                .bind(report_id)
-                .fetch_optional(&pool)
-                .await
-                .expect("fetch report");
-        assert_eq!(row.as_deref(), Some("resolved"));
-
-        // Outbox rows must exist in the finalization transaction (success-gated delivery).
-        let outbox_count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM relay_admin_outbox WHERE action_id = $1")
-                .bind(action_id)
-                .fetch_one(&pool)
-                .await
-                .expect("count outbox");
-        assert!(outbox_count > 0, "finalize_success must create outbox rows");
-    }
-
     // ── Decision-only atomicity: no orphan audit row on concurrent close ───────
 
     #[tokio::test]
@@ -2688,290 +1944,6 @@ mod postgres_tests {
                 .await
                 .expect("count audit rows");
         assert_eq!(count, 1, "no orphan audit row on concurrent close");
-    }
-
-    // ── Outbox rows created in finalize_success, NOT at claim time ────────────
-
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn outbox_rows_created_at_finalize_not_at_claim() {
-        let pool = setup_pool().await;
-        let community_id = make_community(&pool).await;
-        let report_id = make_report(&pool, community_id).await;
-
-        let request_id = Uuid::new_v4();
-        let claimed = match do_claim(&pool, community_id, report_id, request_id).await {
-            ClaimResult::Claimed(a) => a,
-            other => panic!("expected Claimed, got {other:?}"),
-        };
-        let action_id = claimed.id;
-
-        // Immediately after claim: NO outbox rows — delivery is success-gated.
-        let rows_at_claim = list_pending_outbox(&pool, action_id)
-            .await
-            .expect("list_pending_outbox at claim");
-        assert!(
-            rows_at_claim.is_empty(),
-            "claim must NOT insert outbox rows (success-gated); got: {rows_at_claim:?}"
-        );
-
-        // Advance to enforcing + commit marker.
-        let _ = begin_enforcing(&pool, action_id)
-            .await
-            .expect("begin_enforcing");
-        let _ = commit_mutation_step(&pool, action_id)
-            .await
-            .expect("commit_mutation_step");
-
-        // After finalize_success: outbox rows must exist.
-        let finalized = do_finalize(&pool, action_id, community_id, report_id).await;
-        assert!(finalized, "finalize_success must succeed");
-
-        let rows_after = list_pending_outbox(&pool, action_id)
-            .await
-            .expect("list_pending_outbox after finalize");
-        assert!(
-            rows_after.iter().any(|r| r.task_type == "reporter_notice"),
-            "finalize_success must create reporter_notice outbox row; got: {rows_after:?}"
-        );
-    }
-
-    // ── Affected-user notice: actioned user hears the truth ───────────────────
-
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn finalize_enqueues_affected_user_notice_for_restriction() {
-        // A `ban` must enqueue an `affected_user_notice` addressed to the target
-        // pubkey, carrying the operator-authored public reason and restriction
-        // kind — so the
-        // restricted user is told what happened (VISION_MODERATION).
-        let pool = setup_pool().await;
-        let community_id = make_community(&pool).await;
-        let report_id = make_report(&pool, community_id).await;
-
-        let claimed = match do_claim(&pool, community_id, report_id, Uuid::new_v4()).await {
-            ClaimResult::Claimed(a) => a,
-            other => panic!("expected Claimed, got {other:?}"),
-        };
-        let action_id = claimed.id;
-        let _ = begin_enforcing(&pool, action_id)
-            .await
-            .expect("begin_enforcing");
-        let _ = commit_mutation_step(&pool, action_id)
-            .await
-            .expect("commit_mutation_step");
-
-        // do_finalize uses action "ban", target [1u8; 32], reason "test reason".
-        assert!(do_finalize(&pool, action_id, community_id, report_id).await);
-
-        let rows = list_pending_outbox(&pool, action_id)
-            .await
-            .expect("list_pending_outbox");
-        let notice = rows
-            .iter()
-            .find(|r| r.task_type == "affected_user_notice")
-            .expect("finalize_success must enqueue an affected_user_notice for ban");
-        assert_eq!(
-            notice.payload["recipient"].as_str(),
-            Some(hex::encode([1u8; 32]).as_str()),
-            "notice must be addressed to the actioned target pubkey"
-        );
-        assert_eq!(notice.payload["notice_kind"].as_str(), Some("restriction"));
-        assert_eq!(notice.payload["restriction_kind"].as_str(), Some("ban"));
-        assert_eq!(
-            notice.payload["public_reason"].as_str(),
-            Some("test reason")
-        );
-        // A ban is indefinite: no timeout_until in the payload.
-        assert!(
-            notice.payload.get("timeout_until").is_none(),
-            "ban notice must not carry a timeout_until; got: {:?}",
-            notice.payload
-        );
-    }
-
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn finalize_carries_timeout_until_for_timeout_notice() {
-        // A `timeout` must enqueue an `affected_user_notice` carrying the
-        // authoritative expiry so the restricted user is told "for how long"
-        // (VISION_MODERATION: "what restriction was applied, why, and for how long").
-        let pool = setup_pool().await;
-        let community_id = make_community(&pool).await;
-        let report_id = make_report(&pool, community_id).await;
-
-        let claimed = match do_claim(&pool, community_id, report_id, Uuid::new_v4()).await {
-            ClaimResult::Claimed(a) => a,
-            other => panic!("expected Claimed, got {other:?}"),
-        };
-        let action_id = claimed.id;
-        let _ = begin_enforcing(&pool, action_id)
-            .await
-            .expect("begin_enforcing");
-        let _ = commit_mutation_step(&pool, action_id)
-            .await
-            .expect("commit_mutation_step");
-
-        let target = vec![1u8; 32];
-        let until = chrono::DateTime::parse_from_rfc3339("2026-09-01T12:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
-        let finalized = finalize_success(
-            &pool,
-            action_id,
-            CommunityId::from_uuid(community_id),
-            Some(report_id),
-            "resolved",
-            &actor(),
-            "timeout",
-            Some(&target),
-            None,
-            None,
-            Some("Cool off."),
-            Some(until),
-        )
-        .await
-        .expect("finalize_success");
-        assert!(finalized);
-
-        let rows = list_pending_outbox(&pool, action_id)
-            .await
-            .expect("list_pending_outbox");
-        let notice = rows
-            .iter()
-            .find(|r| r.task_type == "affected_user_notice")
-            .expect("timeout must enqueue an affected_user_notice");
-        assert_eq!(notice.payload["notice_kind"].as_str(), Some("restriction"));
-        assert_eq!(notice.payload["restriction_kind"].as_str(), Some("timeout"));
-        assert_eq!(
-            notice.payload["timeout_until"].as_str(),
-            Some(until.to_rfc3339().as_str()),
-            "timeout notice payload must carry the authoritative expiry"
-        );
-    }
-
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn finalize_maps_delete_and_kick_to_content_actioned_notice() {
-        // The four-action mapping: delete/kick → content_actioned. (ban/timeout →
-        // restriction are covered by the restriction tests above.) Both `delete`
-        // and `kick` are finalized against a target pubkey so the affected user is
-        // notified; removing EITHER mapping arm fails this test.
-        let pool = setup_pool().await;
-        let community_id = make_community(&pool).await;
-
-        // Finalize one action per verb on its own report (the affected_user_notice
-        // dedup_key is per-action) and assert each enqueues a content_actioned
-        // notice with no restriction fields.
-        for verb in ["delete", "kick"] {
-            let report_id = make_report(&pool, community_id).await;
-            let claimed = match do_claim(&pool, community_id, report_id, Uuid::new_v4()).await {
-                ClaimResult::Claimed(a) => a,
-                other => panic!("expected Claimed, got {other:?}"),
-            };
-            let action_id = claimed.id;
-            let _ = begin_enforcing(&pool, action_id)
-                .await
-                .expect("begin_enforcing");
-            let _ = commit_mutation_step(&pool, action_id)
-                .await
-                .expect("commit_mutation_step");
-
-            let target = vec![1u8; 32];
-            let channel_id = Uuid::new_v4();
-            let finalized = finalize_success(
-                &pool,
-                action_id,
-                CommunityId::from_uuid(community_id),
-                Some(report_id),
-                "resolved",
-                &actor(),
-                verb,
-                Some(&target),
-                None,
-                Some(channel_id),
-                Some("Off-topic."),
-                None,
-            )
-            .await
-            .expect("finalize_success");
-            assert!(finalized);
-
-            let rows = list_pending_outbox(&pool, action_id)
-                .await
-                .expect("list_pending_outbox");
-            let notice = rows
-                .iter()
-                .find(|r| r.task_type == "affected_user_notice")
-                .unwrap_or_else(|| panic!("{verb} must enqueue an affected_user_notice"));
-            assert_eq!(
-                notice.payload["notice_kind"].as_str(),
-                Some("content_actioned"),
-                "{verb} maps to content_actioned"
-            );
-            assert!(
-                notice.payload.get("restriction_kind").is_none(),
-                "content_actioned notice carries no restriction_kind"
-            );
-            assert!(
-                notice.payload.get("timeout_until").is_none(),
-                "content_actioned notice carries no timeout_until"
-            );
-        }
-    }
-
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn finalize_skips_affected_user_notice_when_no_target_pubkey() {
-        // A `delete` with no derivable author (purged event) has no one to
-        // notify: no affected_user_notice row is enqueued, but the reporter
-        // notice still is.
-        let pool = setup_pool().await;
-        let community_id = make_community(&pool).await;
-        let report_id = make_report(&pool, community_id).await;
-
-        let claimed = match do_claim(&pool, community_id, report_id, Uuid::new_v4()).await {
-            ClaimResult::Claimed(a) => a,
-            other => panic!("expected Claimed, got {other:?}"),
-        };
-        let action_id = claimed.id;
-        let _ = begin_enforcing(&pool, action_id)
-            .await
-            .expect("begin_enforcing");
-        let _ = commit_mutation_step(&pool, action_id)
-            .await
-            .expect("commit_mutation_step");
-
-        // Finalize a `delete` with target_pubkey = None.
-        let finalized = finalize_success(
-            &pool,
-            action_id,
-            CommunityId::from_uuid(community_id),
-            Some(report_id),
-            "resolved",
-            &actor(),
-            "delete",
-            None,
-            None,
-            None,
-            Some("test reason"),
-            None,
-        )
-        .await
-        .expect("finalize_success");
-        assert!(finalized);
-
-        let rows = list_pending_outbox(&pool, action_id)
-            .await
-            .expect("list_pending_outbox");
-        assert!(
-            rows.iter().any(|r| r.task_type == "reporter_notice"),
-            "reporter notice must still be enqueued"
-        );
-        assert!(
-            !rows.iter().any(|r| r.task_type == "affected_user_notice"),
-            "no affected_user_notice when there is no target pubkey; got: {rows:?}"
-        );
     }
 
     // ── record_failure lease fence: stale worker cannot strand the report ─────
@@ -3964,447 +2936,379 @@ mod postgres_tests {
         );
     }
 
-    // ── Deploy kick member distinguishes Removed vs AlreadyGone ──────────────
+    /// Mark the mutation step committed, as `execute_*_with_marker` does inside its own transaction.
+    async fn commit_mutation_step(pool: &PgPool, action_id: Uuid) -> Result<bool> {
+        let result = sqlx::query(
+            "UPDATE relay_admin_actions SET step_marker = 'mutation_committed', updated_at = now() \
+             WHERE id = $1 AND state = 'enforcing' AND step_marker IS NULL",
+        )
+        .bind(action_id)
+        .execute(pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    /// The pending outbox rows of one action, oldest first.
+    async fn list_pending_outbox(pool: &PgPool, action_id: Uuid) -> Result<Vec<OutboxRecord>> {
+        let rows = sqlx::query(
+            "SELECT id, action_id, task_type, payload, state, dedup_key, error_message, attempt_count, created_at \
+             FROM relay_admin_outbox WHERE action_id = $1 AND state = 'pending' ORDER BY created_at ASC",
+        )
+        .bind(action_id)
+        .fetch_all(pool)
+        .await?;
+        rows.into_iter()
+            .map(|row| {
+                Ok(OutboxRecord {
+                    id: row.try_get("id")?,
+                    action_id: row.try_get("action_id")?,
+                    task_type: row.try_get("task_type")?,
+                    payload: row.try_get("payload")?,
+                    state: row.try_get("state")?,
+                    dedup_key: row.try_get("dedup_key")?,
+                    error_message: row.try_get("error_message")?,
+                    attempt_count: row.try_get("attempt_count").unwrap_or(0),
+                    claim_token: Uuid::nil(),
+                    created_at: row.try_get("created_at")?,
+                })
+            })
+            .collect()
+    }
 
     #[tokio::test]
     #[ignore = "requires Postgres"]
-    async fn deploy_kick_member_removed_vs_already_gone() {
+    async fn crash_redrive_with_mutation_committed_skips_to_finalization() {
         let pool = setup_pool().await;
         let community_id = make_community(&pool).await;
-        let actor = actor();
-        let target = vec![3u8; 32];
+        let report_id = make_report(&pool, community_id).await;
 
-        // Create a channel and add the target as a member.
-        let channel_id = Uuid::new_v4();
-        sqlx::query(
-            r#"
-            INSERT INTO channels (id, community_id, name, channel_type, visibility, created_by)
-            VALUES ($1, $2, 'test', 'stream', 'open', $3)
-            "#,
-        )
-        .bind(channel_id)
-        .bind(community_id)
-        .bind(&actor)
-        .execute(&pool)
-        .await
-        .expect("create channel");
-        sqlx::query(
-            "INSERT INTO channel_members (community_id, channel_id, pubkey, role) VALUES ($1, $2, $3, 'member')",
-        )
-        .bind(community_id)
-        .bind(channel_id)
-        .bind(&target)
-        .execute(&pool)
-        .await
-        .expect("add member");
+        let request_id = Uuid::new_v4();
+        let claimed = match do_claim(&pool, community_id, report_id, request_id).await {
+            ClaimResult::Claimed(a) => a,
+            other => panic!("expected Claimed, got {other:?}"),
+        };
+        let action_id = claimed.id;
 
-        // First kick: member is present → Removed.
-        let r1 = deploy_kick_member(
-            &pool,
-            CommunityId::from_uuid(community_id),
-            channel_id,
-            &target,
-            &actor,
-        )
-        .await
-        .expect("first kick");
-        assert_eq!(r1, KickResult::Removed, "first kick must return Removed");
+        // Simulate: process advanced, mutation committed, crash before finalization.
+        let _ = begin_enforcing(&pool, action_id)
+            .await
+            .expect("begin_enforcing");
+        let _ = commit_mutation_step(&pool, action_id)
+            .await
+            .expect("commit_mutation_step");
 
-        // Second kick: member is gone → AlreadyGone.
-        let r2 = deploy_kick_member(
-            &pool,
-            CommunityId::from_uuid(community_id),
-            channel_id,
-            &target,
-            &actor,
-        )
-        .await
-        .expect("second kick");
-        assert_eq!(
-            r2,
-            KickResult::AlreadyGone,
-            "second kick must return AlreadyGone"
+        // Re-load the record (simulates crash recovery).
+        let reloaded = get_action(&pool, action_id)
+            .await
+            .expect("get_action")
+            .expect("action exists");
+
+        // step_marker is set — re-drive should skip mutation and go to finalize.
+        assert_eq!(reloaded.step_marker.as_deref(), Some("mutation_committed"));
+
+        // Finalize succeeds (proves re-drive transitions from persisted marker).
+        let finalized = do_finalize(&pool, action_id, community_id, report_id).await;
+        assert!(
+            finalized,
+            "finalize_success must succeed from mutation_committed state"
+        );
+
+        // Report must be resolved.
+        let row: Option<String> =
+            sqlx::query_scalar("SELECT status FROM moderation_reports WHERE id = $1")
+                .bind(report_id)
+                .fetch_optional(&pool)
+                .await
+                .expect("fetch report");
+        assert_eq!(row.as_deref(), Some("resolved"));
+
+        // Outbox rows must exist in the finalization transaction (success-gated delivery).
+        let outbox_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM relay_admin_outbox WHERE action_id = $1")
+                .bind(action_id)
+                .fetch_one(&pool)
+                .await
+                .expect("count outbox");
+        assert!(outbox_count > 0, "finalize_success must create outbox rows");
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn outbox_rows_created_at_finalize_not_at_claim() {
+        let pool = setup_pool().await;
+        let community_id = make_community(&pool).await;
+        let report_id = make_report(&pool, community_id).await;
+
+        let request_id = Uuid::new_v4();
+        let claimed = match do_claim(&pool, community_id, report_id, request_id).await {
+            ClaimResult::Claimed(a) => a,
+            other => panic!("expected Claimed, got {other:?}"),
+        };
+        let action_id = claimed.id;
+
+        // Immediately after claim: NO outbox rows — delivery is success-gated.
+        let rows_at_claim = list_pending_outbox(&pool, action_id)
+            .await
+            .expect("list_pending_outbox at claim");
+        assert!(
+            rows_at_claim.is_empty(),
+            "claim must NOT insert outbox rows (success-gated); got: {rows_at_claim:?}"
+        );
+
+        // Advance to enforcing + commit marker.
+        let _ = begin_enforcing(&pool, action_id)
+            .await
+            .expect("begin_enforcing");
+        let _ = commit_mutation_step(&pool, action_id)
+            .await
+            .expect("commit_mutation_step");
+
+        // After finalize_success: outbox rows must exist.
+        let finalized = do_finalize(&pool, action_id, community_id, report_id).await;
+        assert!(finalized, "finalize_success must succeed");
+
+        let rows_after = list_pending_outbox(&pool, action_id)
+            .await
+            .expect("list_pending_outbox after finalize");
+        assert!(
+            rows_after.iter().any(|r| r.task_type == "reporter_notice"),
+            "finalize_success must create reporter_notice outbox row; got: {rows_after:?}"
         );
     }
 
-    // ── Reopen: terminal → open CAS + durable audit row ───────────────────────
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn finalize_enqueues_affected_user_notice_for_restriction() {
+        // A `ban` must enqueue an `affected_user_notice` addressed to the target
+        // pubkey, carrying the operator-authored public reason and restriction
+        // kind — so the
+        // restricted user is told what happened (VISION_MODERATION).
+        let pool = setup_pool().await;
+        let community_id = make_community(&pool).await;
+        let report_id = make_report(&pool, community_id).await;
 
-    async fn set_report_status(pool: &PgPool, community_id: Uuid, report_id: Uuid, status: &str) {
-        sqlx::query(
-            "UPDATE moderation_reports SET status = $3 WHERE community_id = $1 AND id = $2",
-        )
-        .bind(community_id)
-        .bind(report_id)
-        .bind(status)
-        .execute(pool)
-        .await
-        .expect("set report status");
-    }
+        let claimed = match do_claim(&pool, community_id, report_id, Uuid::new_v4()).await {
+            ClaimResult::Claimed(a) => a,
+            other => panic!("expected Claimed, got {other:?}"),
+        };
+        let action_id = claimed.id;
+        let _ = begin_enforcing(&pool, action_id)
+            .await
+            .expect("begin_enforcing");
+        let _ = commit_mutation_step(&pool, action_id)
+            .await
+            .expect("commit_mutation_step");
 
-    async fn report_status(pool: &PgPool, community_id: Uuid, report_id: Uuid) -> String {
-        sqlx::query_scalar(
-            "SELECT status FROM moderation_reports WHERE community_id = $1 AND id = $2",
-        )
-        .bind(community_id)
-        .bind(report_id)
-        .fetch_one(pool)
-        .await
-        .expect("read report status")
+        // do_finalize uses action "ban", target [1u8; 32], reason "test reason".
+        assert!(do_finalize(&pool, action_id, community_id, report_id).await);
+
+        let rows = list_pending_outbox(&pool, action_id)
+            .await
+            .expect("list_pending_outbox");
+        let notice = rows
+            .iter()
+            .find(|r| r.task_type == "affected_user_notice")
+            .expect("finalize_success must enqueue an affected_user_notice for ban");
+        assert_eq!(
+            notice.payload["recipient"].as_str(),
+            Some(hex::encode([1u8; 32]).as_str()),
+            "notice must be addressed to the actioned target pubkey"
+        );
+        assert_eq!(notice.payload["notice_kind"].as_str(), Some("restriction"));
+        assert_eq!(notice.payload["restriction_kind"].as_str(), Some("ban"));
+        assert_eq!(
+            notice.payload["public_reason"].as_str(),
+            Some("test reason")
+        );
+        // A ban is indefinite: no timeout_until in the payload.
+        assert!(
+            notice.payload.get("timeout_until").is_none(),
+            "ban notice must not carry a timeout_until; got: {:?}",
+            notice.payload
+        );
     }
 
     #[tokio::test]
     #[ignore = "requires Postgres"]
-    async fn reopen_terminal_report_returns_open_and_records_succeeded_audit_row() {
+    async fn finalize_carries_timeout_until_for_timeout_notice() {
+        // A `timeout` must enqueue an `affected_user_notice` carrying the
+        // authoritative expiry so the restricted user is told "for how long"
+        // (VISION_MODERATION: "what restriction was applied, why, and for how long").
         let pool = setup_pool().await;
         let community_id = make_community(&pool).await;
-        let cid = CommunityId::from_uuid(community_id);
+        let report_id = make_report(&pool, community_id).await;
 
-        for terminal in ["resolved", "dismissed", "escalated"] {
+        let claimed = match do_claim(&pool, community_id, report_id, Uuid::new_v4()).await {
+            ClaimResult::Claimed(a) => a,
+            other => panic!("expected Claimed, got {other:?}"),
+        };
+        let action_id = claimed.id;
+        let _ = begin_enforcing(&pool, action_id)
+            .await
+            .expect("begin_enforcing");
+        let _ = commit_mutation_step(&pool, action_id)
+            .await
+            .expect("commit_mutation_step");
+
+        let target = vec![1u8; 32];
+        let until = chrono::DateTime::parse_from_rfc3339("2026-09-01T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let finalized = finalize_success(
+            &pool,
+            action_id,
+            CommunityId::from_uuid(community_id),
+            Some(report_id),
+            "resolved",
+            &actor(),
+            "timeout",
+            Some(&target),
+            None,
+            None,
+            Some("Cool off."),
+            Some(until),
+        )
+        .await
+        .expect("finalize_success");
+        assert!(finalized);
+
+        let rows = list_pending_outbox(&pool, action_id)
+            .await
+            .expect("list_pending_outbox");
+        let notice = rows
+            .iter()
+            .find(|r| r.task_type == "affected_user_notice")
+            .expect("timeout must enqueue an affected_user_notice");
+        assert_eq!(notice.payload["notice_kind"].as_str(), Some("restriction"));
+        assert_eq!(notice.payload["restriction_kind"].as_str(), Some("timeout"));
+        assert_eq!(
+            notice.payload["timeout_until"].as_str(),
+            Some(until.to_rfc3339().as_str()),
+            "timeout notice payload must carry the authoritative expiry"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn finalize_maps_delete_and_kick_to_content_actioned_notice() {
+        // The four-action mapping: delete/kick → content_actioned. (ban/timeout →
+        // restriction are covered by the restriction tests above.) Both `delete`
+        // and `kick` are finalized against a target pubkey so the affected user is
+        // notified; removing EITHER mapping arm fails this test.
+        let pool = setup_pool().await;
+        let community_id = make_community(&pool).await;
+
+        // Finalize one action per verb on its own report (the affected_user_notice
+        // dedup_key is per-action) and assert each enqueues a content_actioned
+        // notice with no restriction fields.
+        for verb in ["delete", "kick"] {
             let report_id = make_report(&pool, community_id).await;
-            set_report_status(&pool, community_id, report_id, terminal).await;
+            let claimed = match do_claim(&pool, community_id, report_id, Uuid::new_v4()).await {
+                ClaimResult::Claimed(a) => a,
+                other => panic!("expected Claimed, got {other:?}"),
+            };
+            let action_id = claimed.id;
+            let _ = begin_enforcing(&pool, action_id)
+                .await
+                .expect("begin_enforcing");
+            let _ = commit_mutation_step(&pool, action_id)
+                .await
+                .expect("commit_mutation_step");
 
-            let request_id = Uuid::new_v4();
-            let result = reopen_report(
+            let target = vec![1u8; 32];
+            let channel_id = Uuid::new_v4();
+            let finalized = finalize_success(
                 &pool,
-                cid,
-                report_id,
-                request_id,
+                action_id,
+                CommunityId::from_uuid(community_id),
+                Some(report_id),
+                "resolved",
                 &actor(),
-                "operator",
-                Some("re-triage"),
+                verb,
+                Some(&target),
+                None,
+                Some(channel_id),
+                Some("Off-topic."),
                 None,
             )
             .await
-            .expect("reopen_report");
-            assert!(
-                matches!(result, ReopenResult::Reopened),
-                "reopen of {terminal} must return Reopened, got {result:?}"
-            );
-            assert_eq!(
-                report_status(&pool, community_id, report_id).await,
-                "open",
-                "report must be open after reopen from {terminal}"
-            );
+            .expect("finalize_success");
+            assert!(finalized);
 
-            // The audit row is state='succeeded' and action='reopen' so the
-            // recovery worker never claims it and the DTO join never surfaces it.
-            let row = sqlx::query(
-                "SELECT action, state FROM relay_admin_actions WHERE report_id = $1 AND request_id = $2",
-            )
-            .bind(report_id)
-            .bind(request_id)
-            .fetch_one(&pool)
-            .await
-            .expect("reopen audit row exists");
-            assert_eq!(row.try_get::<String, _>("action").unwrap(), "reopen");
-            assert_eq!(row.try_get::<String, _>("state").unwrap(), "succeeded");
+            let rows = list_pending_outbox(&pool, action_id)
+                .await
+                .expect("list_pending_outbox");
+            let notice = rows
+                .iter()
+                .find(|r| r.task_type == "affected_user_notice")
+                .unwrap_or_else(|| panic!("{verb} must enqueue an affected_user_notice"));
+            assert_eq!(
+                notice.payload["notice_kind"].as_str(),
+                Some("content_actioned"),
+                "{verb} maps to content_actioned"
+            );
+            assert!(
+                notice.payload.get("restriction_kind").is_none(),
+                "content_actioned notice carries no restriction_kind"
+            );
+            assert!(
+                notice.payload.get("timeout_until").is_none(),
+                "content_actioned notice carries no timeout_until"
+            );
         }
     }
 
     #[tokio::test]
     #[ignore = "requires Postgres"]
-    async fn reopen_with_expected_status_refuses_a_report_that_moved_on() {
-        let pool = setup_pool().await;
-        let community_id = make_community(&pool).await;
-        let cid = CommunityId::from_uuid(community_id);
-        let report_id = make_report(&pool, community_id).await;
-        // The operator read it as escalated; a moderator has since resolved it.
-        set_report_status(&pool, community_id, report_id, "resolved").await;
-
-        let result = reopen_report(
-            &pool,
-            cid,
-            report_id,
-            Uuid::new_v4(),
-            &actor(),
-            "operator",
-            None,
-            Some("escalated"),
-        )
-        .await
-        .expect("reopen_report");
-        assert!(
-            matches!(result, ReopenResult::NotReopenable(ref s) if s == "resolved"),
-            "a fenced reopen of a resolved report must be refused, got {result:?}"
-        );
-        assert_eq!(
-            report_status(&pool, community_id, report_id).await,
-            "resolved"
-        );
-
-        // Still escalated: the same fence lets it through.
-        set_report_status(&pool, community_id, report_id, "escalated").await;
-        let result = reopen_report(
-            &pool,
-            cid,
-            report_id,
-            Uuid::new_v4(),
-            &actor(),
-            "operator",
-            None,
-            Some("escalated"),
-        )
-        .await
-        .expect("reopen_report");
-        assert!(matches!(result, ReopenResult::Reopened), "got {result:?}");
-        assert_eq!(report_status(&pool, community_id, report_id).await, "open");
-    }
-
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn reopen_open_report_is_rejected_as_not_reopenable() {
-        let pool = setup_pool().await;
-        let community_id = make_community(&pool).await;
-        let report_id = make_report(&pool, community_id).await; // starts 'open'
-
-        let result = reopen_report(
-            &pool,
-            CommunityId::from_uuid(community_id),
-            report_id,
-            Uuid::new_v4(),
-            &actor(),
-            "moderator",
-            None,
-            None,
-        )
-        .await
-        .expect("reopen_report");
-        assert!(
-            matches!(result, ReopenResult::NotReopenable(ref s) if s == "open"),
-            "reopen of an open report must return NotReopenable(open), got {result:?}"
-        );
-
-        // No audit row written on a rejected reopen.
-        let count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM relay_admin_actions WHERE report_id = $1")
-                .bind(report_id)
-                .fetch_one(&pool)
-                .await
-                .expect("count");
-        assert_eq!(count, 0, "rejected reopen must not write an audit row");
-    }
-
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn reopen_processing_report_is_rejected_as_not_reopenable() {
+    async fn finalize_skips_affected_user_notice_when_no_target_pubkey() {
+        // A `delete` with no derivable author (purged event) has no one to
+        // notify: no affected_user_notice row is enqueued, but the reporter
+        // notice still is.
         let pool = setup_pool().await;
         let community_id = make_community(&pool).await;
         let report_id = make_report(&pool, community_id).await;
-        // A live enforcement claim moves the report to 'processing'.
-        let _ = do_claim(&pool, community_id, report_id, Uuid::new_v4()).await;
 
-        let result = reopen_report(
-            &pool,
-            CommunityId::from_uuid(community_id),
-            report_id,
-            Uuid::new_v4(),
-            &actor(),
-            "operator",
-            None,
-            None,
-        )
-        .await
-        .expect("reopen_report");
-        assert!(
-            matches!(result, ReopenResult::NotReopenable(ref s) if s == "processing"),
-            "reopen of a processing report must return NotReopenable(processing), got {result:?}"
-        );
-    }
-
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn reopen_is_idempotent_on_request_id_even_after_reresolve() {
-        let pool = setup_pool().await;
-        let community_id = make_community(&pool).await;
-        let cid = CommunityId::from_uuid(community_id);
-        let report_id = make_report(&pool, community_id).await;
-        set_report_status(&pool, community_id, report_id, "resolved").await;
-
-        let request_id = Uuid::new_v4();
-        let first = reopen_report(
-            &pool,
-            cid,
-            report_id,
-            request_id,
-            &actor(),
-            "operator",
-            None,
-            None,
-        )
-        .await
-        .expect("first reopen");
-        assert!(matches!(first, ReopenResult::Reopened));
-
-        // The report gets re-resolved (a fresh terminal cycle) before the client's
-        // network retry of the SAME reopen request lands.
-        set_report_status(&pool, community_id, report_id, "resolved").await;
-
-        let replay = reopen_report(
-            &pool,
-            cid,
-            report_id,
-            request_id,
-            &actor(),
-            "operator",
-            None,
-            None,
-        )
-        .await
-        .expect("reopen replay");
-        assert!(
-            matches!(replay, ReopenResult::AlreadyReopened),
-            "same request_id replay must return AlreadyReopened, got {replay:?}"
-        );
-
-        // The replay must NOT have re-reopened the freshly re-resolved report.
-        assert_eq!(
-            report_status(&pool, community_id, report_id).await,
-            "resolved",
-            "idempotent replay must not re-reopen a re-resolved report"
-        );
-
-        // Exactly one reopen audit row exists for this request_id.
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM relay_admin_actions WHERE report_id = $1 AND request_id = $2 AND action = 'reopen'",
-        )
-        .bind(report_id)
-        .bind(request_id)
-        .fetch_one(&pool)
-        .await
-        .expect("count");
-        assert_eq!(
-            count, 1,
-            "idempotent replay must not write a second audit row"
-        );
-    }
-
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn reopen_missing_report_returns_not_found() {
-        let pool = setup_pool().await;
-        let community_id = make_community(&pool).await;
-
-        let result = reopen_report(
-            &pool,
-            CommunityId::from_uuid(community_id),
-            Uuid::new_v4(), // no such report
-            Uuid::new_v4(),
-            &actor(),
-            "operator",
-            None,
-            None,
-        )
-        .await
-        .expect("reopen_report");
-        assert!(
-            matches!(result, ReopenResult::NotFound),
-            "reopen of a missing report must return NotFound, got {result:?}"
-        );
-    }
-
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn reopen_audit_row_is_never_claimed_by_recovery_worker() {
-        let pool = setup_pool().await;
-        let community_id = make_community(&pool).await;
-        let cid = CommunityId::from_uuid(community_id);
-        let report_id = make_report(&pool, community_id).await;
-        set_report_status(&pool, community_id, report_id, "dismissed").await;
-
-        let request_id = Uuid::new_v4();
-        reopen_report(
-            &pool,
-            cid,
-            report_id,
-            request_id,
-            &actor(),
-            "operator",
-            None,
-            None,
-        )
-        .await
-        .expect("reopen");
-
-        // The stranded-action recovery worker claims state IN ('pending','enforcing').
-        // A 'succeeded' reopen row must never appear in its batch — otherwise the
-        // worker would try to drive an enforcement mutation for a reopen.
-        let lease_until = chrono::Utc::now() + chrono::Duration::seconds(30);
-        let batch = claim_stranded_action_batch(&pool, "recovery-worker", lease_until, 1000)
+        let claimed = match do_claim(&pool, community_id, report_id, Uuid::new_v4()).await {
+            ClaimResult::Claimed(a) => a,
+            other => panic!("expected Claimed, got {other:?}"),
+        };
+        let action_id = claimed.id;
+        let _ = begin_enforcing(&pool, action_id)
             .await
-            .expect("claim batch");
-        let reopen_action_id: Uuid = sqlx::query_scalar(
-            "SELECT id FROM relay_admin_actions WHERE report_id = $1 AND request_id = $2",
-        )
-        .bind(report_id)
-        .bind(request_id)
-        .fetch_one(&pool)
-        .await
-        .expect("reopen action id");
-        assert!(
-            !batch.iter().any(|c| c.record.id == reopen_action_id),
-            "reopen audit row (state=succeeded) must never be claimed by the recovery worker"
-        );
-    }
+            .expect("begin_enforcing");
+        let _ = commit_mutation_step(&pool, action_id)
+            .await
+            .expect("commit_mutation_step");
 
-    /// An `illegal` report reaches `escalated` at ingest with no resolver, while
-    /// an admin `escalate` reaches it through a decision that stamps one. The
-    /// reopen path keys only on `status`, so both must reopen identically —
-    /// nothing downstream may special-case how a report became escalated.
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn auto_escalated_report_reopens_like_an_admin_escalated_one() {
-        let pool = setup_pool().await;
-        let community_id = make_community(&pool).await;
-        let cid = CommunityId::from_uuid(community_id);
-
-        // Auto-escalated at ingest: illegal category, no resolver stamped.
-        let uid = Uuid::new_v4();
-        let event_id: Vec<u8> = uid
-            .as_bytes()
-            .iter()
-            .chain(uid.as_bytes().iter())
-            .copied()
-            .collect();
-        let auto_id = crate::moderation::insert_report(
+        // Finalize a `delete` with target_pubkey = None.
+        let finalized = finalize_success(
             &pool,
-            cid,
-            crate::moderation::NewReport {
-                report_event_id: &event_id,
-                reporter_pubkey: &[0u8; 32],
-                target: crate::moderation::ReportTarget::Pubkey(vec![7u8; 32]),
-                channel_id: None,
-                report_type: "illegal",
-                note: None,
-            },
-        )
-        .await
-        .expect("insert illegal report");
-        assert_eq!(
-            report_status(&pool, community_id, auto_id).await,
-            "escalated",
-            "illegal report must ingest as escalated"
-        );
-
-        let result = reopen_report(
-            &pool,
-            cid,
-            auto_id,
-            Uuid::new_v4(),
+            action_id,
+            CommunityId::from_uuid(community_id),
+            Some(report_id),
+            "resolved",
             &actor(),
-            "operator",
-            Some("re-triage auto-escalated"),
+            "delete",
+            None,
+            None,
+            None,
+            Some("test reason"),
             None,
         )
         .await
-        .expect("reopen_report");
+        .expect("finalize_success");
+        assert!(finalized);
+
+        let rows = list_pending_outbox(&pool, action_id)
+            .await
+            .expect("list_pending_outbox");
         assert!(
-            matches!(result, ReopenResult::Reopened),
-            "auto-escalated report must reopen exactly like an admin-escalated one, got {result:?}"
+            rows.iter().any(|r| r.task_type == "reporter_notice"),
+            "reporter notice must still be enqueued"
         );
-        assert_eq!(
-            report_status(&pool, community_id, auto_id).await,
-            "open",
-            "auto-escalated report must return to open after reopen"
+        assert!(
+            !rows.iter().any(|r| r.task_type == "affected_user_notice"),
+            "no affected_user_notice when there is no target pubkey; got: {rows:?}"
         );
     }
 }

@@ -198,7 +198,7 @@ not pass the project's public standing. A post the team or the operator removed 
 - **The audit row of a team removal** records the authority `board_moderator` (the closest value the table allows without a migration);
   the public log entry says `project_team`.
 - **Who is "the operator".** A key in `RELAY_OPERATOR_PUBKEYS`, or the relay's owner key (`RELAY_OWNER_PUBKEY`) when that list is
-  empty: the one rule `api::admin` uses (`is_config_backed_pubkey`), not a second list.
+  empty: the one rule (`is_config_backed_pubkey` in `handlers/season_rules.rs`), not a second list.
 - **The accounts of a wallet** are counted from the live kind 37017 bindings of that wallet (at most 64 read). A wallet with more than
   5 live bindings stops writing for all of them, the first five included (only the wallet's owner can bind it, so a stranger cannot
   do this to a holder).

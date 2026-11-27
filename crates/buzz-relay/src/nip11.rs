@@ -89,14 +89,6 @@ pub struct RelayInfo {
     /// Public WebSocket URL of the dedicated NIP-AB device-pairing relay.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pairing_relay_url: Option<String>,
-    /// Canonical origin (`scheme://host[:port]`, no path) of the deployment
-    /// admin API, advertised only when the admin surface is configured
-    /// (`config.admin.is_some()`). Lets desktop auto-discover the admin
-    /// console instead of requiring manual URL entry. Scheme follows the same
-    /// loopback rule as NIP-98 `u`-tag verification (see
-    /// [`crate::api::admin::admin_api_origin`]).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub admin_api: Option<String>,
     /// Relay-owned GIF search integration. The descriptor is public and
     /// provider-agnostic; provider credentials remain server-side.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -246,10 +238,6 @@ impl RelayInfo {
     /// membership. NIP-43 events are verified against `self`, so it is a
     /// programmer error to advertise NIP-43 without a `relay_self`.
     ///
-    /// `admin_api` is the canonical admin API origin, advertised only when the
-    /// admin surface is configured; a per-deployment scalar derived from
-    /// config by the caller (see [`nip11_document`]).
-    ///
     /// `gif_provider` is a config-derived provider identifier. When present,
     /// `build` advertises the provider-agnostic `buzz-gif` extension and the
     /// relay-relative metadata search endpoint. It must never contain a
@@ -260,7 +248,6 @@ impl RelayInfo {
         flags: RelayCapabilityFlags,
         max_message_length: usize,
         pairing_relay_url: Option<&str>,
-        admin_api: Option<&str>,
         gif_provider: Option<&str>,
     ) -> Self {
         let RelayCapabilityFlags {
@@ -339,7 +326,6 @@ impl RelayInfo {
             version: env!("CARGO_PKG_VERSION").to_string(),
             limitation: Some(relay_limitation(max_message_length, advertise_fi)),
             pairing_relay_url: pairing_relay_url.map(str::to_string),
-            admin_api: admin_api.map(str::to_string),
             gif,
             relay_self: relay_self.map(|s| s.to_string()),
             federated_identity,
@@ -411,7 +397,6 @@ fn push_descriptor(
 pub(crate) async fn nip11_document(state: &crate::state::AppState, raw_host: &str) -> RelayInfo {
     let (relay_self, advertise_nip43) = nip11_facts(state);
     let icon = workspace_icon_for_host(state, raw_host).await;
-    let admin_api = admin_api_advertisement(state.config.admin.as_ref());
     let advertise_fi = state.config.nip_fi.mode.evaluates();
     let mut info = RelayInfo::build(
         relay_self.as_deref(),
@@ -422,7 +407,6 @@ pub(crate) async fn nip11_document(state: &crate::state::AppState, raw_host: &st
         },
         state.config.max_frame_bytes,
         state.config.pairing_relay_url.as_deref(),
-        admin_api.as_deref(),
         state.config.klipy.as_ref().map(|_| "klipy"),
     );
     info.investing = state.config.investing;
@@ -542,18 +526,6 @@ pub(crate) fn nip11_facts(state: &crate::state::AppState) -> (Option<String>, bo
     (relay_self, advertise_nip43)
 }
 
-/// Derives the NIP-11 `admin_api` advertisement: the canonical admin API
-/// origin, present iff the admin surface is configured
-/// (`config.admin.is_some()`), absent otherwise — never an empty string.
-///
-/// The origin is derived purely from the configured admin host by
-/// [`crate::api::admin::admin_api_origin`] (loopback → `http`, else `https`),
-/// so it is a per-deployment scalar with no unscoped DB/tenant input, keeping
-/// [`RelayInfo::build`] within its static-input contract.
-fn admin_api_advertisement(admin: Option<&crate::config::AdminConfig>) -> Option<String> {
-    admin.map(|admin| crate::api::admin::admin_api_origin(&admin.host))
-}
-
 /// Multi-tenant conformance static-input fence (surface row "NIP-11 relay info
 /// and relay `self`").
 ///
@@ -580,7 +552,6 @@ const _RELAY_INFO_BUILD_STATIC_INPUT_FENCE: fn(
     Option<&str>,
     RelayCapabilityFlags,
     usize,
-    Option<&str>,
     Option<&str>,
     Option<&str>,
 ) -> RelayInfo = RelayInfo::build;
@@ -685,7 +656,6 @@ mod postgres_tests {
             DEFAULT_MAX_FRAME_BYTES,
             None,
             None,
-            None,
         );
         assert_eq!(info.software, "https://github.com/block/buzz");
     }
@@ -698,7 +668,6 @@ mod postgres_tests {
             RelayCapabilityFlags::default(),
             DEFAULT_MAX_FRAME_BYTES,
             Some("wss://pairing.buzz.xyz"),
-            None,
             None,
         );
         let json = serde_json::to_value(&info).expect("serialize");
@@ -715,7 +684,6 @@ mod postgres_tests {
             DEFAULT_MAX_FRAME_BYTES,
             None,
             None,
-            None,
         );
         let json = serde_json::to_value(&info).expect("serialize");
         assert!(json.get("pairing_relay_url").is_none());
@@ -728,7 +696,6 @@ mod postgres_tests {
             None,
             RelayCapabilityFlags::default(),
             DEFAULT_MAX_FRAME_BYTES,
-            None,
             None,
             Some("klipy"),
         );
@@ -748,7 +715,6 @@ mod postgres_tests {
             None,
             RelayCapabilityFlags::default(),
             DEFAULT_MAX_FRAME_BYTES,
-            None,
             None,
             None,
         );
@@ -854,7 +820,6 @@ mod postgres_tests {
             DEFAULT_MAX_FRAME_BYTES,
             None,
             None,
-            None,
         );
         assert_eq!(
             info.icon.as_deref(),
@@ -872,7 +837,6 @@ mod postgres_tests {
                 icon,
                 RelayCapabilityFlags::default(),
                 DEFAULT_MAX_FRAME_BYTES,
-                None,
                 None,
                 None,
             );
@@ -900,7 +864,6 @@ mod postgres_tests {
             None,
             RelayCapabilityFlags::default(),
             262_144,
-            None,
             None,
             None,
         );
@@ -941,7 +904,6 @@ mod postgres_tests {
             DEFAULT_MAX_FRAME_BYTES,
             None,
             None,
-            None,
         );
         assert!(info.relay_self.is_none());
         assert!(!info.supported_nips.contains(&NIP_RELAY_MEMBERSHIP));
@@ -962,7 +924,6 @@ mod postgres_tests {
             DEFAULT_MAX_FRAME_BYTES,
             None,
             None,
-            None,
         );
         assert_eq!(info.relay_self.as_deref(), Some(pk));
         assert!(!info.supported_nips.contains(&NIP_RELAY_MEMBERSHIP));
@@ -980,7 +941,6 @@ mod postgres_tests {
                 advertise_fi: false,
             },
             DEFAULT_MAX_FRAME_BYTES,
-            None,
             None,
             None,
         );
@@ -1004,70 +964,6 @@ mod postgres_tests {
             DEFAULT_MAX_FRAME_BYTES,
             None,
             None,
-            None,
         );
-    }
-
-    fn admin_config(host: &str) -> crate::config::AdminConfig {
-        crate::config::AdminConfig {
-            host: host.to_string(),
-            auth: crate::config::AdminAuth::Nip98,
-            web_dir: None,
-        }
-    }
-
-    /// The admin surface is unconfigured: `admin_api` must be absent, and the
-    /// serialized document must omit the field entirely (not `null`).
-    #[test]
-    fn admin_api_absent_when_admin_surface_not_configured() {
-        assert_eq!(admin_api_advertisement(None), None);
-
-        let info = RelayInfo::build(
-            None,
-            None,
-            RelayCapabilityFlags::default(),
-            DEFAULT_MAX_FRAME_BYTES,
-            None,
-            None,
-            None,
-        );
-        assert!(info.admin_api.is_none());
-        let json = serde_json::to_value(&info).expect("serialize");
-        assert!(
-            json.get("admin_api").is_none(),
-            "unconfigured admin surface must omit the `admin_api` field"
-        );
-    }
-
-    /// Loopback admin host → advertised as an `http://` origin (matches the
-    /// NIP-98 canonicalizer's loopback rule so a discovered origin signs
-    /// against the scheme the relay verifies).
-    #[test]
-    fn admin_api_advertised_as_http_for_loopback_host() {
-        let advertised = admin_api_advertisement(Some(&admin_config("127.0.0.1:3000")));
-        assert_eq!(advertised.as_deref(), Some("http://127.0.0.1:3000"));
-
-        let info = RelayInfo::build(
-            None,
-            None,
-            RelayCapabilityFlags::default(),
-            DEFAULT_MAX_FRAME_BYTES,
-            None,
-            advertised.as_deref(),
-            None,
-        );
-        let json = serde_json::to_value(&info).expect("serialize");
-        assert_eq!(
-            json.get("admin_api").and_then(|v| v.as_str()),
-            Some("http://127.0.0.1:3000")
-        );
-    }
-
-    /// Non-loopback admin host → advertised as an `https://` origin, with no
-    /// path/query/fragment (a bare origin).
-    #[test]
-    fn admin_api_advertised_as_https_for_non_loopback_host() {
-        let advertised = admin_api_advertisement(Some(&admin_config("admin.example.com")));
-        assert_eq!(advertised.as_deref(), Some("https://admin.example.com"));
     }
 }

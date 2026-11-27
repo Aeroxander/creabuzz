@@ -6,7 +6,7 @@ use std::sync::Arc;
 use axum::{
     body::Body,
     extract::{ConnectInfo, FromRequest, State, WebSocketUpgrade},
-    http::{header, HeaderMap, HeaderValue, Request, StatusCode},
+    http::{header, HeaderMap, Request, StatusCode},
     middleware,
     response::{IntoResponse, Json},
     routing::{get, post, put},
@@ -131,8 +131,6 @@ const NIP_FI_EXEMPT_PREFIXES: &[&str] = &[
     "/operator/",
     // Self-serve community creation — NIP-98 by someone who has no community (so no tenant, and no assertion) yet; subtree
     "/self-serve/",
-    // Admin SPA backend — operator-credential gated; subtree
-    "/api/admin/",
     // NIP-FI admin disconnect — authenticated by its own command JWT
     // (`nip-fi-command+jwt` in the same header), which the assertion verifier
     // would reject.  No trailing slash, so the matcher exempts the exact path
@@ -189,7 +187,7 @@ async fn nip_fi_assertion_guard(
 ) -> axum::response::Response {
     let mode = state.config.nip_fi.mode;
     // Off: fully transparent. [FI-INV-15]
-    if mode.is_off() || nip_fi_guard_exempts(&state, &request) {
+    if mode.is_off() || nip_fi_guard_exempts(&request) {
         return next.run(request).await;
     }
 
@@ -242,11 +240,11 @@ fn nip_fi_guard_steps(
 }
 
 /// Paths the assertion guard never checks.
-fn nip_fi_guard_exempts(state: &AppState, request: &Request<Body>) -> bool {
+fn nip_fi_guard_exempts(request: &Request<Body>) -> bool {
     let path = request.uri().path();
 
     // Exempt paths bypass the assertion-token check.
-    let exempt = NIP_FI_EXEMPT_PREFIXES.iter().any(|pattern| {
+    NIP_FI_EXEMPT_PREFIXES.iter().any(|pattern| {
         if *pattern == "/" {
             // Exact root match only.
             return path == "/";
@@ -265,22 +263,7 @@ fn nip_fi_guard_exempts(state: &AppState, request: &Request<Body>) -> bool {
             return rest.starts_with('/') || rest.starts_with('?') || rest.starts_with('#');
         }
         false
-    });
-
-    if exempt {
-        return true;
-    }
-
-    // Admin SPA document routes are exempt when the request is on the admin
-    // host.  The admin SPA serves its own documents at bare paths (`/reports`,
-    // `/reports/<id>`, `/feedback`) — the browser navigates there directly.
-    // These paths carry no NIP-FI-protected tenant data; the actual data calls
-    // go to `/api/admin/v1/...` (already exempt via the `/api/admin/` prefix).
-    //
-    // The exemption is host-qualified: `/reports` on a tenant host is NOT
-    // exempt and stays protected.
-    // [FI-TRACE-AUTHORITY-UNIFORM]
-    is_admin_spa_path(path) && api::admin::is_admin_host(state, request.headers())
+    })
 }
 
 /// Build the axum [`Router`] with all relay routes, middleware, and CORS configuration.
@@ -306,15 +289,6 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let git_router = api::git::git_router(state.clone());
 
     let git_policy_router = api::git::git_policy_router(state.clone());
-
-    let admin_enabled = state.config.admin.is_some();
-    let admin_web_dir = state
-        .config
-        .admin
-        .as_ref()
-        .and_then(|config| config.web_dir.clone());
-    let admin_router = admin_enabled
-        .then(|| Router::new().nest("/api/admin/v1", api::admin::router(state.clone())));
 
     // Unmounted when disabled, so every /buzz/v1 path answers exactly as it
     // did before the accessory API existed.
@@ -468,19 +442,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             .route(api::sponsor::PATH, post(api::sponsor::sponsor))
             .with_state(state.clone())
     });
-    for optional in [accessory_router, admin_router, sponsor_router]
-        .into_iter()
-        .flatten()
-    {
+    for optional in [accessory_router, sponsor_router].into_iter().flatten() {
         merged = merged.merge(optional);
     }
 
-    // Serve both bundles from one fallback. The admin host is checked first so
-    // it can never fall through to the public web bundle.
     let web_dir = state.config.web_dir.clone();
-    if admin_web_dir.is_some() || web_dir.is_some() {
-        let admin_index = admin_web_dir.as_ref().map(|dir| dir.join("index.html"));
-        let admin_files = admin_web_dir.map(ServeDir::new);
+    if web_dir.is_some() {
         let web_index = web_dir.as_ref().map(|dir| dir.join("index.html"));
         let web_worker = web_dir.as_ref().map(|dir| dir.join(SERVICE_WORKER_FILE));
         let web_files = web_dir.map(ServeDir::new);
@@ -488,30 +455,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         let web_spa_full = state.config.web_spa_full;
         let fallback_state = state.clone();
         let spa_fallback = tower::service_fn(move |req: axum::extract::Request| {
-            let admin_index = admin_index.clone();
-            let admin_files = admin_files.clone();
             let web_index = web_index.clone();
             let web_worker = web_worker.clone();
             let web_files = web_files.clone();
             let state = fallback_state.clone();
             async move {
                 let path = req.uri().path();
-                let admin_host = api::admin::is_admin_host(&state, req.headers());
-                if admin_host {
-                    if let (Some(index), Some(files)) = (admin_index, admin_files) {
-                        if is_admin_static_path(path) {
-                            return files
-                                .oneshot(req)
-                                .await
-                                .map(|response| with_admin_csp(response.into_response()));
-                        }
-                        if is_admin_spa_path(path) {
-                            return Ok(with_admin_csp(read_spa_index(&index).await));
-                        }
-                    }
-                    return Ok(with_admin_csp(StatusCode::NOT_FOUND.into_response()));
-                }
-
                 if let (Some(index), Some(files)) = (web_index, web_files) {
                     if path == SERVICE_WORKER_PATH {
                         if let Some(worker) = web_worker {
@@ -600,22 +549,6 @@ async fn service_worker(file: &std::path::Path) -> axum::response::Response {
     }
 }
 
-fn is_admin_spa_path(path: &str) -> bool {
-    path == "/"
-        || path == "/reports"
-        || path.starts_with("/reports/")
-        || path == "/feedback"
-        || path.starts_with("/feedback/")
-}
-
-/// Files served from the admin bundle directory verbatim. `/assets/*` is the
-/// hashed Vite output; `/favicon.svg` is the one root-level file the bundle
-/// emits and the document links. Everything else on the admin host is a 404 —
-/// the directory is not browsable.
-fn is_admin_static_path(path: &str) -> bool {
-    path.starts_with("/assets/") || path == "/favicon.svg"
-}
-
 fn is_invite_landing_path(path: &str) -> bool {
     path.strip_prefix("/invite/")
         .is_some_and(|code| !code.is_empty() && !code.contains('/'))
@@ -668,22 +601,6 @@ async fn read_spa_index(index: &std::path::Path) -> axum::response::Response {
     }
 }
 
-/// The admin dashboard holds the operator token in `sessionStorage`, so its
-/// documents and assets are locked to same-origin code with no framing. `blob:`
-/// images are required: attachments are fetched with the token and rendered
-/// from object URLs. Applied only to the admin host — the public bundle keeps
-/// its own headers.
-#[rustfmt::skip]
-const ADMIN_CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
-
-fn with_admin_csp(mut response: axum::response::Response) -> axum::response::Response {
-    response.headers_mut().insert(
-        header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static(ADMIN_CSP),
-    );
-    response
-}
-
 /// The public web bundle's embedder policy. `credentialless`, not
 /// `require-corp`: people's pictures and pictures in posts live on other sites
 /// (GitHub, Gravatar) that send no `Cross-Origin-Resource-Policy`, and
@@ -711,23 +628,6 @@ fn with_spa_coi(mut response: axum::response::Response) -> axum::response::Respo
         header::HeaderValue::from_static(SPA_COEP),
     );
     response
-}
-
-/// Serve the admin bundle's `index.html` for a browser request to `/`. Any
-/// non-HTML request to the admin authority is a 404: the relay protocol is not
-/// exposed there.
-async fn admin_spa_document(state: &AppState, accept: &str) -> axum::response::Response {
-    let index = state
-        .config
-        .admin
-        .as_ref()
-        .and_then(|config| config.web_dir.as_ref())
-        .filter(|_| accept.contains("text/html"))
-        .map(|dir| dir.join("index.html"));
-    match index {
-        Some(index) => read_spa_index(&index).await,
-        None => StatusCode::NOT_FOUND.into_response(),
-    }
 }
 
 /// Build the health-only router for K8s probes (port 8080 in CAKE).
@@ -763,13 +663,6 @@ async fn nip11_or_ws_handler(
         .get(axum::http::header::HOST)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-
-    // `/` is an explicit relay route, so it never reaches the SPA fallback.
-    // Short-circuit the exact admin authority here and never let it serve the
-    // public web bundle, NIP-11 document, or WebSocket endpoint.
-    if api::admin::is_admin_host(&state, &headers) {
-        return with_admin_csp(admin_spa_document(&state, accept).await);
-    }
 
     if accept.contains("application/nostr+json") {
         return Json(nip11_document(&state, raw_host).await).into_response();
@@ -1358,20 +1251,6 @@ mod tests {
             media_storage,
         );
         Arc::new(state)
-    }
-
-    /// Relay state serving both bundles: the admin SPA on `admin.example` and
-    /// the public SPA on any other host.
-    async fn spa_state(admin_dir: &std::path::Path, web_dir: &std::path::Path) -> Arc<AppState> {
-        state_with(|config| {
-            config.web_dir = Some(web_dir.to_path_buf());
-            config.admin = Some(crate::config::AdminConfig {
-                host: "admin.example".to_string(),
-                auth: crate::config::AdminAuth::Disabled,
-                web_dir: Some(admin_dir.to_path_buf()),
-            });
-        })
-        .await
     }
 
     async fn readiness_state(evaluator: Arc<dyn readiness::DependencyEvaluator>) -> Arc<AppState> {
@@ -2046,19 +1925,6 @@ mod tests {
         std::fs::write(dir.join("favicon.svg"), "<svg/>").expect("favicon");
     }
 
-    /// Write a distinct admin bundle with a unique sentinel so tests can
-    /// assert the exact expected bytes and distinguish admin from public HTML.
-    fn write_admin_bundle(dir: &std::path::Path) {
-        std::fs::create_dir_all(dir.join("assets")).expect("assets dir");
-        std::fs::write(
-            dir.join("index.html"),
-            "<!doctype html><html data-bundle=\"admin\"></html>",
-        )
-        .expect("admin index.html");
-        std::fs::write(dir.join("assets/app.js"), "export {};").expect("bundle asset");
-        std::fs::write(dir.join("favicon.svg"), "<svg/>").expect("favicon");
-    }
-
     async fn spa_response(
         state: Arc<AppState>,
         host: &str,
@@ -2074,33 +1940,6 @@ mod tests {
             )
             .await
             .expect("response")
-    }
-
-    #[tokio::test]
-    async fn admin_spa_documents_and_assets_carry_the_admin_csp() {
-        let admin_dir = tempfile::tempdir().expect("admin bundle dir");
-        let web_dir = tempfile::tempdir().expect("public bundle dir");
-        write_bundle(admin_dir.path());
-        write_bundle(web_dir.path());
-        let state = spa_state(admin_dir.path(), web_dir.path()).await;
-
-        for path in [
-            "/",
-            "/reports",
-            "/feedback/abc",
-            "/assets/app.js",
-            "/favicon.svg",
-        ] {
-            let response = spa_response(state.clone(), "admin.example", path).await;
-            assert_eq!(
-                response
-                    .headers()
-                    .get(header::CONTENT_SECURITY_POLICY)
-                    .and_then(|value| value.to_str().ok()),
-                Some(ADMIN_CSP),
-                "{path} must carry the admin CSP"
-            );
-        }
     }
 
     /// The app's service worker is served at `/sw.js` from the bundle, as
@@ -2156,65 +1995,18 @@ mod tests {
         assert!(!is_exempt("/sw.json"), "only the exact path");
     }
 
-    #[tokio::test]
-    async fn the_admin_host_serves_the_favicon_the_document_links() {
-        let admin_dir = tempfile::tempdir().expect("admin bundle dir");
-        let web_dir = tempfile::tempdir().expect("public bundle dir");
-        write_bundle(admin_dir.path());
-        write_bundle(web_dir.path());
-        let state = spa_state(admin_dir.path(), web_dir.path()).await;
-
-        let response = spa_response(state.clone(), "admin.example", "/favicon.svg").await;
-        assert_eq!(response.status(), StatusCode::OK);
-
-        // The bundle directory is not browsable: only the assets Vite emits at
-        // the root are reachable, never arbitrary files beside them.
-        for path in ["/index.html", "/nope.svg"] {
-            let response = spa_response(state.clone(), "admin.example", path).await;
-            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
-        }
-    }
-
-    #[test]
-    fn the_admin_csp_never_allows_inline_or_eval() {
-        assert!(
-            !ADMIN_CSP.contains("unsafe-inline") && !ADMIN_CSP.contains("unsafe-eval"),
-            "the dashboard performs signed admin requests — inline script or style must stay blocked"
-        );
-    }
-
-    #[tokio::test]
-    async fn the_public_spa_is_untouched_by_the_admin_csp() {
-        let admin_dir = tempfile::tempdir().expect("admin bundle dir");
-        let web_dir = tempfile::tempdir().expect("public bundle dir");
-        write_bundle(admin_dir.path());
-        write_bundle(web_dir.path());
-        let state = spa_state(admin_dir.path(), web_dir.path()).await;
-
-        for path in ["/invite/payload.mac", "/assets/app.js"] {
-            let response = spa_response(state.clone(), "public.example", path).await;
-            assert_eq!(response.status(), StatusCode::OK, "{path}");
-            assert!(
-                response
-                    .headers()
-                    .get(header::CONTENT_SECURITY_POLICY)
-                    .is_none(),
-                "{path} on the public host must keep its own headers"
-            );
-        }
-    }
-
     /// Pictures from other sites (GitHub, Gravatar) send no
     /// `Cross-Origin-Resource-Policy`; under `require-corp` the browser blocks
     /// every one, so the public bundle must say `credentialless` on its
     /// documents and assets alike.
     #[tokio::test]
     async fn the_public_spa_lets_pictures_from_other_sites_load() {
-        let admin_dir = tempfile::tempdir().expect("admin bundle dir");
         let web_dir = tempfile::tempdir().expect("public bundle dir");
-        write_bundle(admin_dir.path());
         write_bundle(web_dir.path());
-        let state = spa_state(admin_dir.path(), web_dir.path()).await;
+        let state = state_with(|config| {
+            config.web_dir = Some(web_dir.path().to_path_buf());
+        })
+        .await;
 
         for path in ["/invite/payload.mac", "/assets/app.js"] {
             let response = spa_response(state.clone(), "public.example", path).await;
@@ -3638,10 +3430,9 @@ mod tests {
         );
         assert!(!is_exempt("/push/web"), "a push subscription is protected");
 
-        // Operator / admin subtrees
+        // Operator subtrees
         assert!(is_exempt("/operator/communities"));
         assert!(is_exempt("/self-serve/communities"));
-        assert!(is_exempt("/api/admin/v1/something"));
 
         // SPA / assets
         assert!(is_exempt("/assets/main.js"));
@@ -3712,407 +3503,6 @@ mod tests {
             "a new invite sub-path must not be exempt just because /api/invites/ exists; \
              only /api/invites/claim and /api/invites/accept-policy are explicitly exempt"
         );
-    }
-
-    // ── F6: admin SPA document paths are NOT broadly exempt ─────────────────
-    //
-    // Admin SPA document routes (`/reports`, `/reports/<id>`, `/feedback`) are
-    // served by the SPA fallback on the admin host.  They are NOT in
-    // `NIP_FI_EXEMPT_PREFIXES` — the broad exempt list would make `/reports`
-    // exempt on tenant hosts too, which is unintentional.  Instead, the guard
-    // exempts them conditionally via a host-qualified `is_admin_spa_path` +
-    // `is_admin_host` check (see `nip_fi_assertion_guard`).
-    //
-    // This test proves two things:
-    // 1. `is_admin_spa_path` recognises the admin document routes.
-    // 2. These paths are NOT broadly exempt (no entry in NIP_FI_EXEMPT_PREFIXES)
-    //    so tenant hosts remain protected.
-    //
-    // Mutation evidence: adding "/reports" to NIP_FI_EXEMPT_PREFIXES makes
-    // `is_exempt("/reports")` return true and the assertion below panics.
-    #[test]
-    fn admin_spa_paths_are_not_broadly_exempt_but_are_admin_spa_paths() {
-        // /reports and /feedback ARE admin SPA document paths.
-        assert!(
-            is_admin_spa_path("/reports"),
-            "/reports must be an admin SPA path (for host-qualified exemption)"
-        );
-        assert!(
-            is_admin_spa_path("/reports/abc-123"),
-            "/reports/<id> must be an admin SPA path"
-        );
-        assert!(
-            is_admin_spa_path("/feedback"),
-            "/feedback must be an admin SPA path"
-        );
-        assert!(
-            is_admin_spa_path("/feedback/abc"),
-            "/feedback/<id> must be an admin SPA path"
-        );
-
-        // But they are NOT in NIP_FI_EXEMPT_PREFIXES (not broadly exempt).
-        // The guard exempts them only when the request is on the admin host.
-        assert!(
-            !is_exempt("/reports"),
-            "/reports must NOT be broadly exempt; exemption is host-qualified in the guard"
-        );
-        assert!(
-            !is_exempt("/reports/abc-123"),
-            "/reports/<id> must NOT be broadly exempt"
-        );
-        assert!(
-            !is_exempt("/feedback"),
-            "/feedback must NOT be broadly exempt"
-        );
-        assert!(
-            !is_exempt("/feedback/abc"),
-            "/feedback/<id> must NOT be broadly exempt"
-        );
-    }
-
-    // ── F6: build_router guard navigation — host-qualified admin exemption ───
-    //
-    // Proves that the `is_admin_spa_path(path) && is_admin_host(...)` check in
-    // `nip_fi_assertion_guard` (router.rs:215-217) does exactly what it says:
-    //
-    //   • `/reports` on the admin host → HTML (guard exempts it, SPA fallback serves it)
-    //   • `/reports` on a tenant host → 503 (guard NOT exempted; DenyProtected denies it)
-    //
-    // Falsifying mutation: remove the `is_admin_spa_path(path) && ...` branch at
-    // router.rs:215-217.  The admin-host request then reaches the DenyProtected
-    // branch and returns 503 — the assertion below panics instead of returning
-    // HTML.  The path-classification tests (`admin_spa_paths_are_not_broadly_exempt_*`)
-    // would still pass because they only test the helper functions, not the guard.
-    //
-    // DenyProtected is used here because it denies unconditionally without
-    // needing a verifier, making the test self-contained and infrastructure-free.
-    #[tokio::test]
-    async fn build_router_admin_spa_path_exempt_on_admin_host_denied_on_tenant_host() {
-        use buzz_auth::NipFiMode;
-
-        let admin_dir = tempfile::tempdir().expect("admin bundle dir");
-        let web_dir = tempfile::tempdir().expect("public bundle dir");
-        write_bundle(admin_dir.path());
-        write_bundle(web_dir.path());
-
-        // Build a DenyProtected-mode state using the same SPA helper, but with
-        // the NIP-FI mode overridden after config construction.
-        let mut config = crate::config::Config::for_test();
-        config.require_relay_membership = false;
-        config.redis_url = "redis://127.0.0.1:1".to_string();
-        config.web_dir = Some(web_dir.path().to_path_buf());
-        config.admin = Some(crate::config::AdminConfig {
-            host: "admin.example".to_string(),
-            auth: crate::config::AdminAuth::Disabled,
-            web_dir: Some(admin_dir.path().to_path_buf()),
-        });
-        config.nip_fi.mode = NipFiMode::DenyProtected;
-
-        let pool = sqlx::PgPool::connect_lazy(&config.database_url).expect("lazy pg pool");
-        let db = buzz_db::Db::from_pool(pool.clone());
-        let redis_pool = deadpool_redis::Config::from_url(&config.redis_url)
-            .create_pool(Some(deadpool_redis::Runtime::Tokio1))
-            .expect("redis pool");
-        let pubsub = Arc::new(
-            buzz_pubsub::PubSubManager::new(&config.redis_url, redis_pool.clone())
-                .await
-                .expect("pubsub manager"),
-        );
-        let audit = buzz_audit::AuditService::new(pool.clone());
-        let auth = buzz_auth::AuthService::new(config.auth.clone());
-        let search = buzz_search::SearchService::new(pool.clone());
-        let workflow_engine = Arc::new(buzz_workflow::WorkflowEngine::new(
-            db.clone(),
-            buzz_workflow::WorkflowConfig::default(),
-        ));
-        let media_storage = buzz_media::MediaStorage::new(&config.media).expect("media storage");
-        let (state, _audit_shutdown) = AppState::new(
-            config,
-            db,
-            redis_pool,
-            audit,
-            pubsub,
-            auth,
-            search,
-            workflow_engine,
-            nostr::Keys::generate(),
-            media_storage,
-        );
-        let state = Arc::new(state);
-
-        // Admin host: /reports must be exempted (guard lets it through → SPA serves HTML).
-        let admin_response = spa_response(state.clone(), "admin.example", "/reports").await;
-        assert_ne!(
-            admin_response.status(),
-            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            "/reports on the admin host must NOT be denied 503 in DenyProtected mode; \
-             the host-qualified admin SPA exemption in nip_fi_assertion_guard must fire. \
-             Falsifying mutation: remove `is_admin_spa_path(path) && is_admin_host(...)` at router.rs:215-217"
-        );
-        // The SPA fallback serves the index document.
-        assert_eq!(
-            admin_response.status(),
-            axum::http::StatusCode::OK,
-            "/reports on the admin host must be served as an SPA document"
-        );
-
-        // Tenant host: /reports is NOT exempt (guard denies it with 503 DenyProtected).
-        let tenant_response = spa_response(state.clone(), "tenant.example", "/reports").await;
-        assert_eq!(
-            tenant_response.status(),
-            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            "/reports on a tenant host must be denied 503 in DenyProtected mode; \
-             the guard exemption must NOT fire for non-admin hosts. \
-             Falsifying mutation: remove the is_admin_host check — tenant host would \
-             then match is_admin_spa_path and bypass the guard"
-        );
-    }
-
-    // ── F6 (extended): complete admin SPA matrix ─────────────────────────────
-    //
-    // Proves that the `is_admin_spa_path(path) && is_admin_host(...)` exemption
-    // covers all admin document routes (`/reports`, `/reports/<id>`, `/feedback`)
-    // in both Enforce and DenyProtected modes, and that none of these are
-    // accidentally exempted on tenant hosts.
-    //
-    // The existing `build_router_admin_spa_path_exempt_on_admin_host_denied_on_tenant_host`
-    // test covers `/reports` in DenyProtected.  This test fills the matrix.
-    //
-    // Falsifying mutation (coverage of all paths): replacing `is_admin_spa_path`
-    // with a hardcoded `/reports`-only check would cause the `/reports/<id>` and
-    // `/feedback` rows to return 503 on the admin host → assertions fire.
-    #[tokio::test]
-    async fn build_router_admin_spa_full_matrix() {
-        use buzz_auth::NipFiMode;
-
-        // Helper: build a state with a given mode.
-        // Returns (state, _admin_dir, _web_dir) — callers must keep the TempDirs
-        // alive for the lifetime of the test; they are dropped at end of scope.
-        async fn state_with_mode(
-            mode: NipFiMode,
-            admin_dir: &std::path::Path,
-            web_dir: &std::path::Path,
-        ) -> Arc<AppState> {
-            write_admin_bundle(admin_dir);
-            write_bundle(web_dir);
-
-            let mut config = crate::config::Config::for_test();
-            config.require_relay_membership = false;
-            config.redis_url = "redis://127.0.0.1:1".to_string();
-            config.web_dir = Some(web_dir.to_path_buf());
-            config.admin = Some(crate::config::AdminConfig {
-                host: "admin.matrix.example".to_string(),
-                auth: crate::config::AdminAuth::Disabled,
-                web_dir: Some(admin_dir.to_path_buf()),
-            });
-            config.nip_fi.mode = mode;
-            config.nip_fi.communities =
-                crate::nip_fi_core::test_support::any_host("https://relay.example");
-
-            let pool = sqlx::PgPool::connect_lazy(&config.database_url).expect("lazy pg pool");
-            let db = buzz_db::Db::from_pool(pool.clone());
-            let redis_pool = deadpool_redis::Config::from_url(&config.redis_url)
-                .create_pool(Some(deadpool_redis::Runtime::Tokio1))
-                .expect("redis pool");
-            let pubsub = Arc::new(
-                buzz_pubsub::PubSubManager::new(&config.redis_url, redis_pool.clone())
-                    .await
-                    .expect("pubsub manager"),
-            );
-            let audit = buzz_audit::AuditService::new(pool.clone());
-            let auth = buzz_auth::AuthService::new(config.auth.clone());
-            let search = buzz_search::SearchService::new(pool.clone());
-            let workflow_engine = Arc::new(buzz_workflow::WorkflowEngine::new(
-                db.clone(),
-                buzz_workflow::WorkflowConfig::default(),
-            ));
-            let media_storage =
-                buzz_media::MediaStorage::new(&config.media).expect("media storage");
-            let (state, _audit_shutdown) = AppState::new(
-                config,
-                db,
-                redis_pool,
-                audit,
-                pubsub,
-                auth,
-                search,
-                workflow_engine,
-                nostr::Keys::generate(),
-                media_storage,
-            );
-            Arc::new(state)
-        }
-
-        // Admin SPA paths to test.
-        let admin_paths = ["/reports", "/reports/abc-123-id", "/feedback"];
-
-        // ── DenyProtected matrix ──────────────────────────────────────────────
-        //
-        // Admin host + DenyProtected: guard exempts admin SPA paths → 200 HTML.
-        // Tenant host + DenyProtected: guard NOT exempted → 503 + exact body.
-        let deny_admin_dir = tempfile::tempdir().expect("deny admin bundle dir");
-        let deny_web_dir = tempfile::tempdir().expect("deny public bundle dir");
-        let deny_state = state_with_mode(
-            NipFiMode::DenyProtected,
-            deny_admin_dir.path(),
-            deny_web_dir.path(),
-        )
-        .await;
-        for path in &admin_paths {
-            let admin_resp = spa_response(deny_state.clone(), "admin.matrix.example", path).await;
-            let admin_status = admin_resp.status();
-            let admin_ct = admin_resp
-                .headers()
-                .get(axum::http::header::CONTENT_TYPE)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("")
-                .to_owned();
-            let admin_body = axum::body::to_bytes(admin_resp.into_body(), 8192)
-                .await
-                .unwrap_or_default();
-            assert_eq!(
-                admin_status,
-                axum::http::StatusCode::OK,
-                "DenyProtected: {path} on admin host must be 200 (SPA exemption). \
-                 Falsifying mutation: remove is_admin_spa_path || restrict to /reports only → 503"
-            );
-            assert_eq!(
-                admin_body.as_ref(),
-                b"<!doctype html><html data-bundle=\"admin\"></html>",
-                "DenyProtected: {path} on admin host 200 must serve the exact admin HTML body; \
-                 distinct content distinguishes admin bundle from public bundle."
-            );
-            assert_eq!(
-                admin_ct, "text/html; charset=utf-8",
-                "DenyProtected: {path} on admin host 200 Content-Type must be \
-                 'text/html; charset=utf-8'; got '{admin_ct}'"
-            );
-
-            let tenant_resp = spa_response(deny_state.clone(), "tenant.matrix.example", path).await;
-            let tenant_status = tenant_resp.status();
-            let tenant_resp_headers = tenant_resp.headers().clone();
-            let tenant_body = axum::body::to_bytes(tenant_resp.into_body(), 8192)
-                .await
-                .unwrap_or_default();
-            assert_eq!(
-                tenant_status,
-                axum::http::StatusCode::SERVICE_UNAVAILABLE,
-                "DenyProtected: {path} on tenant host must be 503. \
-                 Exemption must not apply to non-admin hosts."
-            );
-            assert_eq!(
-                tenant_body.as_ref(),
-                b"authorization unavailable\n",
-                "DenyProtected: {path} on tenant host 503 must have exact body \
-                 'authorization unavailable\\n' (AuthorizationUnavailable contract)."
-            );
-            let tenant_ct = tenant_resp_headers
-                .get(axum::http::header::CONTENT_TYPE)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("");
-            assert_eq!(
-                tenant_ct, "text/plain; charset=utf-8",
-                "DenyProtected: {path} on tenant host 503 Content-Type must be \
-                 'text/plain; charset=utf-8'; got '{tenant_ct}'"
-            );
-            assert!(
-                tenant_resp_headers.get("www-authenticate").is_none(),
-                "DenyProtected: {path} on tenant host 503 MUST NOT carry WWW-Authenticate \
-                 (DenyProtected unconditionally denies; challenge absent)"
-            );
-        }
-
-        // ── Enforce matrix ────────────────────────────────────────────────────
-        //
-        // Admin host + Enforce + no verifier (None) → NIP-FI admission guard
-        // fires for non-exempt paths.  Admin SPA paths are host-qualified exempt
-        // → 200 HTML.  Tenant host → 401 (missing assertion, no verifier configured)
-        // with exact body "authentication required\n" and WWW-Authenticate: Nostr.
-        //
-        // Important: asserting only `!= 200` for the tenant case is insufficient —
-        // the fallthrough public 404 path also returns non-200.  Exact 401 + header
-        // + body distinguishes the NIP-FI guard from a public 404 fallback.
-        let enforce_admin_dir = tempfile::tempdir().expect("enforce admin bundle dir");
-        let enforce_web_dir = tempfile::tempdir().expect("enforce public bundle dir");
-        let enforce_state = state_with_mode(
-            NipFiMode::Enforce,
-            enforce_admin_dir.path(),
-            enforce_web_dir.path(),
-        )
-        .await;
-        for path in &admin_paths {
-            let admin_resp =
-                spa_response(enforce_state.clone(), "admin.matrix.example", path).await;
-            let admin_status = admin_resp.status();
-            let admin_ct = admin_resp
-                .headers()
-                .get(axum::http::header::CONTENT_TYPE)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("")
-                .to_owned();
-            let admin_body = axum::body::to_bytes(admin_resp.into_body(), 8192)
-                .await
-                .unwrap_or_default();
-            assert_eq!(
-                admin_status,
-                axum::http::StatusCode::OK,
-                "Enforce: {path} on admin host must be 200 (SPA exemption active in Enforce too). \
-                 Falsifying mutation: remove is_admin_spa_path exemption from Enforce branch → non-200"
-            );
-            assert_eq!(
-                admin_body.as_ref(),
-                b"<!doctype html><html data-bundle=\"admin\"></html>",
-                "Enforce: {path} on admin host 200 must serve the exact admin HTML body."
-            );
-            assert_eq!(
-                admin_ct, "text/html; charset=utf-8",
-                "Enforce: {path} on admin host 200 Content-Type must be \
-                 'text/html; charset=utf-8'; got '{admin_ct}'"
-            );
-
-            let tenant_resp =
-                spa_response(enforce_state.clone(), "tenant.matrix.example", path).await;
-            let tenant_status = tenant_resp.status();
-            let tenant_headers = tenant_resp.headers().clone();
-            let tenant_body = axum::body::to_bytes(tenant_resp.into_body(), 8192)
-                .await
-                .unwrap_or_default();
-            // Must be 401, not just != 200.  A 404 fallback would also satisfy != 200
-            // but would indicate the NIP-FI guard was bypassed.
-            assert_eq!(
-                tenant_status,
-                axum::http::StatusCode::UNAUTHORIZED,
-                "Enforce: {path} on tenant host must be 401 MissingEvidence (not 200, not 404). \
-                 The NIP-FI guard must fire and produce an exact denial, not fall through to \
-                 the public 404 route. \
-                 Falsifying mutation: remove the guard call → 404 → assertion fires."
-            );
-            assert_eq!(
-                tenant_body.as_ref(),
-                b"authentication required\n",
-                "Enforce: {path} on tenant host 401 must have exact body \
-                 'authentication required\\n' (MissingEvidence contract)."
-            );
-            let www_auth = tenant_headers
-                .get("WWW-Authenticate")
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("");
-            assert_eq!(
-                www_auth,
-                "Nostr",
-                "Enforce: {path} on tenant host 401 must have WWW-Authenticate: Nostr header. \
-                 Falsifying mutation: remove challenge from MissingEvidence denial → assertion fires."
-            );
-            let tenant_ct = tenant_headers
-                .get(axum::http::header::CONTENT_TYPE)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("");
-            assert_eq!(
-                tenant_ct, "text/plain; charset=utf-8",
-                "Enforce: {path} on tenant host 401 Content-Type must be \
-                 'text/plain; charset=utf-8'; got '{tenant_ct}'"
-            );
-        }
     }
 
     // ── T1-IMP1: adversarial guard — junk/non-Bearer assertion is denied ──────

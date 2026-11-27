@@ -5,7 +5,6 @@ pub mod admin_moderation;
 /// Community-scoped authentication allowlist persistence.
 pub mod allowlist;
 /// API token storage and lookup.
-pub mod api_token;
 /// Relay-scoped archived identity persistence (NIP-IA).
 pub mod archived_identities;
 /// Board moderation: locked and pinned threads, rules, board mutes, board moderators.
@@ -55,7 +54,6 @@ pub mod relay_invite;
 /// Relay-level membership persistence (NIP-43).
 pub mod relay_members;
 /// Deployment-global relay operator/moderator roster persistence.
-pub mod relay_operators;
 /// Event-reminder delivery query, claim, and release persistence.
 pub mod reminder;
 /// Replaceable-event persistence and coordinate locking.
