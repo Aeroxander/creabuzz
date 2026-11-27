@@ -600,7 +600,6 @@ dependencies = [
  "base64",
  "chrono",
  "hex",
- "hmac 0.13.0",
  "nostr",
  "proptest",
  "serde",

@@ -11,7 +11,6 @@ pub mod agent_turn_metric;
 pub mod channel;
 /// NIP-AE Agent Engrams — slug grammar, conversation key, d-tag derivation,
 /// body parse/serialize, envelope build/validate, head selection.
-pub mod engram;
 /// Relay-side error types.
 pub mod error;
 /// Relay-side event wrapper with verification tracking.
@@ -35,7 +34,6 @@ pub mod org_grant;
 /// Presence status types shared across crates.
 pub mod presence;
 /// NIP-PMA owner-encrypted private managed-agent wire codec.
-pub mod private_managed_agent;
 /// Canonical relay runtime identities.
 pub mod relay;
 /// A season: the operator's record of six weeks of open entry and the day its projects are shown.

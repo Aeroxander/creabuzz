@@ -19,7 +19,6 @@ thiserror  = { workspace = true }
 uuid       = { workspace = true }
 chrono     = { workspace = true }
 hex        = { workspace = true }
-hmac       = { workspace = true }
 sha2       = { workspace = true }
 zeroize           = { workspace = true }
 url               = { workspace = true }
