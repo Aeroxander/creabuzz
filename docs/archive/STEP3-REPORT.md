@@ -6,13 +6,13 @@ can be understood on one phone screen** (with a share link, a share picture and 
 people who hold it**, **a ranking of the money that has stayed 30 days or more and seasons with a demo day**, and **short alerts on a
 phone that is away from the app**. The server (P1 to P3) reads it all from the chain and the relay's own rules; the app (A1 to A4) draws
 it. Everything is committed on local branch `v6`; **nothing is pushed**. **No person has tested any of this: every run below was made by
-an agent. The human test is the owner's and is still to do (the steps are in `TRY-IT.md`).** This is not legal or tax advice, and no figure
+an agent. The human test is the owner's and is still to do (the steps are in `docs/next-version/TRY-IT.md`).** This is not legal or tax advice, and no figure
 here is a promise of any result for anyone. Every amount is play money on a local test chain; nothing here changes a contract or a money
 rule. The legal line, quoted as it stands: "Buyers acquire ownership only: governance and exit. No dividends or revenue share, ever,
 unless they contribute and earn one."
 
-Companion pages: the plan (`STEP3-PLAN.md`), the record's one specification (`RECORD-V2.md`, sections 11 and 12, and
-`record-v2-example.json`, the server's own output), the room and seasons (`ROOM-AND-SEASON-RECORDS.md`), the server's report
+Companion pages: the plan (`STEP3-PLAN.md`), the record's one specification (`docs/next-version/RECORD-V2.md`, sections 11 and 12, and
+`docs/next-version/record-v2-example.json`, the server's own output), the room and seasons (`docs/next-version/ROOM-AND-SEASON-RECORDS.md`), the server's report
 (`READER-V2-REPORT.md`, its step 3 sections), alerts (`../web-push-deployment.md`), and the earlier steps' (`STEP1-REPORT.md`,
 `STEP2-SERVER-APP-REPORT.md`).
 
@@ -386,7 +386,7 @@ Each line was removed alone, the named tests run, and the file put back; every o
 Branch `v6`, 20 and 21 November 2026. Two independent verifiers read steps 1 to 3 (pushed at `693ef69c2`) and found no blocker; this
 round closes their "important" findings and nothing else (no new feature). It is the app engineer's (TypeScript only: `app/`, one
 loop script). Nothing is pushed. **No person has tested any of this; every run below was made by an agent, and the human test of
-`TRY-IT.md` (the hand test) is still the owner's**. The relay binary the loops used was built at 23:38 on 20
+`docs/next-version/TRY-IT.md` (the hand test) is still the owner's**. The relay binary the loops used was built at 23:38 on 20
 November from the working tree of that moment (HEAD's Rust at the time, `4fd556785`, plus the server engineer's uncommitted edits to
 three `crates/buzz-relay` files, which no app journey touches). The legal line, quoted as it stands: "Buyers acquire ownership only:
 governance and exit. No dividends or revenue share, ever, unless they contribute and earn one."
@@ -532,7 +532,7 @@ see the spec fail.
 ### What stays open
 
 - The A3 cause is in the journeys; the app's own recovery ("Finish linking") is a press. An automatic finish is the owner's call.
-- The first human test (`TRY-IT.md`) is still to do and still must cover a phone account in the room against a relay with the chain connection on.
+- The first human test (`docs/next-version/TRY-IT.md`) is still to do and still must cover a phone account in the room against a relay with the chain connection on.
 - Everything in section 12 that is not named here is as it was. F1 and F2 (the server's) were closed afterwards by commit `73a404fe1`; this round did not touch `crates/`.
 - The human tests of the pull request checklist are not done and are not marked.
 

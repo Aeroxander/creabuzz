@@ -1,7 +1,7 @@
 # Plan v2, milestone 5, part 1: the chain reader and the project numbers
 
 18 November 2026. Branch `v4-governance-rework`, not pushed. Plan: `docs/PLAN-V2.md` sections 4, 7, 8 and 9; the events
-come from `docs/next-version/PLANV2-M4-REPORT.md` ("Events the server must index" and the founder-set prices section).
+come from `docs/archive/PLANV2-M4-REPORT.md` ("Events the server must index" and the founder-set prices section).
 
 ## The short answer
 
@@ -140,7 +140,7 @@ After a launch that later leaves the chain the record becomes `{"version": 1, "c
 | `BUZZ_CHAIN_START_BLOCK` | 0 | The first block to read (the Launcher's deployment block) |
 | `BUZZ_CHAIN_CONFIRMATIONS` | 12 | Blocks under the head before a log counts; the reader reads no block above that, and never the newest 2 (a lower setting acts as 2) |
 | `BUZZ_CHAIN_POLL_SECS` | 12 | Seconds between passes |
-| `BUZZ_CHAIN_REFRESH_SECS` | 3600 (~~60 to 7 days~~ **removed**: now 5 to 43200 seconds, half a day; `BUZZ_CHAIN_ACTIVE_REFRESH_SECS`, 600, has the same range and is what a project promises while its allowance accrues, outside money arrives or a task is open; see `RECORD-V2.md` section 6) | How often a record whose time-moving numbers changed is signed again without a new event |
+| `BUZZ_CHAIN_REFRESH_SECS` | 3600 (~~60 to 7 days~~ **removed**: now 5 to 43200 seconds, half a day; `BUZZ_CHAIN_ACTIVE_REFRESH_SECS`, 600, has the same range and is what a project promises while its allowance accrues, outside money arrives or a task is open; see `docs/next-version/RECORD-V2.md` section 6) | How often a record whose time-moving numbers changed is signed again without a new event |
 | `BUZZ_CHAIN_LOG_RANGE` | 2000 (at most 10,000) | Blocks per log request |
 | `BUZZ_CHAIN_COMMUNITY_HOST` | the host of `BUZZ_RELAY_URL` | The community whose events receive the records |
 
@@ -218,7 +218,7 @@ database, all pass.
   invite-only server needs a rule tying the chain key (`d`) to the project record's id (which is not the chain key) and a
   decision on what a visitor may see; left for the app milestone.
 - **Notices to backers** when a lower-priced round opens or the auction starts below what they paid
-  (`FOUNDER-PRICE.md`, server notes): not built; the record has what is needed (each round's price, each receipt).
+  (`docs/next-version/FOUNDER-PRICE.md`, server notes): not built; the record has what is needed (each round's price, each receipt).
 - **"Raised before Creaton"** (the founder-signed earlier-raise record): not built.
 - **No running totals:** a project's numbers are worked out from all of its final logs each time they are checked. Fine
   for hundreds of projects; a project with tens of thousands of logs would want a summary table kept as logs arrive.

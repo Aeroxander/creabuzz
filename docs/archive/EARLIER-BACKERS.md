@@ -3,7 +3,7 @@
 Design note for the owner, 18 November 2026. Nothing here is live or signed; section 11 says what is now built (local
 tests only). Nothing goes on a real network before
 the outside audit and counsel. Labels: *measured* (from built contracts or tests), *simulated* (Python under
-`docs/next-version/econ/`, run with `python3 -I`), *judgement*. Scripts: `saft_sheet.py` (sizes, options, market),
+`docs/archive/econ/`, run with `python3 -I`), *judgement*. Scripts: `saft_sheet.py` (sizes, options, market),
 `earlier_claim.py` (claim contract accounting), `saft_legal.py` (rates, votes), `earlier_backer_list.py` and
 `earlier_backer_journey.py` (list checks, presses). This note holds totals and counts only: no names, no addresses, no
 single backer's amount. The working sheet with names and addresses is private and stays outside the repo.
@@ -16,7 +16,7 @@ single backer's amount. The working sheet with names and addresses is private an
 - Raised (the sheet): seed 177,500 dollars from 3 entries at 0.02 = 8,875,000 old tokens; private 1,052,457 from 18
   entries at 0.046 = 22,879,500 old tokens. Total 1,229,957 dollars, 31,754,500 old tokens = 28.868% of the old supply.
 - Price for the whole supply: seed 2.2M, private 5.06M, blended 4.26M. The "6M valuation" was the price of a third
-  tranche ("Private 2", 0.055) that shows no sales. So "Creaton raised at 6M" in FOUNDER-PRICE.md is not right.
+  tranche ("Private 2", 0.055) that shows no sales. So "Creaton raised at 6M" in docs/next-version/FOUNDER-PRICE.md is not right.
 - The owner bought some seed tokens themselves and will put them back ("into the DAO/team treasury").
 - The sheet's list: 2 entries share one address; 1 address has a line break inside it (invalid as typed); 6 entries
   have no address (all 3 seed among them); 2 private entries (320,100 dollars) are marked DONE. So 10 entries are clean
@@ -279,7 +279,7 @@ more; no published series price.
 ## 9. What to build, in order
 
 1. **Now, no counsel needed:** this note; the private sheet `Creaton_Distribution_v2.xlsx` (scratchpad, not the repo);
-   the owner's answers below; correct FOUNDER-PRICE.md and PLAN-V2 decision 7 (done: pointers to this note).
+   the owner's answers below; correct docs/next-version/FOUNDER-PRICE.md and PLAN-V2 decision 7 (done: pointers to this note).
 2. **Owner to counsel (private):** every SAFT and side letter, the old LLC's details, the meaning of DONE, the owner's
    own amount, backers' countries and accreditation records, what was promised in messages or decks.
 3. **On the owner's yes, Sepolia only:** `EarlierBackers`, the Launcher cut, the Vester second grant, the Treasury
@@ -599,7 +599,7 @@ Two reviews of the build: a review against this note and an attack review that w
 | F2 | The keeper's void and proposal were two transactions; a leaked key watching the chain could sign again in between (nothing pending yet), and the proposal then failed | `voidConsent(entry, next, evidence)` proposes the replacement in the same call | `test_review_F2_*`, `test_attack_leakedKeyConsentsFirst` | Q105 |
 | R5 | A thief with a lost key and its salt never signs (EB29 bars only a key whose consent was voided) and vetoed every replacement for ever | The holder's bare veto works once per entry; after it, only a consent stops a replacement, and the keeper can void that with the replacement in the same call | `test_review_R5_*` (2) | Q106, Q107 |
 | R4 | The note said the keeper "can void (never redirect)". Since EB29 the keeper can move a signed entry: void it inside the 21 days with a replacement, and the new holder takes it 30 days later | Recorded as the design, not changed: no rule can tell a thief holding a key from the backer holding it. The protection is the keeper's make-up (2-of-3, at most one signer the owner) and the public `Voided` and `HolderProposed` events with evidence. Corrected in the contract's description, the section 8 row and clause 11 of the draft text (section 4) | `test_attack_keeperMovesASignedEntryOnlyInPublicAfter30Days`, `test_attack_keeperNamesNoReceiver` | Q41, Q55, Q56 |
-| F4 | Stale lines elsewhere | `FOUNDER-PRICE.md` marks the work-pot path and the 141.7M to the reserve as superseded for project zero; the milestone 4 report's deployment order now names `nameEarlierBackers` and `launchHash(key)`; `PLAN-V2.md` decision 7 no longer names an unbuilt alternative | | |
+| F4 | Stale lines elsewhere | `docs/next-version/FOUNDER-PRICE.md` marks the work-pot path and the 141.7M to the reserve as superseded for project zero; the milestone 4 report's deployment order now names `nameEarlierBackers` and `launchHash(key)`; `PLAN-V2.md` decision 7 no longer names an unbuilt alternative | | |
 
 **For the keeper:** for a leaked key, void with the replacement in the same call, never as two transactions. For a wrong
 wallet (the holder's own mistake), void with no replacement; the holder may then sign again.

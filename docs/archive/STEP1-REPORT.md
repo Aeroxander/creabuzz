@@ -3,11 +3,11 @@
 Branch `v6`, 19 November 2026. This is the report of the joined-up run: `scripts/pot-full-loop.sh` starts a local chain, deploys
 `contracts/pot`, starts the real server (relay) with its chain reader and helper on that chain, builds the app for it and lets the server
 serve it, and walks one project through everything step 1 offers, in Chromium. Nothing is pushed. **No person has tested any of
-this: every run below was made by an agent. The human test is the owner's and is still to do (the steps are in `TRY-IT.md`).** This is
+this: every run below was made by an agent. The human test is the owner's and is still to do (the steps are in `docs/next-version/TRY-IT.md`).** This is
 not legal or tax advice, and no figure here is a promise of any result for anyone. Every amount is play money on a local test chain.
 
 Companion pages: the contracts (`contracts/pot/README.md`, `POT-STEP1A-REPORT.md`), the one specification of the record both sides
-use (`RECORD-V2.md` and `record-v2-example.json`), the server's report (`READER-V2-REPORT.md`) and the app's (`APP-POT-REPORT.md`).
+use (`docs/next-version/RECORD-V2.md` and `docs/next-version/record-v2-example.json`), the server's report (`READER-V2-REPORT.md`) and the app's (`APP-POT-REPORT.md`).
 
 ## 1. What step 1 gives a person now
 
@@ -182,7 +182,7 @@ See **`docs/next-version/TRY-IT.md`**: it is the one guide for trying this by ha
    build switch `VITE_CREATON_PASSKEY_ACCOUNT=1`, over `https`. Without them a phone needs a browser with a wallet.
 6. **Hosting and the legal parts:** a public address with `https`, the hosted terms of use, privacy note and the age box (already
    supported and used by the run), the operator's own monitoring of the reader's lag, and counsel's answers to the questions in
-   `JOIN-LEAVE-DESIGN.md` section 12 before any real money is ever offered. The test network avoids them; real money must not start
+   `docs/next-version/JOIN-LEAVE-DESIGN.md` section 12 before any real money is ever offered. The test network avoids them; real money must not start
    until they are answered.
 
 ## 7. How to run it again
@@ -192,7 +192,7 @@ See **`docs/next-version/TRY-IT.md`**: it is the one guide for trying this by ha
 cargo build -p buzz-relay                 # once; the script never builds
 ( cd contracts/pot && forge build )       # once
 scripts/pot-full-loop.sh                  # the journey; prints "pot-full-loop: N checks passed."
-scripts/pot-full-loop.sh --serve          # the same world left running for a phone (TRY-IT.md)
+scripts/pot-full-loop.sh --serve          # the same world left running for a phone (docs/next-version/TRY-IT.md)
 # helpful: FOUNDRY_BIN=<folder with anvil, cast, forge>  SHOTS_DIR=<folder for the journey's screenshots>  RELAY_LOG_COPY=<file>
 ```
 
@@ -217,7 +217,7 @@ Gates, as run: see the end of `APP-POT-REPORT.md` ("Review fixes, round four", "
    signed a new one meanwhile), then the record to equal the contracts.
 5. **`--serve` still launches the project for the person** (a throwaway founder key made in memory and never printed or stored) so a
    phone starts with a project to look at; the browser journey itself launches from the app. A person can also start and launch a
-   project of their own from the phone (`TRY-IT.md`, part 4.1).
+   project of their own from the phone (`docs/next-version/TRY-IT.md`, part 4.1).
 6. **The app's refresh floor moved to the server's** (section 3, item 1) rather than the server's floor up to the app's, because the
    specification names no floor and the server's setting is what the owner's operator sees.
 7. **The one `Chosen` item I did not decide:** whether the platform's fee should be collected per join instead of per week

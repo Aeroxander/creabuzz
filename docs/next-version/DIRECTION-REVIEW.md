@@ -142,7 +142,7 @@ inside the app, nothing that calls them back.
 - **Measured weaknesses the reports admit** ([R2]): a founder bidding 50,000 or 100,000 in their own auction beside
   100,000 honest ends 14.59 or 5.46 of each 100 ahead if holders stay passive. 350M held Shares release into a pool
   of 55M; selling 30 days of release drops price 58% for a default project (simulated, [R8]; 57.8% for project zero
-  with 364.55M held Shares, `EARLIER-BACKERS.md` row D).
+  with 364.55M held Shares, `docs/archive/EARLIER-BACKERS.md` row D).
 
 ## 5. The gaps that change direction, most serious first
 
@@ -395,7 +395,7 @@ decision to keep milestones 7 to 10:
 - **Off for the public test:** the auction, pool, Buy and Sell.
 - **Owner decisions this overrides, to be confirmed by the owner:** the whole 18 November progressive-decentralization
   requirement (`PLAN-V2.md` section 9, owner decision 5: holders can pause the release and replace the runner from the
-  market, votes count only parked Shares, the manager's powers end by stage, and `EARLIER-BACKERS.md` section 11 "Votes",
+  market, votes count only parked Shares, the manager's powers end by stage, and `docs/archive/EARLIER-BACKERS.md` section 11 "Votes",
   which says milestone 9 must keep it); owner decisions 4 and 6; and the Vester's "one clock, no cliff".
 
 **Finish first (days).** Push and report milestones 7 and 8; commit the AI manager. Untracked today (measured by the
@@ -604,10 +604,10 @@ refused automated reading. Sources belong in this document, never in app copy.
 
 **This repo (read 18 to 19 Nov 2026; nothing was built or run for this memo)**
 - [R1] `docs/PLAN-V2.md` (plan of record, 17 to 18 Nov 2026)
-- [R2] `docs/next-version/PLANV2-M4-REPORT.md` (refund numbers, attacks, gas, self-bidding re-runs, the 136-test fork run)
-- [R3] `docs/next-version/PLANV2-M6-REPORT.md` (press budgets, open items)
-- [R4] `docs/next-version/PLANV2-M5P2-REPORT.md` (server: what is open)
-- [R5] `docs/next-version/EARLIER-BACKERS.md` section 11 (585 local passes, Launcher size, "Votes")
+- [R2] `docs/archive/PLANV2-M4-REPORT.md` (refund numbers, attacks, gas, self-bidding re-runs, the 136-test fork run)
+- [R3] `docs/archive/PLANV2-M6-REPORT.md` (press budgets, open items)
+- [R4] `docs/archive/PLANV2-M5P2-REPORT.md` (server: what is open)
+- [R5] `docs/archive/EARLIER-BACKERS.md` section 11 (585 local passes, Launcher size, "Votes")
 - [R6] `contracts/next/src/` `Launcher.sol`, `Rounds.sol`, `Treasury.sol`, `Vester.sol`, `Pinned.sol` (constants read today)
 - [R7] `app/src/features/money/wallet.ts`, `app/src/features/money/OpenBacking.tsx`, `web/src/features/identity/lib/`
 - [R8] `docs/next-version/FOUNDER-PRICE.md` (the 58% for a default project)

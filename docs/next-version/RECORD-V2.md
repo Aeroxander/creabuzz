@@ -3,7 +3,7 @@
 The one specification the server and the app both build against for steps 1 and 2 of `docs/next-version/JOIN-LEAVE-DESIGN.md` (step 2's
 additions, the task queue and the exit notes, are section 10). The server
 (`crates/buzz-relay/src/chain_reader`) writes this record; the app (`app/src/features/money/numbers.ts` and everything that reads
-it) reads it. The contracts are `contracts/pot`; their events and views are listed in `docs/next-version/POT-STEP1A-REPORT.md`
+it) reads it. The contracts are `contracts/pot`; their events and views are listed in `docs/archive/POT-STEP1A-REPORT.md`
 sections 7 and "Review fixes". **The contracts are the truth.** Where this page and a contract disagree, the contract is right and
 this page is wrong: report it.
 
@@ -655,7 +655,7 @@ and the `removed` form.
 
 Additive inside version 2: nothing is removed, renamed or re-meant (`money.locked` and `money.notesOwed` were `"0"` in step 1 and now
 carry their values). An older app ignores `tasks`; a step 2 app with no `tasks` (or `null`) shows the step 1 tasks flow and no queue.
-The plan these tables come from is `docs/next-version/STEP2-SERVER-APP-PLAN.md` (sections 1.3 to 1.6 and the choices C1 to C37); the
+The plan these tables come from is `docs/archive/STEP2-SERVER-APP-PLAN.md` (sections 1.3 to 1.6 and the choices C1 to C37); the
 record is the server's, the contracts are the truth. Amounts are decimal strings of dollar units (6 decimals), times unix seconds,
 counts and shares JSON integers, addresses and 32-byte values lower-case `0x` text. **`tasks` is `null` for a project with no task
 book** (never guessed: the book's address is the Treasury's own `TasksReady` log, section 4.1).
@@ -770,7 +770,7 @@ Additive inside version 2: no field is removed, renamed or re-meant, so the vers
 as keys**. A key the server could not work out is **`null`** ("not known here"), never `0` and never `[]`; a failure of one of them (a database
 error, a window over its cap, a failed check of its own) signs that key as `null`, logs one error line naming the project, the key and the
 reason, and signs the rest of the record as usual. They are display only: no screen unlocks a power from them and no money rule reads them.
-The plan these tables come from is `docs/next-version/STEP3-PLAN.md` (section 2 and the choices C11 to C17, C43); amounts are decimal strings,
+The plan these tables come from is `docs/archive/STEP3-PLAN.md` (section 2 and the choices C11 to C17, C43); amounts are decimal strings,
 times unix seconds. **No address and no per-account figure is in any of them** (the feed and the picture round and aggregate); a person's own
 weeks held are worked out on their own device and are not in the record.
 
@@ -864,7 +864,7 @@ the newest check-in row. `established`: its inputs are `held`'s, its rule is the
 checks that need only the record, so a record whose verdict contradicts its inputs is refused. The four keys are out of the digest of facts
 (they move with the clock; each event that changes one already changes a field in it), so they never make the server sign again by themselves.
 
-**What the app shows when a key is absent, wrong or old** is in `STEP3-PLAN.md` section 2.7: a missing or `null` key is "not known here" (no
+**What the app shows when a key is absent, wrong or old** is in `docs/archive/STEP3-PLAN.md` section 2.7: a missing or `null` key is "not known here" (no
 ranking row, no chip, no feed), never "none" or "0"; the figures hide with the other money figures after 24 hours.
 
 ### 11.6 The ranking index (`d = explore`)
@@ -899,7 +899,7 @@ Kind 39009, tags `d = explore`, `chain`, `launcher`, signed by the relay's key. 
 ## 12. Step 3 additions outside the record: what the server says about phone links, alerts and the sponsored fee
 
 Three things the app reads from the server that are not in a numbers record. Nothing here changes a money field or a contract; the record stays
-version 2. The full account of the server side is in `docs/web-push-deployment.md` (for an operator) and `docs/next-version/STEP3-PLAN.md`
+version 2. The full account of the server side is in `docs/web-push-deployment.md` (for an operator) and `docs/archive/STEP3-PLAN.md`
 section 6 (for the reasons). Rooms and seasons (package P2) are in `docs/next-version/ROOM-AND-SEASON-RECORDS.md`.
 
 ### 12.1 Two keys of the information document (`GET /info`, `Accept: application/nostr+json`)
@@ -947,7 +947,7 @@ victim's address use up that person's day for a Back and the like (not for takin
 
 ## 13. Step 4 additions: the holder pause and the earlier backers' grants (`pause`, `earlierGrants`, two team fields)
 
-Step 4 (`docs/next-version/STEP4-PLAN.md`) adds two contracts to a deployment that turns them on: a **holder pause** per project
+Step 4 (`docs/archive/STEP4-PLAN.md`) adds two contracts to a deployment that turns them on: a **holder pause** per project
 (holders park Shares; when a third of the backers' Shares are parked, the team's draws and new task plans pause, starting a warning day
 later, for as long as that stays true) and the **earlier backers' claim contract** (one fingerprint of a list; each listed account claims
 its row once, with a proof, and in the same call accepts a text whose fingerprint is a deploy setting). Both are **off by default**: a

@@ -25,10 +25,10 @@ I chose; section 7 lists each with its alternative.
   the notice), 2.4 (Team Shares, protected grants), section 6 (project zero and the earlier backers), section 9 (what is replaced:
   milestone 9 "has nothing to vote on"), section 10, section 12 (counsel's questions 4 and 10) and choices C11 and C21.
   (There is no numbered section 1.5; the page's one-line model is section 1 and the project-zero text is the last part of section 6.)
-- `docs/next-version/EARLIER-BACKERS.md`: the old list, text, signing and claim design (now parked in `contracts/next`).
+- `docs/archive/EARLIER-BACKERS.md`: the old list, text, signing and claim design (now parked in `contracts/next`).
 - `POT-STEP1A-REPORT.md`, `POT-STEP2-REPORT.md` and every file in `contracts/pot/src`, `contracts/pot/script/DeployPot.s.sol`,
   `contracts/pot/DEPLOYMENTS.md`, and the built sizes in `contracts/pot/out` (read, not rebuilt).
-- `RECORD-V2.md`, the chain reader (`crates/buzz-relay/src/chain_reader/`), the sponsor (`api/sponsor*`), `handlers/task_chain.rs`,
+- `docs/next-version/RECORD-V2.md`, the chain reader (`crates/buzz-relay/src/chain_reader/`), the sponsor (`api/sponsor*`), `handlers/task_chain.rs`,
   `handlers/agent_label.rs`, and the app's pot, project, money and earlier folders.
 
 Measured facts that shape every choice below:
@@ -41,7 +41,7 @@ Measured facts that shape every choice below:
 | Tests at `1fed95002` | 55 suites, 540 tests, 11 invariants, 124 mutations (123 killed, 1 equivalent) | step 2 report |
 | The Treasury's rule | `leave` burns **`msg.sender`'s own** Shares, exit notes are written to `msg.sender` | `Treasury.sol` 375 to 390 |
 | Protected grants | exist in the Vester (`grant(member, amount, true)`), **no caller makes one** (the Treasury passes `false`); they start at the grant's own time, not at birth | `Vester.sol` 122 to 141 |
-| Passkey account | sends a batch of calls as one operation, one passkey prompt (`sendCalls`) | `PHONE-PATH-REPORT.md` |
+| Passkey account | sends a batch of calls as one operation, one passkey prompt (`sendCalls`) | `docs/next-version/PHONE-PATH-REPORT.md` |
 | Sponsor | an operation is an "exit", never refused by a limit, only when **every call** is `leave` or `leaveTeam` on a followed Treasury | `api/sponsor/calldata.rs` `is_exit` |
 | App entry chunk | 434,834 of 450,000 bytes | phone path report |
 
@@ -497,7 +497,7 @@ Team Share claims only the surplus is the contract's, and the page says so from 
 
 ## 4. The server (S1)
 
-All of it additive inside record version 2 ("adding a field never changes the version", `RECORD-V2.md` section 1). No new
+All of it additive inside record version 2 ("adding a field never changes the version", `docs/next-version/RECORD-V2.md` section 1). No new
 event kind, no new relay rule for pause or earlier grants.
 
 ### 4.1 Events the reader takes in
@@ -554,7 +554,7 @@ that key `null`, logs one error line naming project and key, and signs the rest)
 | `pause.since` | int or null | when it began: `pausesFrom` while paused | arithmetic on the two views | | |
 | `pause.parkerCount` | int | accounts with parked Shares, a count only, never a name | events | at most 1,000,000 | |
 
-No address of a parker, no per-person amount, no list. `RECORD-V2.md` gets a section 13 with these tables.
+No address of a parker, no per-person amount, no list. `docs/next-version/RECORD-V2.md` gets a section 13 with these tables.
 
 `earlierGrants` (`null` unless this project's key is the Launcher's `earlierKey`):
 
@@ -591,10 +591,10 @@ explore index or any page; the claimed row appears only in the `holders`/`grants
 The existing `contracts` object gains `pause` (address or null). `shares.backers` is unchanged and includes parked Shares.
 **Fixtures (changed after the review: the fixture is one deployment with one Launcher, and the switch is per deployment, so
 regenerating it with the switch on would delete the only switch-off replay).** The current fixture (`testdata/pot-run.json`,
-`pot-events.json`, `pot-abi.json`) and `record-v2-example.json` **stay as they are**, regenerated only when the contracts' events
+`pot-events.json`, `pot-abi.json`) and `docs/next-version/record-v2-example.json` **stay as they are**, regenerated only when the contracts' events
 table changes and then byte-identical in everything else (a test regenerates the default and compares). The same script gets a
 second, small run with its own Launcher (`HOLDER_PAUSE=1` and invented earlier settings): `testdata/pot-run-pause.json` and a second
-example `record-v2-example-pause.json` (a populated `pause` and `earlierGrants`); the first keeps `pause: null`, `earlierGrants: null`
+example `docs/next-version/record-v2-example-pause.json` (a populated `pause` and `earlierGrants`); the first keeps `pause: null`, `earlierGrants: null`
 and no `PauseReady`. Which test replays which: the existing replay tests keep the off case; new tests replay the pause run.
 All are produced by the scripts, never hand-edited; `chain-reader-example-check.py` (both examples) and the Rust test
 `the_table_is_the_forge_build` must pass.
@@ -848,7 +848,7 @@ the same with a wallet. The claim call data is built from the generated ABI, nev
   the passkey account (one operation each).
 - Playwright specs `pot-pause.spec.ts` and `pot-earlier-grant.spec.ts` at 390x844 with axe (pause card states, park, take back (inline),
   take out with parked Shares, the team's paused sentences, the claim page states including the fingerprint mismatch).
-- Docs: `TRY-IT.md` and `DEPLOY-TEST-NETWORK.md` say how to turn the switch on (`HOLDER_PAUSE=1`) and how to set the earlier
+- Docs: `docs/next-version/TRY-IT.md` and `docs/next-version/DEPLOY-TEST-NETWORK.md` say how to turn the switch on (`HOLDER_PAUSE=1`) and how to set the earlier
   settings, and that **both are off by default**.
 
 ---
@@ -902,7 +902,7 @@ killed once, result in the report. No real row anywhere: the report says how the
 
 Owns `crates/**` and, for this round only (I assign them, since W6 does not), `scripts/chain-reader-events.mjs`,
 `scripts/chain-reader-fixture.py`, `scripts/chain-reader-example-check.py`, `docs/next-version/RECORD-V2.md`,
-`docs/next-version/record-v2-example.json` and `record-v2-example-pause.json` (the examples are regenerated, not edited),
+`docs/next-version/record-v2-example.json` and `docs/next-version/record-v2-example-pause.json` (the examples are regenerated, not edited),
 **the new migration for the `pause` role and `schema/tables/public/chain_contracts.sql` (4.1; the review found no path owned
 them)**.
 Files: `chain_reader/events.rs` (roles), `events_table.rs` and `testdata/*` (generated), `ledger.rs`, `held.rs`, `explore.rs`,
@@ -919,8 +919,8 @@ the holding rule, the Team supply seed) with the named test failing, result in t
 
 ### A5: the app's screens for both, and the joined-up loop (app engineer, after S1)
 
-Owns `app/**`, `packages/**`, `web/**` (not touched), `scripts/pot-*.sh`, `scripts/phone-loop.sh`, and the two docs `TRY-IT.md`
-and `DEPLOY-TEST-NETWORK.md`.
+Owns `app/**`, `packages/**`, `web/**` (not touched), `scripts/pot-*.sh`, `scripts/phone-loop.sh`, and the two docs `docs/next-version/TRY-IT.md`
+and `docs/next-version/DEPLOY-TEST-NETWORK.md`.
 Files: section 5. New: `app/src/features/pause/` (`PauseCard.tsx`, `ParkSheet.tsx`, `TakeBackButton.tsx`, `pause-words.ts`,
 `use-pause.ts`, tests), `app/src/features/earlier-grant/` (`EarlierGrantPage.tsx`, `earlier-grant-state.ts`,
 `earlier-grant-words.ts`, `earlier-grant-consent.ts` (counsel's, provisional), tests), `app/tests/e2e/pot-pause.spec.ts`, `pot-earlier-grant.spec.ts`. Edited: `project/ProjectPage.tsx`,
@@ -963,7 +963,7 @@ the "no row of another person" filter, the disabled Draw and Plan presses while 
 | D19 | The helper pokes at most 6 times a day per project, once per 10 minutes, with a terminal state | Poke on every event (an unbounded loop) |
 | D20 | New app words: "park" and "pause" (plain), "Team Shares" kept where they must be named; no protocol words | "Hold" or "freeze" ("hold" is already "you hold"; "freeze" sounds like money is stuck) |
 | D21 | The claim page lives at `/earlier-grant`, lazy, only with the build settings; the old `/earlier` page stays behind the legacy flag | Reuse `/earlier` (two designs on one address) |
-| D22 | Ownership: K1 and K2 own all of `contracts/pot/**` (script, scripts, DEPLOYMENTS.md included); S1 owns the reader's scripts, `RECORD-V2.md`, the new migration and `schema/tables/public/chain_contracts.sql` for this round; A5 owns `TRY-IT.md` and `DEPLOY-TEST-NETWORK.md` | W6 does not name these |
+| D22 | Ownership: K1 and K2 own all of `contracts/pot/**` (script, scripts, DEPLOYMENTS.md included); S1 owns the reader's scripts, `docs/next-version/RECORD-V2.md`, the new migration and `schema/tables/public/chain_contracts.sql` for this round; A5 owns `docs/next-version/TRY-IT.md` and `docs/next-version/DEPLOY-TEST-NETWORK.md` | W6 does not name these |
 | D23 | Roles: the pause is a **new** role string `pause` (migration); the claim contract reuses the existing `earlier` string, unused by Rust until S1 adds `Role::Earlier` | Reuse `holder` for the pause (reserved for the old vote); a distinct new name for the claim contract (a second migration for nothing) |
 | D24 | The claim page's consent, permanence and end-date words live in one provisional, neutral, counsel-owned module; the claim press needs the text opened in the app and the build's text URL | Words written in the page (the first version; they are counsel's) |
 | D25 | Known tension recorded: a contract that parks Shares it holds counts as a holder (D2), where PLAN-V2's 18 November wording said "from a person's own wallet"; a contract with no `unpark` path traps its depositors' Shares and the sheet cannot fix that | Exclude contracts (cannot tell a smart account from a vault: the same reasoning as D2) |

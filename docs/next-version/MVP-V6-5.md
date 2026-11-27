@@ -1,5 +1,7 @@
 # v6.5: the simple MVP line
 
+> The line under "What the line is" (tasks and pay, a Pair) no longer holds on lite: `MVP-PLAN.md` replaces it.
+
 Written 26 November 2026 on branch `v6.5`. It starts at `v6` (`4c36f73d6`) and takes only what a simple first trial needs from
 `v7`. **The Council round (a Council that can hold the runner seat, seat elections, the replace vote, and their server and app
 parts, about 38,000 lines in 193 files) is not on this line.** It stays on `v7` and `council-wip`, switched off by default

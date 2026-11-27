@@ -775,8 +775,8 @@ Each finding from the three reviews was either fixed above or declined here with
 
 ## 14. Sources
 
-**In this tree:** `docs/PLAN-V2.md`; `docs/next-version/PLANV2-M4-REPORT.md`, `PLANV2-M7-REPORT.md`,
-`PLANV2-M8-REPORT.md`, `DIRECTION-REVIEW.md`, `EARLIER-BACKERS.md`; `contracts/next/src/*.sol` (line counts by `loc.py`, test
+**In this tree:** `docs/PLAN-V2.md`; `docs/archive/PLANV2-M4-REPORT.md`, `docs/archive/PLANV2-M7-REPORT.md`,
+`docs/archive/PLANV2-M8-REPORT.md`, `DIRECTION-REVIEW.md`, `docs/archive/EARLIER-BACKERS.md`; `contracts/next/src/*.sol` (line counts by `loc.py`, test
 families by `fam.py`); `crates/buzz-relay/src/handlers/launch_update_authority.rs`, `task_takes.rs`,
 `api/manager/cost.rs`; `crates/buzz-relay/src/chain_reader/`; `app/src/features/`.
 **Simulations** (none in the repo), all kept in a scratch folder outside the repository (a `v3/` folder there):

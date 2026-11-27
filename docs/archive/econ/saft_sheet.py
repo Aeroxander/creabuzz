@@ -1,5 +1,5 @@
 # Creaton's SAFT backers from the owner's old token sheet: how many of CREATE's 1,000,000,000 Shares, from where, and on
-# what release. Plain Python, standard library. Run: python3 -I docs/next-version/econ/saft_sheet.py
+# what release. Plain Python, standard library. Run: python3 -I docs/archive/econ/saft_sheet.py
 # Every number printed is SIMULATED (this script) unless the line says "sheet" (read from the owner's old sheet, totals
 # only), "measured" (a report) or "judgement". Economics lane, 18 November 2026. Replaces the guessed "about 1.2M at 6M"
 # of saft_backers.py and earlier_claim.py with the sheet's totals.

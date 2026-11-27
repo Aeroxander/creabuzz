@@ -5,7 +5,7 @@ Written by the last builder of the round (the app engineer, package A5), 21 Nove
 with play dollars, with a software passkey and in Chromium. **No real phone, no real passkey, no real network and no real money was
 used, and no person has tried any of it.** Nothing here is legal or tax advice, and no sentence of the app was written by counsel.
 
-The decided design (`JOIN-LEAVE-DESIGN.md`) is unchanged: nobody votes, joining is fast, leaving is easy any day, and nothing promises a
+The decided design (`docs/next-version/JOIN-LEAVE-DESIGN.md`) is unchanged: nobody votes, joining is fast, leaving is easy any day, and nothing promises a
 profit. This round built what the final audit found still buildable. **With the pause switch off and no earlier-grant settings (the
 default of every deployment) the contracts behave exactly as verified at 1fed95002 and every earlier test passes unchanged.**
 
@@ -71,7 +71,7 @@ the loops below run its relay.
   the alerts. The record's own `holders[]` (server side) already counts them.
 - **The loops**: `scripts/pot-full-loop.sh` gains two worlds (section 2), `scripts/pot-earlier-list.mjs` makes the invented list,
   `app/tests/anvil/passkey-pause.test.ts` joins `scripts/phone-loop.sh`, and `app/tests/anvil/pot-chain.ts` can deploy with either switch.
-- **Docs**: `TRY-IT.md` parts 4.8 and 4.9, `DEPLOY-TEST-NETWORK.md` step 2b and the build settings, `PLAN-V2.md` milestone 9 and a row for step 4.
+- **Docs**: `docs/next-version/TRY-IT.md` parts 4.8 and 4.9, `docs/next-version/DEPLOY-TEST-NETWORK.md` step 2b and the build settings, `PLAN-V2.md` milestone 9 and a row for step 4.
 
 ## 2. What ran, with exact results
 
@@ -396,7 +396,7 @@ Against the third verification: three test-only failures, nine test gaps and thr
 | G7 warning-day rule | already covered by the second round (cases that change the day and pausesFrom together); checked again | day rule out: `each_rule_of_the_pause_key_leaves_it_null_when_broken` fails |
 | G8 the "crowded" guard | new `a_payment_that_sixty_four_confirms_already_name_has_paid_enough`: 63 stored confirms for one task paid elsewhere let the next confirm through, 64 refuse it (the other-task count alone would not) | guard out: fails; new `only_a_task_that_names_no_helper_offers_its_pay_to_the_helper_limit` for the task-helper early return: early return out, fails |
 | G9 the lock test depended on timing | the test no longer runs 32 rounds hoping for the race. Each of the three confirms waits at `box_seam::counted` (after its count, before its store, inside the lock) until all three are there, or one second passes. With the lock only one can be there; without it all three arrive together and all are stored. One round, about 2 seconds | each confirm given a lock of its own: fails, every time |
-| O2 | section 7.4 and 8.4 now say the same true thing about "Start the day" for a passkey person: the sponsor lets it through (the pause is on its allow list by address); it is an ordinary operation, so it counts against the daily limits and can be refused by one, which a Take out never is. New `sponsor::tests::a_start_the_day_poke_is_allowed_and_counts_like_any_other_operation`. `DEPLOY-TEST-NETWORK.md` says in one sentence that the "Paid" check on box payments works only where the server's chain reader is on. The header of `post-events.ts` already said a repost has empty content and an `e` tag (corrected in the second round); nothing more to change | |
+| O2 | section 7.4 and 8.4 now say the same true thing about "Start the day" for a passkey person: the sponsor lets it through (the pause is on its allow list by address); it is an ordinary operation, so it counts against the daily limits and can be refused by one, which a Take out never is. New `sponsor::tests::a_start_the_day_poke_is_allowed_and_counts_like_any_other_operation`. `docs/next-version/DEPLOY-TEST-NETWORK.md` says in one sentence that the "Paid" check on box payments works only where the server's chain reader is on. The header of `post-events.ts` already said a repost has empty content and an `e` tag (corrected in the second round); nothing more to change | |
 
 ### 10.2 Not done
 

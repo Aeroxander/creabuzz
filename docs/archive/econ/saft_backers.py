@@ -1,5 +1,5 @@
 # Creaton's SAFT backers (about 1.2M at a 6M valuation): where their CREATE Shares come from and when they free.
-# Plain Python, standard library. Run: python3 -I docs/next-version/econ/saft_backers.py
+# Plain Python, standard library. Run: python3 -I docs/archive/econ/saft_backers.py
 # Every number printed is SIMULATED (this script) unless the line says "measured" or "judgement".
 #
 # Facts from the owner (18 November 2026): about 1,200,000 dollars from a few VCs and angels, a SAFT with an old LLC,

@@ -3,7 +3,7 @@
 Status: **built, 17 November 2026** (contracts only), branch `v4-governance-rework`, after the owner's go: section "Contract
 changes" and the contract rows of "Tests to add", with the recommended answers to questions 3 to 6. Not built: the "earlier
 backers" step (the owner said earlier backers use Give Shares), the app and the server. What was built, measured and gated:
-`docs/next-version/PLANV2-M4-REPORT.md`, section "Founder-set prices: built". One change after the review: project zero
+`docs/archive/PLANV2-M4-REPORT.md`, section "Founder-set prices: built". One change after the review: project zero
 is named by its key (`nameProjectZero`), not by a zero stake address, so no other project can launch without the stake
 (see "Contract changes" and "App changes" below for the review's notes). The design as first written follows. It
 answers the owner's "Creaton did raise at a 6m valuation, so we would need to have founders be able to set it, as Creaton
@@ -11,7 +11,7 @@ will be project zero", and the earlier ask for "a smooth way to up the valuation
 improvements". It is the judge's merge of three designs (economist, attacker, project zero). Plan of record:
 `docs/PLAN-V2.md`; this would be its decision 7.
 
-Labels: **(measured)** names a report; **(simulated)** names a script in `docs/next-version/econ/`; **(judgement)** is a
+Labels: **(measured)** names a report; **(simulated)** names a script in `docs/archive/econ/`; **(judgement)** is a
 choice. `founder_price_judge.py` is this note's own script; `founder_price.py`, `founder_price_zero.py` and the attacker's
 `founder_price_attacks.py` (scratchpad, not in the repo) are the designers'. "Price" below always means the price for the
 whole project: dollars for all 1,000,000,000 Shares.
@@ -67,7 +67,7 @@ reserve sales from the last end price, the 365-day hold, the 3% fee and 2% stake
 - *Demand step and 2x hand raise* (the lead's starting point). **Dropped on chain** (all three agree), kept as app chips.
 - *Earlier raise.* The project-zero design adds a new on-chain "earlier backers" list from the backing Shares. **Use the
   work pot gift that is already built** (no contract change); the new list stays an owner option (questions 2).
-  **Superseded (18 November 2026):** the owner chose the on-chain list for project zero; see `EARLIER-BACKERS.md`
+  **Superseded (18 November 2026):** the owner chose the on-chain list for project zero; see `docs/archive/EARLIER-BACKERS.md`
   section 11.
 
 ## Creaton as project zero and earlier raises
@@ -76,10 +76,10 @@ reserve sales from the last end price, the 365-day hold, the 3% fee and 2% stake
   Shares per raw dollar): 10,000 alone buys 1.67M Shares (0.17%), 50,000 with a second person 8.33M (0.83%); the other
   141.7M backing Shares join the reserve when the market opens (built: `returnUnsold`) (simulated, `founder_price_judge.py` 1).
   **Superseded for project zero (18 November 2026):** those 141.67M go to the earlier backers' claim at launch; Creaton
-  keeps 8,333,333.33 backing Shares for its rounds (`EARLIER-BACKERS.md` section 11).
+  keeps 8,333,333.33 backing Shares for its rounds (`docs/archive/EARLIER-BACKERS.md` section 11).
 - Later Creaton rounds pre-fill 6,000,000; a raise is one chip.
 - **Earlier backers** (money raised before the platform; **superseded for project zero** by the claim contract of
-  `EARLIER-BACKERS.md` section 11, still the path for any other founder): the runner gives each one Shares from the work
+  `docs/archive/EARLIER-BACKERS.md` section 11, still the path for any other founder): the runner gives each one Shares from the work
   pot with the built Give Shares (`Treasury.giveShares`). Before a market these go to the Vester on the same 365-day clock, cannot be
   refunded, and only free when the market opens. Shares = dollars x 1,000,000,000 / the price they paid; the app works it
   out. No fee: the money never passed through the platform. The server keeps a signed "raised before Creaton: X at Y,
@@ -204,11 +204,11 @@ Re-pin: the 3,000-Shares price test becomes the range tests above; guard-list en
 
 1. **Creaton's earlier raise.** *Answered 18 November 2026:* 1,229,957 dollars from 21 entries under SAFTs with an older
    company, at 2.2M (seed) and 5.06M (private) for the whole project, 4.26M blended; not at 6M. The "raised at 6M" above
-   is wrong. See `docs/next-version/EARLIER-BACKERS.md`.
+   is wrong. See `docs/archive/EARLIER-BACKERS.md`.
 2. **Over 300,000, so the work pot cannot hold it.** *Answered 18 November 2026:* keeping their percent is 288.68M Shares
    (simulated), more than the whole work pot. Recommended now: a claim contract funded at project zero's launch from
    unused backing first, then the founder's grant, with a signed SAFT replacement per backer. Design and the remaining
-   owner questions: `docs/next-version/EARLIER-BACKERS.md`.
+   owner questions: `docs/archive/EARLIER-BACKERS.md`.
 3. **Price range 333,333 to 50,000,000?** *Recommended:* yes.
 4. **Down rounds allowed with a warning and a notice to earlier backers?** *Recommended:* yes; the ban traps solo founders.
 5. **Auction start chosen by the runner, minimum = all 250M at that start** (Creaton 1,500,000 at 6M, or 600,000 at 2.4M)?

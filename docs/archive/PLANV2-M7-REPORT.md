@@ -207,7 +207,7 @@ What it needs from others (nothing here can be built without them):
    fork tests use will not work, and a fork at the head was not tried in this run. If the network refuses, the item
    stays open with the error; no work-around was made.
 3. **Wind down after a market is not offered**, because the Launcher requires a Council runner for it and Council is
-   milestone 9. See `DIRECTION-REVIEW.md` for whether Council is still the plan.
+   milestone 9. See `docs/next-version/DIRECTION-REVIEW.md` for whether Council is still the plan.
 4. **Waiting calls older than the scan window are invisible.** The Pair's proposals are found by reading its `Proposed`
    logs back through the person's wallet, at most 50,000 blocks (about 7 days at 12 seconds). Older proposals never expire
    on the chain but stop being listed; the card says the list may be incomplete. The record carries no Pair signers,

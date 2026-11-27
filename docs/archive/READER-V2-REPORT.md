@@ -246,7 +246,7 @@ mined them into 2 or 3 blocks depending on timing. The run then had 86 or 87 blo
 and refuses a longer promise. They were set to 5 to 86400 in the closing work and to **5 to 43200** in round four (see "Review fixes, round
 four"): the app calls a record stale once it is older than a day, so a server set to a day would show every record stale for part of each
 cycle. (`settings.rs`: `MIN_REFRESH_SECS`, `MAX_REFRESH_SECS`; test `config::tests::the_chain_refresh_settings_end_at_half_a_day`.)
-`RECORD-V2.md` section 6 says so.
+`docs/next-version/RECORD-V2.md` section 6 says so.
 
 ### 3. Migration 0070: the Team token's role, Team Share balances, the helper's call names
 
@@ -290,7 +290,7 @@ told to post its weekly update first, no model call is made); the first join wit
   (`AgentSeen::probably_live`: last `AgentSet` was on, and no `RunnerChanged` since: a hand-over switches agents off without an
   event), then the rest, each group by address, 100 read. The 50 listed are the live ones by the views first, then by address, as
   before; `truncated` says when one was left out. The ledger has a new field `under_runner` for this.
-- **Spec:** `RECORD-V2.md` sections 2.9 and 2.10 say the cut is deterministic and how.
+- **Spec:** `docs/next-version/RECORD-V2.md` sections 2.9 and 2.10 say the cut is deterministic and how.
 - **Tests** (`views_tests.rs`, `ledger_tests.rs`): finished grants never take a place from an unfinished one (230 finished before 20
   live); 300 unfinished grants are cut to ids 0 to 199 whatever the insertion order; 120 switched-off and 15 handed-over agents with low
   addresses do not push 30 live ones out of the 100 read, and the rest are the lowest addresses; an agent is live only until the
@@ -366,7 +366,7 @@ for the server side too. The lead decided each; nothing else changed.
 ### Fixed
 
 1. **G4, the `lastSettle` guard has a test that fails without it.** `Ledger::mismatches` names `lastSettle` when the ledger's last settle
-   is later than the view's (RECORD-V2.md 4.3), and says nothing when the view's is later (a settle that moves nothing emits no
+   is later than the view's (docs/next-version/RECORD-V2.md 4.3), and says nothing when the view's is later (a settle that moves nothing emits no
    `Settled`). New test `chain_reader::ledger::tests::a_ledger_settle_later_than_the_views_is_a_mismatch_and_an_earlier_one_is_not`, on
    the real run's ledger: the view's last settle one second before the ledger's gives exactly one mismatch (`lastSettle`, with both
    values), one second after gives none. With the guard replaced by `if false` the test fails ("only lastSettle differs: []", left 0,
@@ -375,7 +375,7 @@ for the server side too. The lead decided each; nothing else changed.
    a record stale once it is older than a day, so a server set to a day would show every record stale for part of each cycle. A larger
    setting is refused when the server starts, in the same way as before (the message says "from 5 to 43200"). The test is now
    `config::tests::the_chain_refresh_settings_end_at_half_a_day`: 5 and 43200 are accepted for each of the two settings; 4, 43201, 86400
-   (the former ceiling) and 604800 are refused naming the setting and its range. `RECORD-V2.md` section 6 says what the server allows
+   (the former ceiling) and 604800 are refused naming the setting and its range. `docs/next-version/RECORD-V2.md` section 6 says what the server allows
    (5 to 43200; with `MAX_REFRESH_SECS` put back to 86_400 the test fails at the `config.rs` assertion) and that the app's own rule does not change (it accepts a stated refresh of 5 to 86400 and calls a record stale after a
    day). The item is gone from "Still open" in both reports. (The earlier report `PLANV2-M5-REPORT.md`, which belongs to another track,
    still names its own older range and was not touched.)
@@ -390,7 +390,7 @@ for the server side too. The lead decided each; nothing else changed.
 
 ### Still open
 
-- `PLANV2-M5-REPORT.md` (another track's file) still lists the old range for `BUZZ_CHAIN_REFRESH_SECS`; this report and `RECORD-V2.md` are the
+- `PLANV2-M5-REPORT.md` (another track's file) still lists the old range for `BUZZ_CHAIN_REFRESH_SECS`; this report and `docs/next-version/RECORD-V2.md` are the
   current word.
 - The four calls anyone may make that the helper did not build (`applyRate()`, `Vester.execute`, `Vester.burnAfterWindDown`,
   `Treasury.windDown()`): three are built in the launch round (end of this file); `Treasury.windDown()` stays a person's press.
@@ -434,8 +434,8 @@ record from the events and the contracts' views. `contracts/pot` is not edited. 
 | The arrival formula fix (plan 1.2 a) and the return of tasks that ran out, last (1.2 b) | `record.rs::roll_forward`, `record.rs::validate` |
 | The record types of the `tasks` section, the cut, the next date, the amount a take sets aside, the section's builder | `record_tasks.rs`; `Record.tasks`, `LedgerRec`, `TotalsRec` in `record.rs` |
 | The views of the book and of the rows the record lists, in a second batch at the same block | `views.rs` (`BookViews`, `TaskView`) |
-| The fixture with the tasks scenario, and `record-v2-example.json` as the server's own output for it at one named block | `scripts/chain-reader-fixture.py`, `testdata/pot-run.json`, `docs/next-version/record-v2-example.json` |
-| The spec | `RECORD-V2.md` (sections 2.3, 2.10, 2.12, 3, 4.2, 7, and the new section 10) |
+| The fixture with the tasks scenario, and `docs/next-version/record-v2-example.json` as the server's own output for it at one named block | `scripts/chain-reader-fixture.py`, `testdata/pot-run.json`, `docs/next-version/record-v2-example.json` |
+| The spec | `docs/next-version/RECORD-V2.md` (sections 2.3, 2.10, 2.12, 3, 4.2, 7, and the new section 10) |
 
 The scenario the fixture plays on project A (all on the real unit of 7 days, each transaction at an exact time): a task announced and withdrawn
 (day 20); a task taken and paid in part (60%) with a leaver's note, claimed by the leaver; an open task taken by a stranger and sent back, its
@@ -525,7 +525,7 @@ app engineers' fixtures and parsers need nothing from M2 and M3.
 | **Bounded work per project**, measured on the production read: a book with 8 open tasks and 200 ended ones, each note held by 30 accounts, asks for 32 `taskOf`, 160 `noteOf`, 8 `claimableNote` and the book's twelve calls once each; the record lists 8 + 24 rows, says it left 176 note rows out, is `truncated`, and is far below 300 KB | `task_checks_tests.rs` (the counting node) |
 | **The publish path.** A failed task check keeps the project's previous record (every money field of the project freezes with it, which the app's age rules say), logs the task, the field and both values at error level, and the project is signed again once the contract and the events agree. A pass that takes longer than half the shortest refresh time logs an error (plan 1.5, the alarm for folding the per-holder notes into a running-totals table) | `mod.rs::publish_pass`, `pass_is_slow` |
 | **The refresh rule.** 600 seconds while any task is open (it was already built at M1), and `refresh_every` never promises more than the settings' ceiling of 43200 | `numbers.rs::refresh_every` |
-| **The spec.** `RECORD-V2.md`: section 6 (the rule and the ceiling), 2.2, 7.3 (the totals identity with `paidToWorkers` and `noteClaims`, the extra checks of the example), 9 (S4), and section 10.4 and 10.5 (what the server checks, what a build costs the node). `PLANV2-M5-REPORT.md`: the "removed" pointer where the config table named the old 60-second-to-7-day range | `docs/next-version/` |
+| **The spec.** `docs/next-version/RECORD-V2.md`: section 6 (the rule and the ceiling), 2.2, 7.3 (the totals identity with `paidToWorkers` and `noteClaims`, the extra checks of the example), 9 (S4), and section 10.4 and 10.5 (what the server checks, what a build costs the node). `PLANV2-M5-REPORT.md`: the "removed" pointer where the config table named the old 60-second-to-7-day range | `docs/next-version/` |
 | **The example block against `cast call`s**, field by field, by a script that reads only the example file and asks the chain itself | `scripts/chain-reader-example-check.py` |
 
 ### Chosen under the owner's standing go; the owner may overrule
@@ -695,13 +695,13 @@ and the record documents. `contracts/pot` is unchanged (`git diff a8208c2c6..HEA
 
 | Finding | What was wrong | What was done | The test that fails without it |
 |---|---|---|---|
-| Record review I1 (IMPORTANT) | The settled `locked` and `arriving` were worked forward by the server and only `boxCap` (a floor division on the sum, zero at a rate of zero) and `activeNow` were held to the contract. The step 1 arrival formula gave a pot one unit off at 55 of the reviewer's 7,155 blocks and `boxCap` would have missed 54 of them. | `quoteBack(1 dollar)` joins the first batch of views; `numbers::build` requires the worked-forward `locked` and `arriving` to equal its `lockedLine` and `arrivingLine` exactly (with those two exact the settled pot and box together are exact). The fixture generator asks the same call and the fixture was regenerated (7 new answers, one for each book; nothing else moved, and the example record is byte for byte the same). `RECORD-V2.md` says so. | `task_checks_tests::the_settled_locked_and_arriving_lines_are_held_to_the_contract_exactly`: every book of the run, each line one unit up and down, the refusal names the field and both values. |
+| Record review I1 (IMPORTANT) | The settled `locked` and `arriving` were worked forward by the server and only `boxCap` (a floor division on the sum, zero at a rate of zero) and `activeNow` were held to the contract. The step 1 arrival formula gave a pot one unit off at 55 of the reviewer's 7,155 blocks and `boxCap` would have missed 54 of them. | `quoteBack(1 dollar)` joins the first batch of views; `numbers::build` requires the worked-forward `locked` and `arriving` to equal its `lockedLine` and `arrivingLine` exactly (with those two exact the settled pot and box together are exact). The fixture generator asks the same call and the fixture was regenerated (7 new answers, one for each book; nothing else moved, and the example record is byte for byte the same). `docs/next-version/RECORD-V2.md` says so. | `task_checks_tests::the_settled_locked_and_arriving_lines_are_held_to_the_contract_exactly`: every book of the run, each line one unit up and down, the refusal names the field and both values. |
 | Relay review IMPORTANT 1 | A plan that was over but not settled (its window or deadline past, nobody had called the Treasury) won the lowest-serial choice, was then judged "over", and so hid a live later plan of the same record: a `confirm` and a `cancel` that should be refused were accepted, and a `take` of the live plan was refused as ended. | `plan_of` treats a row that is not paid and is past its end as ended for the choice and takes the next live serial; when no row is live the lowest over one is still the plan (a take of it is refused with words, as before); a paid row binds for ever. | `task_chain::tests::a_plan_past_its_end_does_not_hide_a_live_later_plan_of_the_same_record`; Postgres `a_plan_past_its_end_that_nobody_settled_does_not_hide_a_live_repeat_of_the_same_record` (the reviewer's 1a, 1b, 1d; 1c is the same decision for a taken plan, covered by the unit test). |
 | Relay review IMPORTANT 2 | A `confirm` of a paid plan only compared the payment's transaction; a team that planned its own wallet as payee, took it and paid itself could record that as the named worker's paid task. | `enforce` reads the worker's own `take` and `accept` steps of the task (`task_takes::stored_pay_to`, the same rule as the app's `payToOf`: all steps the worker signed, two different wallets read as none) and `decide_chain` refuses with `PAID_ELSEWHERE` unless it equals the wallet that took the plan on the network. A worker who named none is refused too (a planned task has a named wallet by C4 and C35). `enforce` takes a `StepOn` (step, task id, worker) so the signature stays small. | `task_chain::tests::a_confirm_of_a_paid_plan_needs_the_wallet_the_worker_named`; `task_takes::tests::the_wallet_a_worker_named_is_the_one_they_all_agree_on`; Postgres `a_confirm_is_refused_when_the_network_paid_a_wallet_the_worker_never_named` (another wallet: refused; none: refused; the wallet that was paid: accepted). The two older confirm tests now have the worker take first, naming the paid wallet. |
 | Fit review IMPORTANT 1 | A take, accept, confirm or cancel of a planned task scanned the project's whole task book twice and read every stored block of the reader for `max(block_time)`. | Migration 0072 (and `schema/`): two partial indexes, `idx_chain_logs_task_what` (the announced rows of one task record) and `idx_chain_logs_task_serial` (the takes and resolutions of a serial), neither holding the notes. The newest block is read as `ORDER BY number DESC LIMIT 1` through the primary key. The three queries are constants shared by the code and the test. | Postgres `the_plan_reads_use_their_indexes_and_never_scan_every_block` (with sequential scans off and the general indexes out of the way the plan must use the new indexes and the primary key; with `idx_chain_logs_task_what` dropped it fails, tried); `buzz-db` `chain_task_lookup_indexes_migration_matches_the_desired_schema`; the migration count is 72; the Postgres migration test checks both indexes in a migrated and in a schema-made database. |
 | Relay review OPTIONAL 3 / fit review OPTIONAL 5 (`PLANS_READ`) | A record announced 65 times: the old cut read 64 rows and, if all had ended, said "no plan", switching every rule off for a live 65th. | The lookup reads 65 rows and fails (a server fault, the write is refused) when there are more than 64. | Postgres `a_record_announced_more_often_than_the_lookup_reads_is_refused_not_guessed_at`, and `a_plan_that_ended_unpaid_is_followed_by_the_live_repeat_of_the_same_record` (a sent-back plan and a live repeat; with the read cut to one row it fails). |
 | Fit review OPTIONAL 5 (the 28-day boundary, the four quiet rows, `atMostNow` at the second a take window ends) | Three guards no test bound: moving each constant or comparison changed nothing that failed. | Tests with literal numbers on the production path. | `record_tasks::tests::an_ended_row_is_kept_for_28_days_to_the_second`; `..the_ended_rows_keep_every_row_with_notes_first..` now says 4 and 29 as numbers and asserts `MAX_QUIET_ROWS == 4`; `..at_most_now_stops_at_the_second_a_take_window_ends`. |
-| Record review OPTIONAL 5 | The `atMostNow` line in `RECORD-V2.md` said "the most a take at `asOf.time` would set aside" although a take is refused while the notice runs. | The line now says it is shown during the notice so holders see what would be set aside. | docs only |
+| Record review OPTIONAL 5 | The `atMostNow` line in `docs/next-version/RECORD-V2.md` said "the most a take at `asOf.time` would set aside" although a take is refused while the notice runs. | The line now says it is shown during the notice so holders see what would be set aside. | docs only |
 
 Scratch tests of the server side: `crates/buzz-relay/tests/review-s2-live.rs` (the record reviewer's live-chain walk) is **deleted**. It needs a Python chain driver that lives outside the repository (random
 walks of the real contracts on a fresh anvil) and the reader's whole scan path against it; its finding is now the fixture test above, and its live path (real scan, real views, `derive` at every
@@ -780,7 +780,7 @@ three source files compare equal to their backups by sha256). The index guard wa
 
 ## Step 3, package P1: the record's social keys and the ranking index (server, 20 November 2026)
 
-The plan is `docs/next-version/STEP3-PLAN.md` (sections 2, 3 and 9.2); the spec is `RECORD-V2.md` section 11. Nothing in `contracts/pot` changed; the
+The plan is `docs/archive/STEP3-PLAN.md` (sections 2, 3 and 9.2); the spec is `docs/next-version/RECORD-V2.md` section 11. Nothing in `contracts/pot` changed; the
 record stays version 2 with four new keys and one new signed index.
 
 ### The two leftovers of step 2
@@ -801,7 +801,7 @@ record stays version 2 with four new keys and one new signed index.
 | The ranking index (`explore_of`, the tie to a coordinate, the standing, `publish`) and the five columns written beside each signed record | `chain_reader/explore.rs`, `store.rs` (`RankingColumns`, one statement) |
 | `publish_project` counts the two windows (a database error leaves `held` null and is tried again at the next build), `publish_pass` builds the index at most every 600 s; the pass report gains `social_failed`, `held_cut`, `explore_signed`, `explore_failed` | `chain_reader/mod.rs` |
 | Migration 0073 and the desired-state files: `idx_chain_balance_changes_block (reader, project_key, token, block_number, log_index)`, `idx_chain_blocks_time (reader, block_time)`, five nullable columns on `chain_project_numbers` | `migrations/0073_chain_held_indexes.sql`, `schema/tables/public/{chain_balance_changes,chain_blocks,chain_project_numbers}.sql` |
-| The fixture run gains a dip (the second backer sends half its Shares to the first on day 41, the first sends them back on day 55) and a late buyer (the first backer gives 2 percent of its Shares to a third account on day 88); the example is regenerated | `scripts/chain-reader-fixture.py`, `testdata/pot-run.json`, `record-v2-example.json` |
+| The fixture run gains a dip (the second backer sends half its Shares to the first on day 41, the first sends them back on day 55) and a late buyer (the first backer gives 2 percent of its Shares to a third account on day 88); the example is regenerated | `scripts/chain-reader-fixture.py`, `testdata/pot-run.json`, `docs/next-version/record-v2-example.json` |
 | An independent recomputation of the four keys from the raw logs and the chain's own balances, run on the example (222 checks) and at every stop of the loop | `scripts/chain-social-recompute.py`, used by `chain-reader-example-check.py` and `chain-loop-pot-check.py` |
 
 ### Chosen under the owner's standing go; the owner may overrule
@@ -865,8 +865,8 @@ Each edit was made in the production file, the tests were run, and the file was 
 
 ## Step 3, package P3: web push alerts and the sponsored-fee limit (server, 20 November 2026)
 
-The plan is `docs/next-version/STEP3-PLAN.md` (section 6 and the tests P1 to P16 and K1 to K9 of 9.2); the operator's page is `docs/web-push-deployment.md`;
-what the app reads is `RECORD-V2.md` section 12. Nothing in `contracts/pot` changed and no record changed: this package adds one migration, a module,
+The plan is `docs/archive/STEP3-PLAN.md` (section 6 and the tests P1 to P16 and K1 to K9 of 9.2); the operator's page is `docs/web-push-deployment.md`;
+what the app reads is `docs/next-version/RECORD-V2.md` section 12. Nothing in `contracts/pot` changed and no record changed: this package adds one migration, a module,
 two paths and two keys of the information document. **Both services are off unless the operator names what they need, and neither is on in a plain
 deployment.**
 
@@ -991,7 +991,7 @@ upstream request is ever printed; `forward` returns nothing but its own status) 
   (what `sub.toJSON()` gives; other fields such as `expirationTime` are ignored) and the header `Authorization: Nostr <base64 of a kind 27235 event>` whose tags are `u` (the full address,
   `https://<host>/push/web`), `method` (`PUT`) and `payload` (the SHA-256 hex of exactly the body bytes sent). "Turn off" is `DELETE /push/web` with `{"endpoint": "..."}` signed the same
   way (method `DELETE`), then `await sub.unsubscribe()`; no body removes every device of the account. Renew (a `PUT` again) when the device's row is older than 30 days. Answers are in
-  `RECORD-V2.md` 12.2. Alerts reach only an account that has linked the wallet that holds Shares; say so in the card (the opt-in text is the plan's section 7.8).
+  `docs/next-version/RECORD-V2.md` 12.2. Alerts reach only an account that has linked the wallet that holds Shares; say so in the card (the opt-in text is the plan's section 7.8).
 - **The worker reads `{"v":1,"k":"planned"|"taken"|"ended","r":"<link ref>"}`** and nothing else (`web_push/mod.rs`, `message`; `Kind::as_str`). For the cross-language check (X3): the three words are
   `Kind::as_str`, and the sponsor's two refusal sentences are `api::sponsor::{LIMIT_EXCEEDED, NOT_ALLOWED}` with the words the app's classifier holds in `APP_WORDS` (the app's own regex is
   `looksLikePolicyDenial` in `packages/creaton-core/src/aa/zerodev.ts`).
@@ -1186,7 +1186,7 @@ caps (the calls' half of the day) that all calls share:
 
 ### What is not sent, on purpose
 
-- **`Treasury.windDown()` after 26 quiet units is not sent.** `JOIN-LEAVE-DESIGN.md` says "any holder can announce a wind-down" at 182 days
+- **`Treasury.windDown()` after 26 quiet units is not sent.** `docs/next-version/JOIN-LEAVE-DESIGN.md` says "any holder can announce a wind-down" at 182 days
   quiet (line 353) and `windDown()` is "anyone after 26N quiet" (line 634); it never says the server does it, and ending a project is not a routine. It stays in
   the forbidden list of `calls_tests.rs`, and the database does not allow a stored `treasury.windDown`. The app already offers that press to anyone
   who is not the project's runner or Pair once the quiet time has passed: `app/src/features/seat/SeatSection.tsx` (`canQuietWindDown`, the

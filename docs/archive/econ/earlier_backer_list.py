@@ -1,7 +1,7 @@
 # Creaton's earlier backers: is the owner's list ready to send private links? Plain Python; openpyxl only to read the
 # sheet. App and server lane, 18 November 2026.
 #
-# Run: python3 -I docs/next-version/econ/earlier_backer_list.py <the owner's sheet.xlsx> [<private out.csv>]
+# Run: python3 -I docs/archive/econ/earlier_backer_list.py <the owner's sheet.xlsx> [<private out.csv>]
 #
 # PRIVACY: the sheet holds backer names, amounts and wallet addresses. This script PRINTS COUNTS ONLY. The optional
 # second argument writes the cleaned list (one row per entry, with what each needs before a link can go out) to a file

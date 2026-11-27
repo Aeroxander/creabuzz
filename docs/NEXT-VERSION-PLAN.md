@@ -315,8 +315,8 @@ Read in code, nothing run:
 ## Milestone 1 findings (16 November 2026)
 
 Built in `contracts/next` (a separate Foundry project; the existing contracts are untouched). Report:
-`docs/next-version/M1-REPORT.md`; facts read from the vendored code and checked on Sepolia:
-`docs/next-version/M1-FACTS.md`. Everything below was run (96 tests at the last count, on a local copy of the Uniswap code and on a Sepolia
+`docs/archive/M1-REPORT.md`; facts read from the vendored code and checked on Sepolia:
+`docs/archive/M1-FACTS.md`. Everything below was run (96 tests at the last count, on a local copy of the Uniswap code and on a Sepolia
 fork against Uniswap's real pool manager, position manager and trade router) unless it says "outside knowledge".
 
 - **Section 8, row 1 is proven.** Sale, then pool, then a trade works, with exact balances at each step, with the dollar
@@ -382,7 +382,7 @@ earlier versions).
 ## Milestone 2 findings (16 November 2026)
 
 Built in `contracts/next` (`ShareToken`, `Vester`, `Treasury`, `Launcher`, `RollingCap`); 159 new tests, 206 in all, 0 failed. Report:
-`docs/next-version/M2-REPORT.md`. Where this plan was wrong or loose:
+`docs/archive/M2-REPORT.md`. Where this plan was wrong or loose:
 
 - **Section 4, anti-drain rule 2, is exact only for small holders.** The 4% of an exit that stays "for those who remain" also reaches the
   leaver's own remaining Shares, so exiting in many pieces recovers part of the fee: 20% holder +0.43% in 100 exits, 80% holder +2.4% in 400
@@ -401,7 +401,7 @@ Built in `contracts/next` (`ShareToken`, `Vester`, `Treasury`, `Launcher`, `Roll
 
 ## Milestone 3 findings (16 November 2026)
 
-Built in `contracts/next` (`Launcher` replaced, `Finisher`, `LiquidityHolder`, `Pinned`, two additions to `Treasury`). Report: `docs/next-version/M3-REPORT.md`.
+Built in `contracts/next` (`Launcher` replaced, `Finisher`, `LiquidityHolder`, `Pinned`, two additions to `Treasury`). Report: `docs/archive/M3-REPORT.md`.
 Everything below was run on a local copy of Uniswap and on the real Uniswap contracts on a Sepolia fork unless it says otherwise. Where this
 plan was wrong or loose:
 

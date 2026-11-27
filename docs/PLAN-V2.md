@@ -7,7 +7,7 @@
 > legal line, the chain reader and the signed project numbers (now record version 2), the app's shell and sign-up,
 > the Team, the agent limits and manager, and seasons. The status table in section 9 below says, milestone by
 > milestone, what was built, what was replaced, and what is not built. The reports are in `docs/next-version/`
-> (`STEP1-REPORT.md`, `STEP2-SERVER-APP-REPORT.md`, `STEP3-REPORT.md` and the milestone reports they name).
+> (`docs/archive/STEP1-REPORT.md`, `docs/archive/STEP2-SERVER-APP-REPORT.md`, `docs/archive/STEP3-REPORT.md` and the milestone reports they name).
 > The "Status" line just below and the old status sentence in section 9 are out of date; the plan text itself is kept
 > as it was written.
 
@@ -347,14 +347,14 @@ replaces here. Report names are in `docs/next-version/`.
 
 | # | Built | Replaced by the new model | Declined or not built | Report |
 |---|---|---|---|---|
-| 4 Money rules | Rounds, the Launcher rewrite, Treasury, Vester, MinBid, Pair and Parts in `contracts/next` | The money rules are now the pot contracts in `contracts/pot` (back, take out, the daily allowance, planned tasks with exit notes, Team Shares that vest). The `contracts/next` sources stay in the repository, parked: the server no longer reads them, and the app reads them only in its old screens, which sit behind one build flag | The backing round, the personal refund, the stage caps, the auction and its pool are not carried over (design section 3, "Removed"). The earlier backers' claim contract is parked; its new terms wait for counsel (design 12.10) | `PLANV2-M4-REPORT.md` (built); `POT-STEP1A-REPORT.md`, `POT-STEP2-REPORT.md` (replacement) |
-| 5 Server | The chain reader, the signed project numbers (kind 39009) and the helper job | Rebuilt on the pot contracts: record version 2, the Rounds, receipts, bids and refund parts dropped, the helper's calls changed | Auction bids, pool trades and the liquidity fees are not indexed. The AI manager's cost rule is keyed to the first join; the hosted manager stays off until the operator sets a floor | `PLANV2-M5-REPORT.md`, `PLANV2-M5P2-REPORT.md` (built); `READER-V2-REPORT.md`, `RECORD-V2.md` (replacement) |
-| 6 App | The phone-first app: shell, passkey sign-up, Start, project page, This week, installable | Back and Take out sheets replace the Back box, stage line and receipts. A phone with no wallet app can back from a passkey account with the network fee paid by the server | The budgets of section 6 were not measured by a person on a phone. The passkey path ran against stand-ins for the bundler and sponsor, never a real phone | `PLANV2-M6-REPORT.md` (built); `APP-POT-REPORT.md`, `STEP1-REPORT.md`, `PHONE-PATH-REPORT.md` |
-| 7 Team and auction | Pair, hand over, wind down, launch from the app; bid, finish, trade and hand-back screens | The Team part stays, except the Pair's one-signer lane. Give Shares became Grant Team Shares | The auction, pool and hand-back screens are parked behind the flag; Buy and Sell were only ever proven by calldata and screens, not against a real router | `PLANV2-M7-REPORT.md`; `POT-STEP1A-REPORT.md` |
-| 8 Tasks, agents, manager | Tasks, agent daily limits, the AI manager, the project brain | Tasks became a queue: announced with notice, money set aside when a worker takes one, an exit note for a holder who takes out meanwhile. Agent limits and the manager stay | The real-model eval was not run. The app cannot show the brain's files to the manager. The hosted manager is off until a floor is set | `PLANV2-M8-REPORT.md` (built); `POT-STEP2-REPORT.md`, `STEP2-SERVER-APP-REPORT.md` (replacement) |
-| 9 Votes, Council, reserve sale | **The holder pause** (`HolderPause`, step 4, 21 November 2026): holders park Shares; when parked Shares reach a third of the Shares backers hold, the team's draws from the allowance box and new task plans pause from a warning day later, for as long as that stays true. One switch per deployment, **off by default** (`HOLDER_PAUSE=1`); with it off every earlier test passes unchanged and nothing differs. It never pays anyone, moves money, or stops or slows Take out (a holder with parked Shares takes out in one press that takes them back first). The screens: the project card, Park Shares, Take back, Take out with parked Shares, the team's sentences, the launch sentence, and the press "Start the day" for a line that is reached with no warning day running (anyone may press it; it moves no money) | The new model has nothing to vote on: the notice and taking out replace a vote, and any holder can end a project that has gone quiet for 182 days (design section 9, C11). **Replaced, with the reason:** the Council, seat elections, a vote to replace the runner, the reserve sale, the turnout floors by stage, the supermajority for a wind-down and the team-payer role belong to the stages, the auction and the Council runner that the new model removed; there is no stage, auction, Council, reserve or team budget to hand to a vote. "Votes count only Shares parked from a person's own wallet" is kept in full (only `park` from the caller counts; nothing a contract holds can) | The further power (the project ends when two thirds stay parked for a full quiet period) is **left out**: it lets a buyer burn the team's unvested claim for a profit (STEP4-PLAN section 1.9). A "stop backers cannot lose" is not what was built: Backing can lower the parked share and end a pause, and the card says so. Whether notice plus the right to leave is "governance" is still a question for counsel (design 12.4) | `STEP4-REPORT.md`, `STEP4-PLAN.md`, `JOIN-LEAVE-DESIGN.md` sections 9, 11 and 12 |
-| 10 Seasons, demo day, Creaton | Seasons and demo day, the holder room, the live feed, the Established badge, the ranking, alerts | Fees as CREATE's floor needs rethinking: the platform's only fee is now 2% of money backing a project (design 9, 10) | CREATE as project zero is not built (project zero is born without the earlier backers' claim on the test network, design C21). No special code was built for Creaton backing other projects. The week-long public test has not run | `STEP3-REPORT.md`, `ROOM-AND-SEASON-RECORDS.md` |
-| Step 4 (21 Nov) | The holder pause (row 9), and **earlier grants**: Team Shares on a protected grant for project zero's earlier backers, claimed with a proof against ONE fingerprint of the list (no row is in the repository or on the server); a claimant names, in the same call, the fingerprint of a text that is a deploy setting, and the acceptance is recorded on the network; a row is claimed once, by its own account. **Off by default**: nothing is claimable unless the deployer set all six `EARLIER_*` settings (and the build its three) | The old earlier-backers page and its claim stay behind the old-model flag; the new claim page is `/earlier-grant`, in the router only for a build with its settings | Counsel's words (the text, the consent sentences, any end date: unclaimed rows stay claimable and keep diluting backers' surplus, also after a wind-down), the list, the pool's size and the entity are not decided or written. The sentences on the claim page are a provisional neutral placeholder in one file. No real network, no real money | `STEP4-REPORT.md`, `STEP4-PLAN.md` |
+| 4 Money rules | Rounds, the Launcher rewrite, Treasury, Vester, MinBid, Pair and Parts in `contracts/next` | The money rules are now the pot contracts in `contracts/pot` (back, take out, the daily allowance, planned tasks with exit notes, Team Shares that vest). The `contracts/next` sources stay in the repository, parked: the server no longer reads them, and the app reads them only in its old screens, which sit behind one build flag | The backing round, the personal refund, the stage caps, the auction and its pool are not carried over (design section 3, "Removed"). The earlier backers' claim contract is parked; its new terms wait for counsel (design 12.10) | `docs/archive/PLANV2-M4-REPORT.md` (built); `docs/archive/POT-STEP1A-REPORT.md`, `docs/archive/POT-STEP2-REPORT.md` (replacement) |
+| 5 Server | The chain reader, the signed project numbers (kind 39009) and the helper job | Rebuilt on the pot contracts: record version 2, the Rounds, receipts, bids and refund parts dropped, the helper's calls changed | Auction bids, pool trades and the liquidity fees are not indexed. The AI manager's cost rule is keyed to the first join; the hosted manager stays off until the operator sets a floor | `docs/archive/PLANV2-M5-REPORT.md`, `docs/archive/PLANV2-M5P2-REPORT.md` (built); `docs/archive/READER-V2-REPORT.md`, `RECORD-V2.md` (replacement) |
+| 6 App | The phone-first app: shell, passkey sign-up, Start, project page, This week, installable | Back and Take out sheets replace the Back box, stage line and receipts. A phone with no wallet app can back from a passkey account with the network fee paid by the server | The budgets of section 6 were not measured by a person on a phone. The passkey path ran against stand-ins for the bundler and sponsor, never a real phone | `docs/archive/PLANV2-M6-REPORT.md` (built); `docs/archive/APP-POT-REPORT.md`, `docs/archive/STEP1-REPORT.md`, `PHONE-PATH-REPORT.md` |
+| 7 Team and auction | Pair, hand over, wind down, launch from the app; bid, finish, trade and hand-back screens | The Team part stays, except the Pair's one-signer lane. Give Shares became Grant Team Shares | The auction, pool and hand-back screens are parked behind the flag; Buy and Sell were only ever proven by calldata and screens, not against a real router | `docs/archive/PLANV2-M7-REPORT.md`; `docs/archive/POT-STEP1A-REPORT.md` |
+| 8 Tasks, agents, manager | Tasks, agent daily limits, the AI manager, the project brain | Tasks became a queue: announced with notice, money set aside when a worker takes one, an exit note for a holder who takes out meanwhile. Agent limits and the manager stay | The real-model eval was not run. The app cannot show the brain's files to the manager. The hosted manager is off until a floor is set | `docs/archive/PLANV2-M8-REPORT.md` (built); `docs/archive/POT-STEP2-REPORT.md`, `docs/archive/STEP2-SERVER-APP-REPORT.md` (replacement) |
+| 9 Votes, Council, reserve sale | **The holder pause** (`HolderPause`, step 4, 21 November 2026): holders park Shares; when parked Shares reach a third of the Shares backers hold, the team's draws from the allowance box and new task plans pause from a warning day later, for as long as that stays true. One switch per deployment, **off by default** (`HOLDER_PAUSE=1`); with it off every earlier test passes unchanged and nothing differs. It never pays anyone, moves money, or stops or slows Take out (a holder with parked Shares takes out in one press that takes them back first). The screens: the project card, Park Shares, Take back, Take out with parked Shares, the team's sentences, the launch sentence, and the press "Start the day" for a line that is reached with no warning day running (anyone may press it; it moves no money) | The new model has nothing to vote on: the notice and taking out replace a vote, and any holder can end a project that has gone quiet for 182 days (design section 9, C11). **Replaced, with the reason:** the Council, seat elections, a vote to replace the runner, the reserve sale, the turnout floors by stage, the supermajority for a wind-down and the team-payer role belong to the stages, the auction and the Council runner that the new model removed; there is no stage, auction, Council, reserve or team budget to hand to a vote. "Votes count only Shares parked from a person's own wallet" is kept in full (only `park` from the caller counts; nothing a contract holds can) | The further power (the project ends when two thirds stay parked for a full quiet period) is **left out**: it lets a buyer burn the team's unvested claim for a profit (STEP4-PLAN section 1.9). A "stop backers cannot lose" is not what was built: Backing can lower the parked share and end a pause, and the card says so. Whether notice plus the right to leave is "governance" is still a question for counsel (design 12.4) | `docs/archive/STEP4-REPORT.md`, `docs/archive/STEP4-PLAN.md`, `JOIN-LEAVE-DESIGN.md` sections 9, 11 and 12 |
+| 10 Seasons, demo day, Creaton | Seasons and demo day, the holder room, the live feed, the Established badge, the ranking, alerts | Fees as CREATE's floor needs rethinking: the platform's only fee is now 2% of money backing a project (design 9, 10) | CREATE as project zero is not built (project zero is born without the earlier backers' claim on the test network, design C21). No special code was built for Creaton backing other projects. The week-long public test has not run | `docs/archive/STEP3-REPORT.md`, `ROOM-AND-SEASON-RECORDS.md` |
+| Step 4 (21 Nov) | The holder pause (row 9), and **earlier grants**: Team Shares on a protected grant for project zero's earlier backers, claimed with a proof against ONE fingerprint of the list (no row is in the repository or on the server); a claimant names, in the same call, the fingerprint of a text that is a deploy setting, and the acceptance is recorded on the network; a row is claimed once, by its own account. **Off by default**: nothing is claimable unless the deployer set all six `EARLIER_*` settings (and the build its three) | The old earlier-backers page and its claim stay behind the old-model flag; the new claim page is `/earlier-grant`, in the router only for a build with its settings | Counsel's words (the text, the consent sentences, any end date: unclaimed rows stay claimable and keep diluting backers' surplus, also after a wind-down), the list, the pool's size and the entity are not decided or written. The sentences on the claim page are a provisional neutral placeholder in one file. No real network, no real money | `docs/archive/STEP4-REPORT.md`, `docs/archive/STEP4-PLAN.md` |
 
 **Milestone 9 requirement: progressive decentralization of project zero** (added 18 November 2026, owner's decision 5).
 Creaton starts centrally managed: its runner is the DAO LLC's manager. Holders take powers over in steps, and every
@@ -374,7 +374,7 @@ step must work when the earlier backers (about 47% of voters after a year, simul
   milestone 9 adds a team-payer role (the manager's address, set at launch, moved only by the manager or a holders'
   supermajority) that may call only `payTeam`, under the same gift rules and the same 730-day pace. Today `payTeam` is
   the runner's, so this is a contract change for milestone 9. What happens to an unused budget if the manager stops
-  working is a question for counsel (`EARLIER-BACKERS.md` section 11).
+  working is a question for counsel (`docs/archive/EARLIER-BACKERS.md` section 11).
 
 ## 10. Off until an outside audit and counsel, and what could still go wrong
 
@@ -439,7 +439,7 @@ network before the Council runner exists; reserve sales; the stake; sponsored fe
    **The owner said go on 17 November 2026; the contracts are built** with the recommended answers (range 333,333 to
    50,000,000; down rounds allowed; the runner's auction start from 0.0004 to 0.05 a Share with the minimum at all 250M;
    project zero may launch with no stake). No "earlier backers" contract step: earlier backers use Give Shares. Report:
-   `docs/next-version/PLANV2-M4-REPORT.md`, section "Founder-set prices: built". The app and server parts are not built.
+   `docs/archive/PLANV2-M4-REPORT.md`, section "Founder-set prices: built". The app and server parts are not built.
    After the review, project zero is named once by the admin by its key (`nameProjectZero`), so no other project can
    launch without the stake; the stake address must always be named.
    **Earlier backers (18 November 2026).** The old token sheet shows Creaton raised 1,229,957 dollars from 21 entries
@@ -447,8 +447,8 @@ network before the Council runner exists; reserve sales; the stake; sponsored fe
    Keeping their percent is 288.68M Shares (28.87%, simulated), more than the whole 200M work pot, so "earlier backers
    use Give Shares" cannot carry it. Recommended instead: a claim contract funded at project zero's launch from unused
    backing first, then the founder's grant (founder keeps 5.30%), each backer signing a SAFT replacement drafted for
-   counsel. Full design, options and owner questions: `docs/next-version/EARLIER-BACKERS.md`.
-   **The owner decided on 18 November 2026 (final), and it is built** (local tests only; `EARLIER-BACKERS.md` section
+   counsel. Full design, options and owner questions: `docs/archive/EARLIER-BACKERS.md`.
+   **The owner decided on 18 November 2026 (final), and it is built** (local tests only; `docs/archive/EARLIER-BACKERS.md` section
    11): **S1**, the backers keep their percent, 288,677,273 Shares (28.868%) less any seed entry of the owner's own (the
    total is an input). **Source D for project zero only:** unused backing first (141,666,666.67; Creaton keeps
    8,333,333.33 for its own 6,000,000 rounds under the 50,000 Team cap), then the founder's slice; never the work pot,
@@ -465,30 +465,30 @@ network before the Council runner exists; reserve sales; the stake; sponsored fe
    **Central management first:** project zero's runner is the DAO LLC's manager (one key, or a Pair of the manager's
    keys) inside the existing caps, until the milestone 9 steps in section 9. Legal points (valuing team payments in
    Shares, related-party payments, disclosure of the team budget) are questions for counsel, listed in
-   `EARLIER-BACKERS.md` section 11; nothing here is legal advice. Personal tax questions are not recorded in the repo.
+   `docs/archive/EARLIER-BACKERS.md` section 11; nothing here is legal advice. Personal tax questions are not recorded in the repo.
 
 ## What I verified for this plan
 
 Read in the reports and code; nothing was built or run except the simulations.
 
 1. The 3 / 22 / 15 / 60 split was measured exact on a 20,358.36-dollar sale, and a 100-dollar buy moves the built
-   pools 9.2% and 23.7% (`NEXT-VERSION-PLAN.md`, milestone 3 findings; `M3-REPORT.md`).
-2. Exit in pieces: 4,670.84 against 4,560.00 for a holder of 80% (`M2-REPORT.md`, finding B2).
-3. Gifts through fresh wallets: 100,000 to 84,728, minus 15.3% (`M2-REPORT.md`, finding B3).
+   pools 9.2% and 23.7% (`NEXT-VERSION-PLAN.md`, milestone 3 findings; `docs/archive/M3-REPORT.md`).
+2. Exit in pieces: 4,670.84 against 4,560.00 for a holder of 80% (`docs/archive/M2-REPORT.md`, finding B2).
+3. Gifts through fresh wallets: 100,000 to 84,728, minus 15.3% (`docs/archive/M2-REPORT.md`, finding B3).
 4. M3's self-bid table calls the platform and pool share "not recoverable" and reports the 256-times ladder; the
-   reserve cannot leave the built Launcher (`M3-REPORT.md`, self-bid section and point 5).
+   reserve cannot leave the built Launcher (`docs/archive/M3-REPORT.md`, self-bid section and point 5).
 5. Gifts before the pool go to the Vester, the floor leaves out Shares the Treasury holds and unreleased Shares, and
    abandon starts the Vester clock (`contracts/next/src/Treasury.sol`, lines 218-220, 387-392, 457-458).
 6. The BUSL-1.1 files and their change date (`NEXT-VERSION-PLAN.md`, milestone 1 review fixes).
 
 Simulations (plain Python, standard library), all under
-`docs/next-version/econ/`: `plan_v2.py` (this
+`docs/archive/econ/`: `plan_v2.py` (this
 plan's own numbers), and the designers' and attacker's `econ.py`, `platform_create.py`, `stage_ladder.py`,
 `attacker.py`. Copied into the repo on 17 November 2026.
 
 ## Milestone 4 findings (17 November 2026)
 
-Milestone 4 built sections 4 and 7's money rules in `contracts/next` (report: `docs/next-version/PLANV2-M4-REPORT.md`).
+Milestone 4 built sections 4 and 7's money rules in `contracts/next` (report: `docs/archive/PLANV2-M4-REPORT.md`).
 Where building and measuring showed this plan to be wrong or loose:
 
 1. **Self-bidding is not "a real loss of about 7 to 15 of each 100".** Measured on the real Uniswap stack next to 100,000
@@ -517,7 +517,7 @@ Where building and measuring showed this plan to be wrong or loose:
 
 ## Milestone 4 review fixes (17 November 2026)
 
-A review and an attack test of milestone 4 found the following; details in `docs/next-version/PLANV2-M4-REPORT.md`, section
+A review and an attack test of milestone 4 found the following; details in `docs/archive/PLANV2-M4-REPORT.md`, section
 "Review fixes".
 
 1. **Fixed: a stranger could end a backer's refund** by taking their released held Shares out for them after the market (the

@@ -2,7 +2,7 @@
 
 Written 17 November 2026 on branch `v4-governance-rework`, for the owner and the lead. The plan is `docs/PLAN-V2.md`
 (section 6 "The app" is the spec; section 9 row 6 the milestone). The design is option F in
-`docs/next-version/design/DIRECTION.md`. The code is in `app/` (package `@creaton/app`). **Nothing is deployed, nothing
+`docs/archive/design/DIRECTION.md`. The code is in `app/` (package `@creaton/app`). **Nothing is deployed, nothing
 was pushed, `web/` still builds and runs as before.**
 
 ## The short answer

@@ -660,7 +660,7 @@ blocker. What was fixed, in `contracts/next` only:
 | F3: the per-backer dust bound was fuzzed only at today's price | `testFuzz_aRoundConservesEveryDollar_andEachRefundIsPersonalAndBounded` draws the round's price from the whole range (today's a quarter of the time) and checks the bound at that price (1,000 runs) |
 | F4: no zero-stake test on the real path | `FounderPriceZeroStakeLocalTest` runs the same full sale for an ordinary project and for project zero from one state and compares them (numbers in the table above) |
 | F7: the price took a storage slot (+22,140 gas a round) | Packed as a `uint64`; `openRound` 130,565 (measured). `roundOf`'s price is now its third field |
-| F5, A9, A9b, F6 / A6 (app and server) | Written into `FOUNDER-PRICE.md` "App changes": send exactly 3e15 for the lowest price; pre-fill the auction start from the money-weighted average, at most 0.05, and check the range before proposing; tell backers when the auction start is below what they paid; cancel a signer's older pending price proposal and list pending ones with their age |
+| F5, A9, A9b, F6 / A6 (app and server) | Written into `docs/next-version/FOUNDER-PRICE.md` "App changes": send exactly 3e15 for the lowest price; pre-fill the auction start from the money-weighted average, at most 0.05, and check the range before proposing; tell backers when the auction start is below what they paid; cancel a signer's older pending price proposal and list pending ones with their age |
 
 **Open (not fixed here):**
 - A6, a Pair proposal never expires (measured: an old round price confirmed 21 days later). Left to the app (cancel and

@@ -1,6 +1,6 @@
 # The holder room and seasons: the records, the tags, the rules and the server's sentences
 
-Status: normative for package P2 of `docs/next-version/STEP3-PLAN.md` (sections 4 and 5), written first so the app engineers
+Status: normative for package P2 of `docs/archive/STEP3-PLAN.md` (sections 4 and 5), written first so the app engineers
 (A3: the room; A4: seasons) build from exact tags and exact sentences. Where this page and the plan differ, this page is what
 the server does (each difference is listed in section 8). Nothing here changes a contract, a money rule or the legal line, and
 nothing here is advice or a promise of any result for anyone. Posts and votes are public.

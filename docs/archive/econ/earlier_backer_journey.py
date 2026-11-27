@@ -1,5 +1,5 @@
 # Creaton's earlier backers: the claim journey in the app, counted. Plain Python, standard library.
-# Run: python3 -I docs/next-version/econ/earlier_backer_journey.py
+# Run: python3 -I docs/archive/econ/earlier_backer_journey.py
 # App and server lane, 18 November 2026. Every count is SIMULATED (this model of screens not yet built); the reading,
 # pressing and typing speeds are the app's own (app/tests/helpers/press-counter.ts: 230 words a minute read, 1.2 s a
 # press, 40 words a minute typed). A "press" is a tap, click or tick inside Creaton; a "field" is a box typed in; a

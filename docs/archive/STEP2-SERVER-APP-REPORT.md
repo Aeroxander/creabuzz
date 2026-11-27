@@ -6,12 +6,12 @@ notice before any money moves, a worker takes it and the money is set aside, a h
 the team pays all or part of it or sends it back, and anyone returns the money of a task that ran out. The server reads it all from the
 chain and signs it into the project's numbers record (version 2, a new `tasks` section); the app reads that record for lists and the
 chain for every press. Step 2 is pushed on branch v6 (since 20 November 2026, commit 35ea0a894). **No person has tested any of this: every run below was made by an agent. The human test is the
-owner's and is still to do (the steps are in `TRY-IT.md`).** This is not legal or tax advice, and no figure here is a promise of any
+owner's and is still to do (the steps are in `docs/next-version/TRY-IT.md`).** This is not legal or tax advice, and no figure here is a promise of any
 result for anyone. Every amount is play money on a local test chain. The legal line, quoted as it stands: "Buyers acquire ownership only:
 governance and exit. No dividends or revenue share, ever, unless they contribute and earn one."
 
 Companion pages: the plan (`STEP2-SERVER-APP-PLAN.md`), the contracts' report (`POT-STEP2-REPORT.md`), the one specification of the record
-(`RECORD-V2.md`, section 10, and `record-v2-example.json`, which is the server's own output at block 88), the server's report
+(`docs/next-version/RECORD-V2.md`, section 10, and `docs/next-version/record-v2-example.json`, which is the server's own output at block 88), the server's report
 (`READER-V2-REPORT.md`, with its step 2 sections) and step 1's (`STEP1-REPORT.md`, `APP-POT-REPORT.md`).
 
 ## 1. What is built, in one page
@@ -236,7 +236,7 @@ Gathered from every report of this step (each is also in its own report):
 
 ### 6.5 Still open
 
-- **No person has tried it.** The steps are in `TRY-IT.md`. The pull request checklist's third step (a human tests it) is not done and is not marked.
+- **No person has tried it.** The steps are in `docs/next-version/TRY-IT.md`. The pull request checklist's third step (a human tests it) is not done and is not marked.
 - **The whole `buzz-relay` suite** has one test that failed in 2 of 3 runs for the relay engineer and has nothing to do with this work
   (`api::mesh_demo::tests::demo_join_forwarded_arm_round_trips_echo`, a 504); `planted_eval_against_a_real_model` fails without the
   settings of a real model, as it always does. Neither was run again here.
@@ -262,7 +262,7 @@ scripts/pot-app-loop.sh                   # the app's own builders and readers o
 scripts/pot-full-loop.sh                  # both journeys; prints "pot-full-loop: N checks passed."
 scripts/pot-full-loop.sh pot-tasks        # only the task journey (one world)
 scripts/pot-full-loop.sh --hold           # one world left running; the script prints the environment a journey needs
-scripts/pot-full-loop.sh --serve          # the same world left running for a phone (TRY-IT.md)
+scripts/pot-full-loop.sh --serve          # the same world left running for a phone (docs/next-version/TRY-IT.md)
 scripts/chain-loop-pot.sh                 # the server's loop: the record equals the contracts at nine stops
 scripts/pot-chain-loop.sh                 # the contracts, with cast only
 scripts/phone-loop.sh                     # the passkey path

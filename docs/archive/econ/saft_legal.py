@@ -1,5 +1,5 @@
 # Creaton's SAFT backers: the numbers the legal-structure lane needs for counsel. Plain Python, standard library.
-# Run: python3 -I docs/next-version/econ/saft_legal.py [path to the owner's private sheet]
+# Run: python3 -I docs/archive/econ/saft_legal.py [path to the owner's private sheet]
 # Every number printed is SIMULATED (this script) unless the line says "sheet" (totals from the owner's old sheet) or
 # "judgement". Legal-structure lane, 18 November 2026. Not legal advice: these are inputs to questions for counsel.
 #

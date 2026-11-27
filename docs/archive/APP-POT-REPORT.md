@@ -60,7 +60,7 @@ whether it has pay-and-call (unless told), sets `minShares` from the quote and r
 `planTeamTakeOut` returns an estimate and a wider guard (null when the estimate is zero). Guards are 0.5% under the quote
 (2% for Team Shares, which have no exact quote).
 
-**The record** (`numbers.ts`): `parseNumbers(event, signer, project?)`; `ProjectNumbers` mirrors RECORD-V2.md section 2 field
+**The record** (`numbers.ts`): `parseNumbers(event, signer, project?)`; `ProjectNumbers` mirrors docs/next-version/RECORD-V2.md section 2 field
 for field (bigints for amounts, numbers for times). Helpers: `isRunner`, `signsForRunner`, `holdingHint` (a hint only; a cut
 list says nothing about someone it does not list), `quietStateAt`, `freshnessOf` (fresh / as-of / stale by section 6),
 `allowancePerDay`, `dollarsText`, `sharesText`, `dayText`, `timeText`, `DOLLAR`. Reads: `useProjectNumbers`,
@@ -105,7 +105,7 @@ the old design's test ids is on the project page (flag off) and that Home has no
 4. **A Pair-run project's task payment** is not offered (it needs both signers; one press cannot do it). The screen says so.
 5. **The old design's code stays in its feature folders** and is reached only through `src/legacy/*` glue; it was not moved. `numbers-v1.ts`,
    `calls-v1.ts`, `use-money-v1.ts` and `use-team-v1.ts` are the renamed originals.
-6. **The parser is stricter than RECORD-V2.md says it must be** on cross-field facts that cannot be true together (a notice on a grant
+6. **The parser is stricter than docs/next-version/RECORD-V2.md says it must be** on cross-field facts that cannot be true together (a notice on a grant
    that is not announced, `claimable` not equal to `vested - claimed`, a Pair with no signers, money arriving with no end time,
    `wound_down` without a wind-down). A record that breaks one reads as "cannot read". Amounts must fit 2^128, times 2^40, lists their caps.
    `playMoney` is the one lenient field: missing or not `false` means play money (S7). `ledger` is never read.
@@ -120,7 +120,7 @@ the old design's test ids is on the project page (flag off) and that Home has no
   refused by the Shares token (`ZeroRecipient`). Not a defect in what the contract says (the report documents zero only for the one-call
   form), but a trap: `backCalls` now refuses an approve-then-join Back with no named receiver. The real-chain loop found it.
 - **`contracts/pot/out` is git-ignored build output and was already built**; the fresh-ABI test builds into a throwaway folder (`$TMPDIR/creaton-pot-abi-check`) so it never touches the tree.
-- **No spec change was needed**: RECORD-V2.md and its example are untouched and the example parses and passes all ten checks of section 7.3 in the app's tests.
+- **No spec change was needed**: docs/next-version/RECORD-V2.md and its example are untouched and the example parses and passes all ten checks of section 7.3 in the app's tests.
 - `packages/creaton-core`'s `biome check .` has one error that predates this work (`src/launchpad/evmAbiDecode.test.mjs` is not formatted); not touched.
 - `scripts/phone-loop.sh` (not in this track) still tests for `contracts/next/out` only; `passkey-back.test.ts` now also needs `contracts/pot/out` built. `scripts/phone-e2e.sh` runs `phone-back.spec.ts`, which was removed with the old chain loop it needed: it must be re-based on the pot contracts.
 
@@ -262,7 +262,7 @@ that were never run, and the new ones, were run.
 
 The record in item 5 stands in for the server's chain reader (the server track proves that reader on its own with
 `scripts/chain-loop-pot.sh`). The page under test sees a record signed by the "server" key and cannot tell the difference, but the
-reader itself is not exercised by these specs. The record example file is unchanged; `RECORD-V2.md` was not touched by this pass
+reader itself is not exercised by these specs. The record example file is unchanged; `docs/next-version/RECORD-V2.md` was not touched by this pass
 (it shows as modified in the tree: that is another engineer's change).
 
 ## How it was proven
@@ -663,7 +663,7 @@ was made by an agent.** Every amount is play money on a local test chain.
 | 4 | **The passkey flake, at its cause.** After a reload the app drew before the passkey signer had been registered (it loads lazily and `registerPasskeySigner` was fire-and-forget); until then the stored passkey account reads as nobody, nothing told the page when the signer arrived, so on some reloads the unlock bar never appeared (about 1 run in 4 here: 7 failures in 25). `registerPasskeySigner` now returns its promise, the app waits for it before the first draw, and it tells listeners when it is done. A vitest fails without the notification | `packages/creaton-core/src/account/passkey-identity.ts`, `app/src/main.tsx`, `app/src/lib/account.test.tsx` |
 | 5 | `scripts/phone-e2e.sh` retired (it ran one spec that needed the old-screens flag; that spec, the You page's wallet-or-passkey choice, runs without the flag under `scripts/pot-app-phone-e2e.sh`); `scripts/phone-loop.sh` and the sender tests take their test dollar from `contracts/pot/out` (the same source file as under `contracts/next`) | `scripts/`, `app/tests/anvil/rpc.ts` |
 | 6 | **A defect found by the rewrite:** after "Switch network" the money screens went on saying "Your wallet is on another network" (nothing asked the wallet again, and the page does not refetch on focus). Fixed, with a vitest that fails without it | `pot/use-pot.tsx`, `pot/wallet-gate.test.tsx` |
-| 7 | **The joined-up run launches from the app** and `STEP1-REPORT.md` is true again (launch exists; the exact steps for a person to try it, the helper's call names, the refresh range) | `app/tests/e2e-pot-full`, `docs/next-version/STEP1-REPORT.md` |
+| 7 | **The joined-up run launches from the app** and `STEP1-REPORT.md` is true again (launch exists; the exact steps for a person to try it, the helper's call names, the refresh range) | `app/tests/e2e-pot-full`, `docs/archive/STEP1-REPORT.md` |
 
 ## Specs: what was rewritten and what was deleted, and why
 
@@ -867,7 +867,7 @@ Everything started was stopped (checked with `ps`); the private build was delete
 | `cd web && pnpm check:unused` (knip) | exit 0 |
 | `pot-full-loop.sh`, the phone scripts, the Postgres-backed reader tests | not re-run in this round: none of their code changed (the changes are in `app/src/features/tasks`, one anvil test and this report). The verifier ran all three on the earlier commit and they passed. |
 
-Not changed, as the verifier noted: the two edits outside the track's list (`JOIN-LEAVE-DESIGN.md` question for counsel, `PLANV2-M5P2-REPORT.md` helper
+Not changed, as the verifier noted: the two edits outside the track's list (`docs/next-version/JOIN-LEAVE-DESIGN.md` question for counsel, `PLANV2-M5P2-REPORT.md` helper
 settings) stay as committed; the recorded payment of a task is still not checked on the network (before real money); the refresh ceiling stayed at
 86400 seconds in that round (F3; it is 43200 since round four).
 
