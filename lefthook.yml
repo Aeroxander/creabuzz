@@ -98,7 +98,7 @@ pre-push:
       run: ./scripts/without-git-env.sh just test-unit
     app-check:
       files: ./scripts/branch-changed-files.sh
-      glob: ["app/**", "packages/**", "pnpm-lock.yaml", "pnpm-workspace.yaml", "patches/**", "package.json", "knip.jsonc", "Justfile"]
+      glob: ["app/**", "packages/**", "pnpm-lock.yaml", "pnpm-workspace.yaml", "package.json", "knip.jsonc", "Justfile"]
       env: &pnpm-verify-deps
         # Warn when node_modules looks stale against the workspace (pnpm uses
         # recorded workspace state and manifest mtimes; not a complete
@@ -108,6 +108,6 @@ pre-push:
       run: ./scripts/without-git-env.sh just app-check
     app-test:
       files: ./scripts/branch-changed-files.sh
-      glob: ["app/**", "packages/**", "pnpm-lock.yaml", "pnpm-workspace.yaml", "patches/**", "package.json", "Justfile"]
+      glob: ["app/**", "packages/**", "pnpm-lock.yaml", "pnpm-workspace.yaml", "package.json", "Justfile"]
       env: *pnpm-verify-deps
       run: ./scripts/without-git-env.sh just app-test

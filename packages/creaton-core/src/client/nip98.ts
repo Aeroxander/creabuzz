@@ -1,6 +1,6 @@
 /**
  * NIP-98 HTTP Auth helper — signs a kind:27235 event for authenticating
- * HTTP requests to the relay (used by isomorphic-git for smart HTTP transport).
+ * HTTP requests to the relay.
  */
 
 import { signForRelay } from "./relay-auth";

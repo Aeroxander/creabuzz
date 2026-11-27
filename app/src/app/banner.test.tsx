@@ -175,10 +175,6 @@ describe("the banner on every sheet that shows money", () => {
   const OTHER_SHEETS: Record<string, string> = {
     "features/project/ShareSheet.tsx": OWN_BANNER,
     "features/account/RecoveryKeySheet.tsx": "a secret key, no money",
-    "features/brain/BrainReader.tsx":
-      "the project's plain notes, read only, no money",
-    "features/brain/BrainSetup.tsx":
-      "steps for keeping the project's notes, no money",
     "features/account/TermsAgainHost.tsx": "the terms, no money",
     "features/posts/Composer.tsx": "a post, no money",
     "features/room/HiddenSheet.tsx": "the people you hide, no money",

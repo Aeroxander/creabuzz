@@ -67,7 +67,6 @@ jobs:
             app:
               - 'app/**'
               - 'packages/**'
-              - 'patches/**'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'package.json'

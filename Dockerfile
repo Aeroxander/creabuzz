@@ -127,7 +127,6 @@ RUN corepack enable
 # docs/next-version/DEPLOY-TEST-NETWORK.md says where each comes from.
 FROM node-base AS app-builder
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY patches/ patches/
 # The app's shared logic (@creaton/core) is a workspace package: `@creaton/app...` takes the app and its workspace
 # dependencies.
 COPY packages/creaton-core/package.json packages/creaton-core/

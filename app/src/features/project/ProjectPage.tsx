@@ -42,8 +42,6 @@ const LaunchCard = lazy(() =>
   import("../launch/LaunchCard").then((m) => ({ default: m.LaunchCard })),
 );
 // The room carries the writing, the report, the team's tools and perks: it loads when its tab is opened.
-// The project's notes: loaded only where there is a project page, and the git library only when a person opens them.
-const BrainRow = lazy(() => import("../brain/BrainRow"));
 const RoomTab = lazy(() =>
   import("../room/RoomTab").then((m) => ({ default: m.RoomTab })),
 );
@@ -52,13 +50,10 @@ const RoomTab = lazy(() =>
 export function ProjectPage({
   projectRef,
   initialTab,
-  brainSetup = false,
 }: {
   projectRef: string;
   /** The tab to open on, when the link names one (the news on You opens Money). */
   initialTab?: "money";
-  /** Open the steps for keeping a project brain on arrival (a founder who said yes to it in Start). */
-  brainSetup?: boolean;
 }) {
   const project = useProject(projectRef);
   if (project.isPending)
@@ -96,23 +91,15 @@ export function ProjectPage({
         </EmptyState>
       </main>
     );
-  return (
-    <ProjectView
-      brainSetup={brainSetup}
-      initialTab={initialTab}
-      project={project.data}
-    />
-  );
+  return <ProjectView initialTab={initialTab} project={project.data} />;
 }
 
 function ProjectView({
   project,
   initialTab,
-  brainSetup,
 }: {
   project: Project;
   initialTab?: "money";
-  brainSetup: boolean;
 }) {
   const { pubkey } = useAccount();
   const activity = useProjectActivity(project);
@@ -188,14 +175,6 @@ function ProjectView({
       ) : null}
 
       <ProjectFeed numbers={numbers} project={project} />
-
-      <Suspense fallback={null}>
-        <BrainRow
-          isFounder={isFounder}
-          project={project}
-          setupOpen={brainSetup && isFounder}
-        />
-      </Suspense>
 
       <Tabs
         items={[

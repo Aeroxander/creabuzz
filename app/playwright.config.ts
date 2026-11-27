@@ -34,8 +34,6 @@ export default defineConfig({
         "**/bookmarks.spec.ts",
         "**/mutes.spec.ts",
         "**/report.spec.ts",
-        // A project's brain: the notes read from a real git repository, and the offer in Start (the mock server, 360 wide).
-        "**/brain.spec.ts",
         // Pictures in posts, editing and deleting, reposts and quotes, message servers and the recovery key (the mock server).
         "**/pictures.spec.ts",
         "**/messages-key.spec.ts",
