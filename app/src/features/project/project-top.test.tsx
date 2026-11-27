@@ -1,6 +1,6 @@
 // biome-ignore-all lint/suspicious/noExplicitAny: a record is changed as loose JSON, the way a hostile one arrives
 // The top of a project's page (plan section 7.1) on record version 2: the project's money with
-// its line, the play-money line, the fixed banner once, one Back box, Share, the Established chip and its sheet, the facts,
+// its line, the play-money line, the fixed banner once, one Back box, Share, the facts,
 // and what is drawn when the record is old, from an older server, or has a key it could not work out. Every figure is read
 // from the example the server's own code wrote.
 import { applyServerSettings } from "@creaton/core/client/server-settings.ts";
@@ -83,17 +83,6 @@ async function page(
   await screen.findByTestId("project-name");
 }
 const top = () => screen.getByTestId("project-top");
-const established = (reached: boolean) => (c: Json) => {
-  const e = c.established as Record<string, any>;
-  e.heldBps = reached ? e.rule.minHeldBps : e.rule.minHeldBps - 1;
-  e.accounts = e.rule.minAccounts;
-  e.twoSigners = true;
-  e.reached = reached;
-  // The badge's inputs are the record's own `held`.
-  const held = c.held as Record<string, any>;
-  held.badge.bps = e.heldBps;
-  held.countedAccounts = e.accounts;
-};
 
 beforeEach(() => {
   applyServerSettings({ investing: true, self: SERVER });
@@ -171,86 +160,25 @@ describe("the money, the banner and Back in the order a stranger reads them", ()
   });
 });
 
-describe("the Established chip", () => {
-  it("is drawn only for a project that reached it, as one button, and opens a sheet of three lines", async () => {
-    await page(established(true));
-    const chip = await screen.findByTestId("established-chip");
-    expect(chip.tagName).toBe("BUTTON");
-    expect(chip.textContent).toBe("Established");
-    // A press focuses the chip, as a real one does; focus returns to it.
-    chip.focus();
-    fireEvent.click(chip);
-    const sheet = await screen.findByTestId("established-sheet");
-    expect(
-      within(sheet).getByRole("heading", { name: "What “Established” means" }),
-    ).not.toBeNull();
-    expect(sheet.textContent).toContain(
-      "Established is a hint. It is not a promise, and it changes nothing about your money.",
-    );
-    const rows = within(
-      within(sheet).getByTestId("established-rows"),
-    ).getAllByRole("listitem");
-    expect(rows).toHaveLength(3);
-    expect(rows.map((r) => r.textContent).join(" ")).not.toMatch(/Not yet/);
-    // Closed by the keyboard, focus goes back to the chip.
-    fireEvent.keyDown(sheet, { key: "Escape" });
-    await waitFor(() =>
-      expect(screen.queryByTestId("established-sheet")).toBeNull(),
-    );
-    expect(document.activeElement).toBe(chip);
-  });
-
-  it("is not drawn for a project that has not, and Details says what is missing", async () => {
-    await page(established(false));
-    await screen.findByTestId("top-facts");
-    expect(screen.queryByTestId("established-chip")).toBeNull();
-    fireEvent.click(screen.getByTestId("established-open"));
-    const sheet = await screen.findByTestId("established-sheet");
-    expect(sheet.textContent).toContain("Not yet:");
-  });
-
-  it("is not drawn from a record that has a verdict its own inputs do not give", async () => {
-    await page(
-      withSocial({
-        established: {
-          rule: { minHeldBps: 6000, heldSecs: 100, minAccounts: 10 },
-          heldBps: 100,
-          accounts: 1,
-          twoSigners: false,
-          reached: true,
-        },
-      }),
-    );
-    await screen.findByTestId("top-facts");
-    expect(screen.queryByTestId("established-chip")).toBeNull();
-  });
-});
-
 describe("what is drawn when a key is absent, null, wrong or old", () => {
-  it("a record from an older server has no kept line and no chip, and Details says it has not told us yet", async () => {
+  it("a record from an older server has no kept line", async () => {
     await page(
       withSocial({
         held: "absent",
         feed: "absent",
         streaks: "absent",
-        established: "absent",
       }),
     );
     await screen.findByTestId("top-facts");
     expect(screen.queryByTestId("top-kept")).toBeNull();
-    expect(screen.queryByTestId("established-chip")).toBeNull();
-    expect(screen.getByTestId("established-untold-line").textContent).toBe(
-      "This server has not told us yet.",
-    );
     // The money is read all the same.
     expect(screen.getByTestId("top-money-pot")).not.toBeNull();
   });
 
   it("a key that is null is not 'none' and not zero: nothing is drawn for it", async () => {
-    await page(withSocial({ held: null, streaks: null, established: null }));
+    await page(withSocial({ held: null, streaks: null }));
     await screen.findByTestId("top-facts");
     expect(screen.queryByTestId("top-kept")).toBeNull();
-    expect(screen.queryByTestId("established-chip")).toBeNull();
     expect(screen.getByTestId("top-check-in").textContent).toMatch(
       /^(Last check-in|No check-in yet)/,
     );
@@ -262,11 +190,9 @@ describe("what is drawn when a key is absent, null, wrong or old", () => {
   it("a key that is wrong reads as null for that part, and the money page stands", async () => {
     await page((c) => {
       (c.held as Record<string, unknown>).rank = "garbage";
-      (c.established as Record<string, unknown>).reached = "yes";
     });
     await screen.findByTestId("top-facts");
     expect(screen.queryByTestId("top-kept")).toBeNull();
-    expect(screen.queryByTestId("established-chip")).toBeNull();
     expect(screen.getByTestId("top-money-pot")).not.toBeNull();
     expect(screen.getByTestId("backing-box")).not.toBeNull();
   });
@@ -279,12 +205,11 @@ describe("what is drawn when a key is absent, null, wrong or old", () => {
     expect(screen.getByTestId("top-money-pot")).not.toBeNull();
   });
 
-  it("a record older than a day shows none of the money, no chip and no kept line, and Back waits", async () => {
-    await page(established(true), NOW - 2 * 86_400);
+  it("a record older than a day shows none of the money and no kept line, and Back waits", async () => {
+    await page(undefined, NOW - 2 * 86_400);
     expect(await screen.findByTestId("top-money-stale")).not.toBeNull();
     expect(screen.queryByTestId("top-money-pot")).toBeNull();
     expect(screen.queryByTestId("top-take-out-now")).toBeNull();
-    expect(screen.queryByTestId("established-chip")).toBeNull();
     expect(screen.queryByTestId("top-kept")).toBeNull();
     expect(screen.queryByTestId("top-people")).toBeNull();
     expect(screen.getByTestId("back-paused").textContent).toMatch(
@@ -306,32 +231,19 @@ describe("what is drawn when a key is absent, null, wrong or old", () => {
 });
 
 describe("assistive semantics", () => {
-  it("has no serious violation with the page, and with the Established and Share sheets open", async () => {
-    await page(established(true));
+  it("has no serious violation with the page, and with the Share sheet open", async () => {
+    await page();
     await screen.findByTestId("backing-box");
     expect(await seriousViolations()).toEqual([]);
-    fireEvent.click(screen.getByTestId("established-chip"));
-    await screen.findByTestId("established-sheet");
-    expect(await seriousViolations()).toEqual([]);
-    fireEvent.keyDown(screen.getByTestId("established-sheet"), {
-      key: "Escape",
-    });
-    await waitFor(() =>
-      expect(screen.queryByTestId("established-sheet")).toBeNull(),
-    );
     fireEvent.click(screen.getByTestId("share-open"));
     await screen.findByTestId("share-sheet");
     expect(await seriousViolations()).toEqual([]);
   });
 
-  it("the chip, the share press and the Details press are each one named button", async () => {
-    await page(established(true));
+  it("the share press is one named button", async () => {
+    await page();
     await screen.findByTestId("backing-box");
-    for (const name of ["Established", "Share"])
-      expect(screen.getAllByRole("button", { name })).toHaveLength(1);
-    expect(
-      screen.getAllByRole("button", { name: "What “Established” means" }),
-    ).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Share" })).toHaveLength(1);
   });
 });
 

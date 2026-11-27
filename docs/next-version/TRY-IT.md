@@ -292,34 +292,6 @@ world made without the switch: the page then says nothing about a pause at all, 
 (`scripts/pot-full-loop.sh pot-pause.spec`, checked for anything sticking out sideways and for the named parts being on the screen)
 in Chromium.
 
-### 4.9 The earlier backers' claim (a world made for it)
-
-Also **off unless the world is made with it**: `WORLD_KIND=earlier SERVE_HOST=<this computer's address> scripts/pot-full-loop.sh --serve`.
-The script makes an **invented** list of four rows from the chain's public accounts (no real person is in it, and nothing of it is
-kept after Ctrl-C), deploys with the six `EARLIER_*` settings, builds the app with the claim page's three settings and leaves the
-project "Project zero" on the chain. It prints a link `.../earlier-grant#...`: that is the link of account number 3's row (2,500
-Team Shares). Open it on the phone with the wallet on account 3.
-
-1. **Account 3:** **Working:** "Your grant: 2,500 Team Shares.", "They unlock evenly over 365 days counted from the day the project
-   began, with no waiting period at the start.", "Taking Team
-   Shares out pays only what the project holds above what backers put in. That can be nothing.", "The text you accept has the
-   fingerprint 0x....", "0 of 4 grants claimed." and the banner. The press "Accept the text and claim" is **off**.
-2. Tick "I have read the text with this fingerprint.": the press is still off ("Open the text first. The claim is offered once you have.").
-   Untick it, press **Read the text** (it opens the text in another tab: "An invented text for the test network ..."), tick the box again:
-   the press is on. Under it: "This records the fingerprint you name, from your account, on the network."
-3. Press it, sign once. **Working:** "Claimed. Your Team Shares unlock over time." The grant is then in the list of your Team Share
-   grants on the Project zero's Money tab, as a protected grant (it has no "give up" press): it counts from the project's birth, so
-   part of it may be unlocked at once.
-4. **A person with no row (account 6):** open the same link with account 6. **Working:** "This link is not for the account you are
-   using. Open it with the account it was made for." and no press. The link is a row's: it never shows another person's row, and
-   the page lists none.
-5. **Open the link again with account 3:** "This grant is already claimed. You can see it in Your Shares." and "1 of 4 grants claimed."
-6. **Without the settings:** the address `/earlier-grant` of any other world (and of the real app's own build) is the app's plain "not found".
-
-**Not tried by anyone:** the page on a real phone; counsel's text and words (the sentences about the text, the box and what the grant
-is are a provisional neutral placeholder in `app/src/features/earlier-grant/earlier-grant-consent.ts`); any real list. **Walked at
-360 x 640** by the loop's journey (`scripts/pot-full-loop.sh pot-earlier.spec`).
-
 ## 5. What cannot be tried without an `https` address
 
 A passkey, alerts when the app is closed, and the Copy and Share presses need a real certificate (the address of a test deployment:

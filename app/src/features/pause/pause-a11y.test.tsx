@@ -1,24 +1,14 @@
-// Assistive semantics of the pause and claim screens, checked with axe on the DOM (names, roles, labels, ids): the card with its
+// Assistive semantics of the pause screens, checked with axe on the DOM (names, roles, labels, ids): the card with its
 // meter in every state, Your Shares with Park Shares and Take back, the Park sheet and the Take out sheet with parked Shares, the
-// team's sentence with its Draw, and the claim page. One owner of each actionable label, and the banner is counted once.
+// team's sentence with its Draw. One owner of each actionable label, and the banner is counted once.
 import { applyServerSettings } from "@creaton/core/client/server-settings.ts";
-import { buildEarlierTree } from "@creaton/core/pot/earlier-proof.ts";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { seriousViolations } from "../../../tests/helpers/axe-dom";
-import {
-  COORDINATE,
-  NOW,
-  recordV2,
-  SERVER,
-  serve,
-  wrap,
-} from "../../../tests/helpers/money-harness";
-import { numbersV2Content } from "../../../tests/helpers/numbers-v2-fixture";
+import { SERVER, serve, wrap } from "../../../tests/helpers/money-harness";
 import {
   numbersWithPause,
-  PAUSE,
   pauseAnswers,
 } from "../../../tests/helpers/pause-harness";
 import { installPotChain } from "../../../tests/helpers/pot-chain";
@@ -26,11 +16,8 @@ import {
   BACKER_EVM,
   backerAnswers,
   nameTheNetwork,
-  numbersFor,
   S,
 } from "../../../tests/helpers/pot-harness";
-import { EarlierGrantPage } from "../earlier-grant/EarlierGrantPage";
-import { earlierLinkFragment } from "../earlier-grant/earlier-grant-state";
 import { YourShares } from "../pot/YourShares";
 import { targetOf } from "../pot/target";
 import { PauseCard } from "./PauseCard";
@@ -139,75 +126,5 @@ describe("the pause screens have names, roles and labels", () => {
     fireEvent.click(screen.getByTestId("holding-take-out"));
     await screen.findByTestId("takeout-unparks");
     expect(await seriousViolations()).toEqual([]);
-  });
-});
-
-describe("the claim page has names, roles and labels", () => {
-  it("the checkbox has its label, the read link and the press have names, and nothing is named twice", async () => {
-    const base = numbersFor();
-    const rows = [
-      { index: 0n, account: BACKER_EVM, amount: 100n * S },
-      { index: 1n, account: `0x${"22".repeat(20)}`, amount: 40n * S },
-    ];
-    const tree = buildEarlierTree(rows);
-    const CONTRACT = `0x${"c1".repeat(20)}`;
-    const TEXT = `0x${"ab".repeat(32)}`;
-    serve([
-      recordV2(
-        numbersV2Content({
-          coordinate: COORDINATE,
-          now: NOW,
-          patch: (c) => {
-            (c as Record<string, unknown>).earlierGrants = {
-              contract: CONTRACT,
-              bound: true,
-              root: tree.root,
-              textHash: TEXT,
-              total: (140n * S).toString(),
-              rows: 2,
-              claimedRows: 0,
-              claimedTotal: "0",
-              clockSecs: 31_536_000,
-            };
-          },
-        }),
-        COORDINATE,
-        NOW,
-      ),
-    ]);
-    installPotChain({
-      account: BACKER_EVM,
-      answers: {
-        isClaimed: [false],
-        textHash: [TEXT],
-        vester: [base.contracts.vester],
-      } as never,
-    });
-    window.location.hash = earlierLinkFragment({
-      index: 0n,
-      amount: 100n * S,
-      proof: tree.proofOf(0),
-    });
-    wrap(
-      <EarlierGrantPage
-        settings={{
-          contract: CONTRACT,
-          textHash: TEXT,
-          textUrl: "https://example.invalid/t",
-        }}
-      />,
-    );
-    await screen.findByTestId("claim-press");
-    expect(
-      screen.getByLabelText("I have read the text with this fingerprint."),
-    ).toBeTruthy();
-    expect(screen.getAllByRole("link", { name: "Read the text" })).toHaveLength(
-      1,
-    );
-    expect(
-      screen.getAllByRole("button", { name: "Accept the text and claim" }),
-    ).toHaveLength(1);
-    expect(await seriousViolations()).toEqual([]);
-    expect(PAUSE).toBeTruthy();
   });
 });

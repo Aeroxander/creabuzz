@@ -124,8 +124,6 @@ RUN corepack enable
 #   VITE_CREATON_PASSKEY_ACCOUNT=1, VITE_CREATON_BUNDLER_URL,          fee-paid sending from a passkey account; the bundler
 #   VITE_CREATON_SPONSOR_URL (optional)                                and the sponsor sit behind addresses that hold their
 #                                                                      own keys (a key in the address is refused)
-#   VITE_CREATON_EARLIER_CONTRACT, _TEXT_HASH, _TEXT_URL               the earlier backers' claim page: all three or the page
-#                                                                      does not exist (the app checks them and fails closed)
 # docs/next-version/DEPLOY-TEST-NETWORK.md says where each comes from.
 FROM node-base AS app-builder
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -144,17 +142,13 @@ ARG VITE_CREATON_RPC_URL=
 ARG VITE_CREATON_PASSKEY_ACCOUNT=
 ARG VITE_CREATON_BUNDLER_URL=
 ARG VITE_CREATON_SPONSOR_URL=
-ARG VITE_CREATON_EARLIER_CONTRACT=
-ARG VITE_CREATON_EARLIER_TEXT_HASH=
-ARG VITE_CREATON_EARLIER_TEXT_URL=
 # An empty argument reaches the build as no setting at all. Settings that do not fit together stop the build here, with the
 # reason, rather than build an app that quietly shows no money (a launcher without its chain, a passkey switch without its
 # bundler). The build ends by checking its own output: the page, its manifest, the service worker, and the Launcher inside
 # the code when one was named.
 RUN set -eu; \
     for name in VITE_CREATON_CHAIN_ID VITE_CREATON_LAUNCHER VITE_CREATON_DOLLAR VITE_CREATON_RPC_URL \
-                VITE_CREATON_PASSKEY_ACCOUNT VITE_CREATON_BUNDLER_URL VITE_CREATON_SPONSOR_URL \
-                VITE_CREATON_EARLIER_CONTRACT VITE_CREATON_EARLIER_TEXT_HASH VITE_CREATON_EARLIER_TEXT_URL; do \
+                VITE_CREATON_PASSKEY_ACCOUNT VITE_CREATON_BUNDLER_URL VITE_CREATON_SPONSOR_URL; do \
         eval "value=\${$name:-}"; \
         if [ -z "$value" ]; then unset "$name"; fi; \
         case "$value" in *CHANGE_ME*) echo "$name still holds CHANGE_ME: put the real value in, then build again." >&2; exit 1 ;; esac; \

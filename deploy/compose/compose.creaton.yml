@@ -24,9 +24,6 @@ services:
         VITE_CREATON_PASSKEY_ACCOUNT: ${VITE_CREATON_PASSKEY_ACCOUNT:-}
         VITE_CREATON_BUNDLER_URL: ${VITE_CREATON_BUNDLER_URL:-}
         VITE_CREATON_SPONSOR_URL: ${VITE_CREATON_SPONSOR_URL:-}
-        VITE_CREATON_EARLIER_CONTRACT: ${VITE_CREATON_EARLIER_CONTRACT:-}
-        VITE_CREATON_EARLIER_TEXT_HASH: ${VITE_CREATON_EARLIER_TEXT_HASH:-}
-        VITE_CREATON_EARLIER_TEXT_URL: ${VITE_CREATON_EARLIER_TEXT_URL:-}
     environment:
       # How much one signed-in person may send. The first counts every read, live update and write the web app sends,
       # per second, averaged over 5 seconds and shared by all of that person's tabs and devices; the second counts

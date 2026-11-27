@@ -4,10 +4,6 @@ import {
   createRouter,
   lazyRouteComponent,
 } from "@tanstack/react-router";
-import {
-  type EarlierGrantSettings,
-  earlierGrantSettings,
-} from "../features/earlier-grant/earlier-grant-settings";
 import { HomePage } from "../features/home/HomePage";
 import { Shell } from "./Shell";
 
@@ -25,10 +21,6 @@ const SignUpPage = lazyRouteComponent(
 const ConversationPage = lazyRouteComponent(
   () => import("../features/messages/ConversationPage"),
   "ConversationPage",
-);
-const EarlierGrantPage = lazyRouteComponent(
-  () => import("../features/earlier-grant/EarlierGrantPage"),
-  "EarlierGrantPage",
 );
 const MessagesPage = lazyRouteComponent(
   () => import("../features/messages/MessagesPage"),
@@ -131,19 +123,6 @@ const you = createRoute({
   path: "/you",
   component: YouPage,
 });
-/**
- * The earlier backers' claim page (step 4): its route is in the tree only for a build given its three settings, so without them
- * its address is the app's plain "not found" and no code of the page is ever loaded.
- */
-function earlierGrantRoute(settings: EarlierGrantSettings) {
-  return createRoute({
-    getParentRoute: () => root,
-    path: "/earlier-grant",
-    component: function EarlierGrantRoute() {
-      return <EarlierGrantPage settings={settings} />;
-    },
-  });
-}
 const messages = createRoute({
   getParentRoute: () => root,
   path: "/you/messages",
@@ -215,9 +194,7 @@ const welcome = createRoute({
 });
 
 /** The app's router. */
-export function createAppRouter(
-  earlierGrant: EarlierGrantSettings | null = earlierGrantSettings(),
-) {
+export function createAppRouter() {
   const routeTree = root.addChildren([
     home,
     project,
@@ -225,7 +202,6 @@ export function createAppRouter(
     start,
     week,
     you,
-    ...(earlierGrant ? [earlierGrantRoute(earlierGrant)] : []),
     messages,
     conversation,
     saved,

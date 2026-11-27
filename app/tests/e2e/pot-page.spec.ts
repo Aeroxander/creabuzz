@@ -26,8 +26,7 @@ test.skip(NO_CHAIN_WHY !== null, NO_CHAIN_WHY ?? "");
 /**
  * The project page's top in a real browser against a real chain (plan section 7.1): at 360 by 640 the name, the project's
  * money with its line, what taking out now would give, the banner and Back are all in view without scrolling; the banner is
- * on the page once; Share gives the link and a picture; the "Established" chip appears only for a project that reached it
- * and opens a sheet of three plain lines; a record past a day shows none of the money. The record's step 3 keys are the
+ * on the page once; Share gives the link and a picture; a record past a day shows none of the money. The record's step 3 keys are the
  * example's, moved to the chain's clock.
  */
 
@@ -158,63 +157,7 @@ test("Share gives the link that shows only what the founder wrote, a copy that s
   await expect(page.getByTestId("share-open")).toBeFocused();
 });
 
-test("the Established chip appears only for a project that reached it, and its sheet says why in three plain lines", async ({
-  page,
-}) => {
-  const w = world.get();
-  const project = await launchProject(w, "established", FOUNDER_NOSTR);
-  await backFor(w, project, w.who.backer, 100n);
-  await openMoney(page, w, project, {
-    account: w.who.backer,
-    tab: null,
-    patch: (content) => {
-      // The verdict is the rule on its own inputs, taken from the record's own rule.
-      const e = content.established as Record<string, any>;
-      e.heldBps = e.rule.minHeldBps;
-      e.accounts = e.rule.minAccounts;
-      e.twoSigners = true;
-      e.reached = true;
-      // The badge's inputs are the record's own `held`.
-      const held = content.held as Record<string, any>;
-      held.badge.bps = e.heldBps;
-      held.countedAccounts = e.accounts;
-    },
-  });
-  const chip = page.getByTestId("established-chip");
-  await expect(chip).toBeVisible({ timeout: 20_000 });
-  await expect(chip).toHaveText("Established");
-  // One stop: the chip is one button, and it opens by the keyboard.
-  await chip.focus();
-  await page.keyboard.press("Enter");
-  const sheet = page.getByTestId("established-sheet");
-  await expect(sheet).toContainText(
-    "Established is a hint. It is not a promise, and it changes nothing about your money.",
-  );
-  await expect(
-    sheet.getByTestId("established-rows").getByRole("listitem"),
-  ).toHaveCount(3);
-  await expectAccessible(page, "Established sheet");
-  await page.keyboard.press("Escape");
-  await expect(chip).toBeFocused();
-});
-
-test("a project that is not Established has no chip, and Details says what is missing without shaming it", async ({
-  page,
-}) => {
-  const w = world.get();
-  const project = await launchProject(w, "notyet", FOUNDER_NOSTR);
-  await backFor(w, project, w.who.backer, 100n);
-  await openMoney(page, w, project, { account: w.who.backer, tab: null });
-  await expect(page.getByTestId("backing-review")).toBeVisible({
-    timeout: 20_000,
-  });
-  await expect(page.getByTestId("established-chip")).toHaveCount(0);
-  await page.getByTestId("project-details").getByText("Details").click();
-  await page.getByTestId("established-open").click();
-  await expect(page.getByTestId("established-sheet")).toContainText("Not yet:");
-});
-
-test("a record past a day shows none of the money, no chip, and Back waits while taking out does not", async ({
+test("a record past a day shows none of the money, and Back waits while taking out does not", async ({
   page,
 }) => {
   const w = world.get();
@@ -231,7 +174,6 @@ test("a record past a day shows none of the money, no chip, and Back waits while
     timeout: 20_000,
   });
   await expect(page.getByTestId("top-money-pot")).toHaveCount(0);
-  await expect(page.getByTestId("established-chip")).toHaveCount(0);
   await expect(page.getByTestId("back-paused")).toBeVisible();
   await expect(page.getByTestId("top-banner")).toHaveText(BANNER);
 });

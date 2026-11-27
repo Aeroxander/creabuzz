@@ -1,8 +1,8 @@
 /**
  * The sentences of the top of a project's page (plan section 7.1), made from the signed record and nothing else: who backs
- * it, how long money has stayed, the last check-in and its weeks in a row, what taking out now would give, and the words of
- * the "Established" hint. Pure, so one test holds every sentence. A part the record could not say gives null and the page
- * draws nothing for it: never "none" and never zero for what is not known.
+ * it, how long money has stayed, the last check-in and its weeks in a row and what taking out now would give. Pure, so one
+ * test holds every sentence. A part the record could not say gives null and the page draws nothing for it: never "none" and
+ * never zero for what is not known.
  */
 import { durationWords } from "../tasks/chain/duration";
 import type { ProjectNumbers } from "../money/numbers";
@@ -97,73 +97,6 @@ export function doorChip(numbers: ProjectNumbers, now: number): string {
   return doorShutWords(numbers, now) === null
     ? "Open to back"
     : "Closed to new backers";
-}
-
-export const ESTABLISHED = "Established";
-export const ESTABLISHED_SHEET_TITLE = "What “Established” means";
-export const ESTABLISHED_HINT =
-  "Established is a hint. It is not a promise, and it changes nothing about your money.";
-/** The "Established" line in Details for a record from a server that does not say. */
-export const ESTABLISHED_UNTOLD = "This server has not told us yet.";
-export const ESTABLISHED_UNKNOWN =
-  "This could not be worked out just now. It changes nothing about your money.";
-
-/** One line of the Established sheet: a tick or a dash, said in words as well as drawn. */
-export interface EstablishedRow {
-  met: boolean | null;
-  text: string;
-}
-
-/** A tenth of a percent is the smallest step of a share in ten-thousandths read as a whole percent, rounded down. */
-function percent(bps: number): number {
-  return Math.floor(bps / 100);
-}
-
-/**
- * The three lines the sheet shows, from the record's own rule and inputs (nothing is typed here): how much of the money
- * has stayed, how many people back it, and how many run it. A met line says so and one that is not says what is missing.
- */
-export function establishedRows(
-  numbers: ProjectNumbers,
-): EstablishedRow[] | null {
-  const e = numbers.established;
-  if (!e) return null;
-  const window = windowWords(e.rule.heldSecs);
-  const need = percent(e.rule.minHeldBps);
-  const stayed =
-    e.heldBps === null
-      ? {
-          met: null,
-          text: `Most of the money has stayed: not known yet. It needs ${need}% here ${window} or more.`,
-        }
-      : e.heldBps >= e.rule.minHeldBps
-        ? {
-            met: true,
-            text: `Most of the money has stayed: ${percent(e.heldBps)}% of it has been here ${window} or more. It needs ${need}%.`,
-          }
-        : {
-            met: false,
-            text: `Not yet: ${percent(e.heldBps)}% of the money has been here ${window} or more. It needs ${need}%.`,
-          };
-  const people =
-    e.accounts === null
-      ? {
-          met: null,
-          text: `At least ${e.rule.minAccounts} people back it: not known yet.`,
-        }
-      : e.accounts >= e.rule.minAccounts
-        ? {
-            met: true,
-            text: `At least ${e.rule.minAccounts} people back it: ${e.accounts} do now.`,
-          }
-        : {
-            met: false,
-            text: `Not yet: at least ${e.rule.minAccounts} people need to back it, and ${e.accounts} do now.`,
-          };
-  const run = e.twoSigners
-    ? { met: true, text: "Two people run it." }
-    : { met: false, text: "One person runs it. Not yet: it needs two." };
-  return [stayed, people, run];
 }
 
 /** "Numbers as of 18 Nov, 14:05". */

@@ -12,7 +12,6 @@ import {
 import { doorShutWords, smallDollarsText } from "../pot/pot-words";
 import {
   doorChip,
-  establishedRows,
   keptLine,
   keptMoney,
   peopleLine,
@@ -232,54 +231,5 @@ describe("what a streak and the kept money say", () => {
     expect(line).not.toMatch(/1,234/);
     expect(keptMoney(40_000_000n)).toBe("under 100 dollars");
     expect(keptMoney(50_000_000n)).toBe("about 100 dollars");
-  });
-});
-
-describe("what Established means, line by line, from the record's own rule", () => {
-  it("a project that reached it: every line met, and the numbers are the rule's", () => {
-    const n = parsedWith((c) => {
-      const e = c.established;
-      e.heldBps = e.rule.minHeldBps;
-      e.accounts = e.rule.minAccounts;
-      e.twoSigners = true;
-      e.reached = true;
-      // The badge's inputs are the record's own `held` (a badge built on other figures is not believed).
-      c.held.badge.bps = e.heldBps;
-      c.held.countedAccounts = e.accounts;
-    });
-    const rows = establishedRows(n);
-    expect(rows?.map((r) => r.met)).toEqual([true, true, true]);
-    const rule = n.established?.rule;
-    expect(rows?.[0].text).toBe(
-      `Most of the money has stayed: ${(rule?.minHeldBps ?? 0) / 100}% of it has been here 91 days or more. It needs ${(rule?.minHeldBps ?? 0) / 100}%.`,
-    );
-    expect(rows?.[1].text).toBe(
-      `At least ${rule?.minAccounts} people back it: ${rule?.minAccounts} do now.`,
-    );
-    expect(rows?.[2].text).toBe("Two people run it.");
-  });
-
-  it("a young project is told what is missing in the same words, never shamed", () => {
-    const rows = establishedRows(parsedExample());
-    expect(rows?.map((r) => r.met)).toEqual([true, false, false]);
-    expect(rows?.[1].text).toMatch(
-      /^Not yet: at least \d+ people need to back it, and \d+ do now\.$/,
-    );
-    expect(rows?.[2].text).toBe("One person runs it. Not yet: it needs two.");
-    for (const row of rows ?? [])
-      expect(row.text).not.toMatch(/fail|bad|worse/i);
-  });
-
-  it("a figure the record could not work out is 'not known yet', and no key gives no rows", () => {
-    const unknown = parsedWith((c) => {
-      c.held.badge = null;
-      c.established.heldBps = null;
-      c.established.reached = null;
-    });
-    expect(establishedRows(unknown)?.[0].met).toBeNull();
-    expect(establishedRows(unknown)?.[0].text).toMatch(/not known yet/);
-    expect(
-      establishedRows(parsedWith((c) => (c.established = null))),
-    ).toBeNull();
   });
 });

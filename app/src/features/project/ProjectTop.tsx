@@ -1,5 +1,5 @@
 /**
- * The top of a project's page, in the order of plan section 7.1: what it is, whether it is Established, the project's money
+ * The top of a project's page, in the order of plan section 7.1: what it is, the project's money
  * with "what taking out now would give", the fixed banner, then Back and Share, then who backs it, how long money has stayed
  * and the updates, and one fold of details. On a phone at 360 by 640 the name, the money, the banner and Back are in view
  * without scrolling. Everything money comes from the signed record with its age (a record past a day shows none of it, and
@@ -22,13 +22,10 @@ import {
   PLAY_MONEY_WORDS,
   smallDollarsText,
 } from "../pot/pot-words";
-import { EstablishedChip } from "./EstablishedChip";
 import type { Project } from "./project-record";
 import {
   asOfLine,
   doorChip,
-  ESTABLISHED_SHEET_TITLE,
-  ESTABLISHED_UNTOLD,
   keptLine,
   peopleLine,
   takeOutNowLine,
@@ -40,12 +37,9 @@ const BackSection = lazy(() =>
   import("./BackSection").then((m) => ({ default: m.BackSection })),
 );
 
-// The two sheets load when first opened (the picture's drawing is not needed to read the page) and then stay mounted.
+// The share sheet loads when first opened (the picture's drawing is not needed to read the page) and then stays mounted.
 const ShareSheet = lazy(() =>
   import("./ShareSheet").then((m) => ({ default: m.ShareSheet })),
-);
-const EstablishedSheet = lazy(() =>
-  import("./EstablishedSheet").then((m) => ({ default: m.EstablishedSheet })),
 );
 
 function Header({ project }: { project: Project }) {
@@ -95,7 +89,7 @@ function TopMoney({
 }: {
   numbers: ProjectNumbers;
   now: number;
-  /** The chips (Established, the door), drawn on the card's first line. */
+  /** The chip (the door), drawn on the card's first line. */
   chips: ReactNode;
 }) {
   const level = freshnessOf(numbers, now).level;
@@ -151,15 +145,7 @@ function TopFacts({ numbers, now }: { numbers: ProjectNumbers; now: number }) {
   );
 }
 
-function Details({
-  numbers,
-  now,
-  onEstablished,
-}: {
-  numbers: ProjectNumbers;
-  now: number;
-  onEstablished: () => void;
-}) {
+function Details({ numbers, now }: { numbers: ProjectNumbers; now: number }) {
   const fresh = freshnessOf(numbers, now).level !== "stale";
   const shut = doorShutWords(numbers, now);
   return (
@@ -176,23 +162,6 @@ function Details({
           <p data-testid="top-allowance">{allowanceWords(numbers)}</p>
         ) : null}
         {shut ? <p data-testid="top-door-shut">{shut}</p> : null}
-        {fresh ? (
-          <>
-            <Button
-              data-testid="established-open"
-              onClick={onEstablished}
-              size="sm"
-              variant="secondary"
-            >
-              {ESTABLISHED_SHEET_TITLE}
-            </Button>
-            {numbers.established === undefined ? (
-              <p className="text-muted" data-testid="established-untold-line">
-                {ESTABLISHED_UNTOLD}
-              </p>
-            ) : null}
-          </>
-        ) : null}
       </div>
     </details>
   );
@@ -216,21 +185,14 @@ export function ProjectTop({
   founderPicture: string | null;
 }) {
   const [shareOpen, setShareOpen] = useState(false);
-  const [establishedOpen, setEstablishedOpen] = useState(false);
   const [shareSeen, setShareSeen] = useState(false);
-  const [establishedSeen, setEstablishedSeen] = useState(false);
   const openShare = () => {
     setShareSeen(true);
     setShareOpen(true);
   };
-  const openEstablished = () => {
-    setEstablishedSeen(true);
-    setEstablishedOpen(true);
-  };
   // The page draws its own banner (below), so the shell does not draw a second one.
   useOwnBanner(investing);
   const fresh = numbers ? freshnessOf(numbers, now).level !== "stale" : false;
-  const reached = fresh && numbers?.established?.reached === true;
   return (
     <div className="flex flex-col gap-3" data-testid="project-top">
       <Header project={project} />
@@ -251,9 +213,6 @@ export function ProjectTop({
                     className="flex flex-wrap items-center justify-end gap-2"
                     data-testid="top-chips"
                   >
-                    {reached ? (
-                      <EstablishedChip onOpen={openEstablished} />
-                    ) : null}
                     <span className="rounded-full bg-white/10 px-2.5 py-1 text-sm">
                       {doorChip(numbers, now)}
                     </span>
@@ -299,13 +258,7 @@ export function ProjectTop({
             project={project}
           />
           {numbers ? <TopFacts now={now} numbers={numbers} /> : null}
-          {numbers ? (
-            <Details
-              now={now}
-              numbers={numbers}
-              onEstablished={openEstablished}
-            />
-          ) : null}
+          {numbers ? <Details now={now} numbers={numbers} /> : null}
           <ChunkBoundary quiet>
             <Suspense fallback={null}>
               {shareSeen ? (
@@ -315,13 +268,6 @@ export function ProjectTop({
                   onOpenChange={setShareOpen}
                   open={shareOpen}
                   project={project}
-                />
-              ) : null}
-              {establishedSeen && numbers ? (
-                <EstablishedSheet
-                  numbers={numbers}
-                  onOpenChange={setEstablishedOpen}
-                  open={establishedOpen}
                 />
               ) : null}
             </Suspense>
