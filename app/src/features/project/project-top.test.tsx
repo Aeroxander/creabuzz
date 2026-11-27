@@ -1,5 +1,5 @@
 // biome-ignore-all lint/suspicious/noExplicitAny: a record is changed as loose JSON, the way a hostile one arrives
-// The top of a project's page (plan section 7.1) on record version 2 with the legacy-screens flag off: the project's money with
+// The top of a project's page (plan section 7.1) on record version 2: the project's money with
 // its line, the play-money line, the fixed banner once, one Back box, Share, the Established chip and its sheet, the facts,
 // and what is drawn when the record is old, from an older server, or has a key it could not work out. Every figure is read
 // from the example the server's own code wrote.

@@ -1,7 +1,7 @@
 /**
  * Each person's linked wallet (kind 37017, the same record web/ writes and reads, `@creaton/core/account/wallet-proof.ts`):
  * read for teammates, so the runner can offer a seat or give Shares to an address only that person proved, and written
- * for the signed-in person by "Link this wallet" on You.
+ * for the signed-in person by the room's confirm press.
  */
 import {
   type ChainChecker,

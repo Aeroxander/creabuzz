@@ -4,7 +4,6 @@ import { BackHeader } from "../../app/BackHeader";
 import { useAccount } from "../../lib/account";
 import { useFollowProject, useFollows } from "../../lib/follows";
 import { nameOf, pictureOf, useProfiles } from "../../lib/profiles";
-import { legacyScreensOn } from "../../lib/legacy";
 import { investingOn } from "../../lib/server";
 import { useRequireAccount } from "../../lib/use-require-account";
 import { Button } from "../../ui/button";
@@ -38,7 +37,6 @@ const TasksTab = lazy(() =>
 const ProjectMoney = lazy(() =>
   import("../pot/ProjectMoney").then((m) => ({ default: m.ProjectMoney })),
 );
-// The old design's screens (stages, rounds, the auction, the market, Team's Pair): loaded only with the legacy-screens flag.
 // Opening a project to backers carries the launch call and the contract ABIs: it loads only for a founder who has not launched.
 const LaunchCard = lazy(() =>
   import("../launch/LaunchCard").then((m) => ({ default: m.LaunchCard })),
@@ -48,13 +46,6 @@ const LaunchCard = lazy(() =>
 const BrainRow = lazy(() => import("../brain/BrainRow"));
 const RoomTab = lazy(() =>
   import("../room/RoomTab").then((m) => ({ default: m.RoomTab })),
-);
-const LegacyProjectTop = lazy(() => import("../../legacy/LegacyProjectTop"));
-const LegacyMoneyTab = lazy(() => import("../../legacy/LegacyMoneyTab"));
-const LegacyMemberActions = lazy(() =>
-  import("../../legacy/LegacyPerson").then((m) => ({
-    default: m.LegacyMemberActions,
-  })),
 );
 
 /** The project page: its top (what it is, its money, Back, Share), Ask to join, then Updates, Tasks, People, Money and Room. */
@@ -151,7 +142,6 @@ function ProjectView({
   const walletAddress = useWalletAddress().data ?? null;
   // The strips below are this project's news: opening the page reads it.
   useMarkProjectSeen(numbers, walletAddress);
-  const legacy = legacyScreensOn();
   const roomNews = useRoomNews(project, investing, activity.data);
   const team = [project.author, ...accepted.map((m) => m.pubkey)];
   return (
@@ -173,19 +163,7 @@ function ProjectView({
         project={project}
       />
 
-      {legacy ? (
-        <Suspense fallback={null}>
-          <LegacyProjectTop
-            accepted={accepted.length}
-            isFounder={isFounder}
-            profiles={profiles}
-            project={project}
-            team={team}
-          />
-        </Suspense>
-      ) : null}
-
-      {investing && isFounder && !legacy && !chainKeyOfProject(project) ? (
+      {investing && isFounder && !chainKeyOfProject(project) ? (
         <Suspense fallback={<Card className="h-24 animate-pulse" />}>
           <LaunchCard onLaunched={() => setTab("money")} project={project} />
         </Suspense>
@@ -257,20 +235,6 @@ function ProjectView({
                 activity={activity.data}
                 isFounder={isFounder}
                 loading={activity.isPending}
-                memberAction={
-                  legacy && investing
-                    ? (member, name) => (
-                        <Suspense fallback={null}>
-                          <LegacyMemberActions
-                            name={name}
-                            project={project}
-                            pubkey={member}
-                            team={accepted.map((m) => m.pubkey)}
-                          />
-                        </Suspense>
-                      )
-                    : undefined
-                }
                 profiles={profiles}
                 project={project}
               />
@@ -282,16 +246,7 @@ function ProjectView({
                 {
                   value: "money",
                   label: "Money",
-                  content: legacy ? (
-                    <Suspense fallback={null}>
-                      <LegacyMoneyTab
-                        isFounder={isFounder}
-                        profiles={profiles}
-                        project={project}
-                        team={team}
-                      />
-                    </Suspense>
-                  ) : (
+                  content: (
                     <ChunkBoundary>
                       <Suspense
                         fallback={<Card className="h-40 animate-pulse" />}

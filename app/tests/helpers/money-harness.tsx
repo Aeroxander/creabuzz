@@ -6,19 +6,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { positionCallData } from "../../src/features/money/calls-v1";
-import {
-  type NumbersEvent,
-  parseNumbers,
-  type ProjectNumbers,
-} from "../../src/features/money/numbers-v1";
 import {
   type NumbersEvent as NumbersEventV2,
   parseNumbers as parseNumbersV2,
   type ProjectNumbers as ProjectNumbersV2,
 } from "../../src/features/money/numbers";
 import { ToastProvider } from "../../src/ui/toast";
-import { BACKER_EVM, CONTRACTS, chainIdentity } from "./numbers-fixture";
+import { BACKER_EVM, CONTRACTS } from "./numbers-fixture";
 import { chainIdentityV2 } from "./numbers-v2-fixture";
 
 export const SERVER = "f".repeat(64);
@@ -86,21 +80,6 @@ export const relayMock = {
   },
 };
 
-export function record(
-  content: Record<string, unknown>,
-  coordinate = COORDINATE,
-  at = NOW,
-): NumbersEvent {
-  return {
-    id: `${at.toString(16)}${coordinate.slice(-3)}`.padStart(64, "0"),
-    pubkey: SERVER,
-    kind: 39009,
-    created_at: at,
-    tags: [["d", chainIdentity(coordinate).key]],
-    content: JSON.stringify(content),
-  };
-}
-
 /** A founder's project record (kind 37001) naming the launch `chainKey`, made `at`. */
 export function projectEvent(o: {
   author: string;
@@ -152,18 +131,6 @@ export function numbersV2Of(
   return parsed;
 }
 
-export function numbersOf(content: Record<string, unknown>): ProjectNumbers {
-  const parsed = parseNumbers(record(content), SERVER, {
-    coordinate: COORDINATE,
-    chainKey: chainIdentity(COORDINATE).key,
-  });
-  if (!parsed || parsed.removed) throw new Error("not parsed");
-  return parsed;
-}
-
-const POSITION_SELECTOR = positionCallData(0, BACKER_EVM).slice(0, 10);
-const word = (n: bigint | number) => BigInt(n).toString(16).padStart(64, "0");
-
 export interface WalletOptions {
   /** The `pendingFrom`th call sent from this page does not land (until `settle`). */
   pendingFrom?: number;
@@ -177,8 +144,6 @@ export interface WalletOptions {
   landedEarlier?: string[];
   /** eth_getTransactionCount for "latest" and "pending" (the number of calls sent from this page, unless given). */
   count?: { latest?: number; pending?: number };
-  /** `Rounds.positionOf(round, me).ask` in raw dollars. */
-  asked?: bigint;
 }
 
 /** Every call the wallet was asked to send, with the account it was sent from. */
@@ -230,9 +195,6 @@ export function installWallet(options: WalletOptions = {}) {
       }
       if (method === "eth_call") {
         if (chain !== "0x7a69") return "0x";
-        const data = String((params?.[0] as { data: string }).data);
-        if (data.startsWith(POSITION_SELECTOR))
-          return `0x${word(options.asked ?? 0n)}${word(0)}${word(0)}${word(0)}`;
         return `0x${"0".repeat(24)}${CONTRACTS.quote.slice(2)}`;
       }
       if (method === "eth_sendTransaction") {

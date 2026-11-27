@@ -36,7 +36,7 @@ import {
   WalletStepError,
 } from "./wallet";
 
-export const moneyKeys = {
+const moneyKeys = {
   all: ["money"] as const,
   // The coordinate is part of the key: two records naming one chain key are checked each on its own, never shared.
   project: (key: string, coordinate: string) =>

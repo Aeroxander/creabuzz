@@ -130,14 +130,14 @@ describe("the page exists only where the build was given its three settings", ()
   });
   it("the route is in the router only with the settings: otherwise its address is not a page", () => {
     expect(
-      createAppRouter(false, null).routesByPath["/earlier-grant" as never],
+      createAppRouter(null).routesByPath["/earlier-grant" as never],
     ).toBeUndefined();
     expect(
-      createAppRouter(false, settings).routesByPath["/earlier-grant" as never],
+      createAppRouter(settings).routesByPath["/earlier-grant" as never],
     ).toBeDefined();
     // the old earlier page stays behind its own flag
     expect(
-      createAppRouter(false, settings).routesByPath["/earlier" as never],
+      createAppRouter(settings).routesByPath["/earlier" as never],
     ).toBeUndefined();
   });
 });

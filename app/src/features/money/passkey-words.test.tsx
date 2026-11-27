@@ -10,7 +10,6 @@ import { SERVER, wrap } from "../../../tests/helpers/money-harness";
 import { nameTheNetwork, numbersFor } from "../../../tests/helpers/pot-harness";
 import { WalletGate } from "../pot/use-pot";
 import { ConfirmAccount } from "../room/ConfirmAccount";
-import { LinkWallet } from "../team/LinkWallet";
 import { ACCOUNT_MISMATCH_WORDS } from "./money-copy";
 import { senderWords } from "./sender";
 import { type MoneyWallet, WalletStepError } from "./wallet";
@@ -78,23 +77,6 @@ describe("the words of a passkey person", () => {
     const wallet = senderWords(stand("wallet", async () => ACCOUNT));
     expect(wallet.own).toBe("your wallet");
     expect(wallet.waiting).toBe("Waiting for your wallet…");
-  });
-
-  it("You: the link card says account for a passkey account, wallet for a wallet", async () => {
-    current = stand("passkey", async () => ACCOUNT);
-    wrap(<LinkWallet me={"a".repeat(64)} />);
-    await screen.findByTestId("link-wallet");
-    expect(text()).not.toMatch(/wallet/i);
-    expect(
-      screen.getByRole("button", { name: "Link this account" }),
-    ).toBeTruthy();
-    cleanup();
-    current = stand("wallet", async () => ACCOUNT);
-    wrap(<LinkWallet me={"a".repeat(64)} />);
-    await screen.findByTestId("link-wallet");
-    expect(
-      screen.getByRole("button", { name: "Link this wallet" }),
-    ).toBeTruthy();
   });
 
   it("the room's confirm press says the passkey account's own line, not the wallet's", () => {

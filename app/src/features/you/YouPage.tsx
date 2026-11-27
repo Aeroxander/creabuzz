@@ -21,7 +21,6 @@ import { useAccount } from "../../lib/account";
 import { nameOf, useProfiles } from "../../lib/profiles";
 import { saveProfile } from "../../lib/profile-save";
 import { useMutes } from "../../lib/mutes";
-import { legacyScreensOn } from "../../lib/legacy";
 import { investingOn } from "../../lib/server";
 import { Button, ButtonLink } from "../../ui/button";
 import { EmptyState } from "../../ui/empty-state";
@@ -50,16 +49,6 @@ const PushCard = lazy(() =>
 );
 // What this account holds across projects (money calls and ABIs load only where investing is on).
 const YourSharesList = lazy(() => import("../pot/YourSharesList"));
-// The old design's backing receipts: loaded only with the legacy-screens flag.
-const LegacyReceipts = lazy(() =>
-  import("../../legacy/LegacyPerson").then((m) => ({
-    default: m.LegacyReceipts,
-  })),
-);
-// Linking a wallet (milestone 7) carries the wallet proof's code, so it loads only where investing is on.
-const LinkWallet = lazy(() =>
-  import("../team/LinkWallet").then((m) => ({ default: m.LinkWallet })),
-);
 
 /** You: your profile, notifications, messages, your projects and your account. */
 export function YouPage() {
@@ -139,11 +128,6 @@ function SignedIn({ me }: { me: string }) {
         <span className="flex-1 font-semibold">Saved posts</span>
         <ChevronRight aria-hidden="true" className="text-muted" size={20} />
       </Link>
-      {legacyScreensOn() ? (
-        <Suspense fallback={null}>
-          <LegacyReceipts />
-        </Suspense>
-      ) : null}
       {investingOn() ? (
         <Suspense fallback={null}>
           <NewsSection />
@@ -160,11 +144,6 @@ function SignedIn({ me }: { me: string }) {
         </Suspense>
       ) : null}
       {investingOn() ? <SenderChoice /> : null}
-      {investingOn() ? (
-        <Suspense fallback={null}>
-          <LinkWallet me={me} />
-        </Suspense>
-      ) : null}
       <Tabs
         items={[
           {

@@ -1,12 +1,11 @@
 import { readFailureWords } from "@creaton/core/client/readable-error.ts";
 import { APP_NAME } from "@creaton/core/brand.ts";
 import { PenLine, Search, Sprout } from "lucide-react";
-import { lazy, Suspense, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Mark } from "../../app/Mark";
 import { useAccount } from "../../lib/account";
 import { useFollows } from "../../lib/follows";
 import { useProfiles } from "../../lib/profiles";
-import { legacyScreensOn } from "../../lib/legacy";
 import { useRequireAccount } from "../../lib/use-require-account";
 import { Button, ButtonLink } from "../../ui/button";
 import { Card } from "../../ui/card";
@@ -28,17 +27,9 @@ import { Section } from "./Section";
 import { useHomeProjects } from "./use-home";
 import { useRanking } from "./use-ranking";
 
-// The old design's open rounds: loaded only with the legacy-screens flag.
-const LegacyOpenRounds = lazy(() =>
-  import("../../legacy/LegacyPerson").then((m) => ({
-    default: m.LegacyOpenRounds,
-  })),
-);
-
 /**
  * Home: the projects you follow, the money that stayed (the one place a list is sorted by money, and by money that has stayed,
- * never by a price), the projects shipping now (newest first, never sorted by money), and recent posts. (The open backing
- * rounds of the old design show only with the legacy-screens flag.)
+ * never by a price), the projects shipping now (newest first, never sorted by money), and recent posts.
  */
 export function HomePage() {
   const { pubkey } = useAccount();
@@ -126,14 +117,6 @@ export function HomePage() {
       )}
 
       <SeasonBand />
-
-      {legacyScreensOn() ? (
-        <Section testId="home-rounds" title="Open rounds">
-          <Suspense fallback={null}>
-            <LegacyOpenRounds projects={all} />
-          </Suspense>
-        </Section>
-      ) : null}
 
       {followed.length > 0 ? (
         <Section testId="home-following" title="Projects you follow">

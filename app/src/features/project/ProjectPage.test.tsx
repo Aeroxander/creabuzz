@@ -1,6 +1,5 @@
-// The project page on record version 2, with the legacy-screens flag OFF (the default): the page reads the new record, shows
-// the project's money with its age and the play-money line, and nothing of the old design (stages, rounds, the auction,
-// the market, Team's Pair, the earlier backers) is anywhere on it.
+// The project page on record version 2: the page reads the new record and shows the project's money with its age and the
+// play-money line.
 import { applyServerSettings } from "@creaton/core/client/server-settings.ts";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -20,7 +19,6 @@ import {
   FOUNDER_EVM,
   numbersV2Content,
 } from "../../../tests/helpers/numbers-v2-fixture";
-import { LEGACY_TEST_IDS } from "../../../tests/helpers/legacy-test-ids";
 import { parsedExample } from "../../../tests/helpers/numbers-v2-parse";
 import { dollarsText } from "../money/numbers";
 import { ProjectPage } from "./ProjectPage";
@@ -125,13 +123,5 @@ describe("the project page on record version 2", () => {
     );
     expect(stale.textContent).toMatch(/you can take it out any time/);
     expect(screen.queryByTestId("money-pot")).toBeNull();
-  });
-
-  it("carries nothing of the old design: no stage line, no round, no auction, no market, no Pair, no earlier backers", async () => {
-    await page();
-    await screen.findByTestId("money-pot");
-    await new Promise((r) => setTimeout(r, 50));
-    for (const id of LEGACY_TEST_IDS)
-      expect(screen.queryByTestId(id), id).toBeNull();
   });
 });

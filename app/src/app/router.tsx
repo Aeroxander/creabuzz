@@ -9,7 +9,6 @@ import {
   earlierGrantSettings,
 } from "../features/earlier-grant/earlier-grant-settings";
 import { HomePage } from "../features/home/HomePage";
-import { legacyScreensOn } from "../lib/legacy";
 import { Shell } from "./Shell";
 
 // Home and a project's page are in the first download; every other screen loads when it is first opened.
@@ -27,14 +26,9 @@ const ConversationPage = lazyRouteComponent(
   () => import("../features/messages/ConversationPage"),
   "ConversationPage",
 );
-// The earlier backers' page belongs to the old design: its route exists only with the legacy-screens flag.
 const EarlierGrantPage = lazyRouteComponent(
   () => import("../features/earlier-grant/EarlierGrantPage"),
   "EarlierGrantPage",
-);
-const EarlierPage = lazyRouteComponent(
-  () => import("../legacy/LegacyEarlier"),
-  "default",
 );
 const MessagesPage = lazyRouteComponent(
   () => import("../features/messages/MessagesPage"),
@@ -110,21 +104,6 @@ const project = createRoute({
   },
 });
 
-/** web/'s older project address (`/launchpad/<id>?author=<founder>`) opens the same page. */
-const legacyProject = createRoute({
-  getParentRoute: () => root,
-  path: "/launchpad/$id",
-  validateSearch: (search: Record<string, unknown>) => ({
-    author: typeof search.author === "string" ? search.author : undefined,
-  }),
-  component: function LegacyProjectRoute() {
-    const { id } = legacyProject.useParams();
-    const { author } = legacyProject.useSearch();
-    const ref = `${id}-${(author ?? "").slice(0, 16)}`;
-    return <ProjectPage key={ref} projectRef={ref} />;
-  },
-});
-
 /** A season's page: the projects that entered, together, on demo day (and for good after). */
 const season = createRoute({
   getParentRoute: () => root,
@@ -151,11 +130,6 @@ const you = createRoute({
   getParentRoute: () => root,
   path: "/you",
   component: YouPage,
-});
-const earlier = createRoute({
-  getParentRoute: () => root,
-  path: "/earlier",
-  component: EarlierPage,
 });
 /**
  * The earlier backers' claim page (step 4): its route is in the tree only for a build given its three settings, so without them
@@ -240,23 +214,17 @@ const welcome = createRoute({
   },
 });
 
-/**
- * The app's router. With `legacy` off (the default) the earlier backers' route is not in the tree at all, so its address
- * shows the app's "not found" and its code is never loaded.
- */
+/** The app's router. */
 export function createAppRouter(
-  legacy: boolean = legacyScreensOn(),
   earlierGrant: EarlierGrantSettings | null = earlierGrantSettings(),
 ) {
   const routeTree = root.addChildren([
     home,
     project,
-    legacyProject,
     season,
     start,
     week,
     you,
-    ...(legacy ? [earlier] : []),
     ...(earlierGrant ? [earlierGrantRoute(earlierGrant)] : []),
     messages,
     conversation,

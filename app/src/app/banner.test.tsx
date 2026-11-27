@@ -45,7 +45,7 @@ const bannerCount = () => screen.queryAllByTestId(BANNER).length;
 const wording = () => screen.queryAllByText(BANNER_LITERAL).length;
 
 /** Every path of the real route tree, with a concrete address that matches it. */
-const REAL_PATHS = Object.keys(createAppRouter(true).routesByPath).sort();
+const REAL_PATHS = Object.keys(createAppRouter().routesByPath).sort();
 const concrete = (path: string) => path.replace(/\$[A-Za-z]+/g, "x");
 
 /**
@@ -55,12 +55,10 @@ const concrete = (path: string) => path.replace(/\$[A-Za-z]+/g, "x");
 const SHELL_DRAWS: Record<string, 0 | 1> = {
   "/": 1,
   "/p/$ref": 1,
-  "/launchpad/$id": 1,
   "/season/$n": 1,
   "/start": 1,
   "/week": 1,
   "/you": 1,
-  "/earlier": 1,
   "/you/messages": 1,
   "/you/messages/$peer": 1,
   "/you/saved": 1,
@@ -184,8 +182,6 @@ describe("the banner on every sheet that shows money", () => {
     "features/brain/BrainSetup.tsx":
       "steps for keeping the project's notes, no money",
     "features/account/TermsAgainHost.tsx": "the terms, no money",
-    "features/money/BackBox.tsx": "the old design's rounds: legacy flag only",
-    "features/money/Receipts.tsx": "the old design's rounds: legacy flag only",
     "features/posts/Composer.tsx": "a post, no money",
     "features/room/HiddenSheet.tsx": "the people you hide, no money",
     "features/room/PerksBlock.tsx":
@@ -197,8 +193,6 @@ describe("the banner on every sheet that shows money", () => {
       "the question before deleting a post, no money",
     "features/tasks/PostTaskSheet.tsx": "the old task board: not mounted",
     "features/tasks/TaskCard.tsx": "the old task board: not mounted",
-    "features/team/SendSheet.tsx":
-      "the old design's team money: legacy flag only",
     "features/week/WeeklySheet.tsx": "the weekly note, no money",
     "features/you/YouPage.tsx": "account and notes, no money figure",
   };
