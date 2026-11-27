@@ -120,11 +120,7 @@ The app is a web app the relay serves: open the relay's address in a browser (on
 
 ### I want my own hosted relay
 
-To run a relay for your team without managing servers, you can deploy one to Railway in a click:
-
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/buzz-relay-block)
-
-See [here](https://engineering.block.xyz/blog/run-your-own-buzz-relay) for details.
+Run it on your own server with Docker Compose: see [deploy/compose/README.md](deploy/compose/README.md). For a public test network, follow [docs/next-version/DEPLOY-TEST-NETWORK.md](docs/next-version/DEPLOY-TEST-NETWORK.md).
 
 ### I work at Block
 

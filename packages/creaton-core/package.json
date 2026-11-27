@@ -2,7 +2,7 @@
   "name": "@creaton/core",
   "version": "0.0.0",
   "private": true,
-  "description": "Pure logic shared by the Creaton apps (web, desktop and the new phone-first app): the account and passkey, the relay client, record signing, social and project records, launchpad calldata and flows, org authority.",
+  "description": "Pure logic shared by the Creaton app (the phone-first app in `app/`): the account and passkey, the relay client, record signing, social and project records, launchpad calldata and flows, org authority.",
   "type": "module",
   "exports": {
     "./*": "./src/*"

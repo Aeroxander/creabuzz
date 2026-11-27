@@ -26,7 +26,7 @@
       ]
     },
     // Core publishes every file (`exports: "./*"`). Unused files are still reported. Unused exports are not, for now:
-    // about 400 of them were used only by the removed web and desktop clients and are the next cut. List them with
+    // about 300 of them (295 when counted) lost their only users when the web and desktop clients were removed, and are the next cut. List them with
     // "includeEntryExports": true.
     "packages/creaton-core": {
       "entry": ["src/**/*.test.mjs"],

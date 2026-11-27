@@ -187,7 +187,7 @@ These are read **when the app is built** and are public in the page. In `.env`:
 | `CREATON_DEPLOYMENTS_FILE` | Path from `deploy/compose` to the file from step 2, for example `../../contracts/pot/deployments/pot-11155111.json`. `run.sh` takes the three values below from it. |
 | `VITE_CREATON_CHAIN_ID`, `VITE_CREATON_LAUNCHER`, `VITE_CREATON_DOLLAR` | The chain, the Launcher and the play dollar. Set by hand instead of the file, or to override it (a value set by hand wins). The build refuses one of the first two without the other. |
 | `VITE_CREATON_RPC_URL` | The page's node ("What you need before you start"): called from every visitor's browser, so it must be a read-only node with a request limit. `run.sh build` asks it which network it is on and whether the Launcher has code, and stops if not. |
-| `VITE_CREATON_EARLIER_CONTRACT`, `VITE_CREATON_EARLIER_TEXT_HASH`, `VITE_CREATON_EARLIER_TEXT_URL` | The earlier backers' claim page (step 2b): the claim contract's address, the same text fingerprint the deploy was given, and an http or https address where a person can read that text (no name or password in it). **All three, or the page does not exist**: without them `/earlier-grant` is a plain "not found" and none of its code loads. `deploy/compose/run.sh`, `compose.creaton.yml` and the Dockerfile pass these three on (one list, held together by `web/src/features/launchpad/lib/deploy-env-image.test.mjs`), so `.env` reaches the build; the build does not check them beyond the app's own rule, which fails closed (a wrong or half-set value means no claim page and no message). A person is sent their own link, `<app>/earlier-grant#<their row>`, by whoever holds the list; the part after the `#` is never sent to any server. |
+| `VITE_CREATON_EARLIER_CONTRACT`, `VITE_CREATON_EARLIER_TEXT_HASH`, `VITE_CREATON_EARLIER_TEXT_URL` | The earlier backers' claim page (step 2b): the claim contract's address, the same text fingerprint the deploy was given, and an http or https address where a person can read that text (no name or password in it). **All three, or the page does not exist**: without them `/earlier-grant` is a plain "not found" and none of its code loads. `deploy/compose/run.sh`, `compose.creaton.yml` and the Dockerfile pass these three on, so `.env` reaches the build; the build does not check them beyond the app's own rule, which fails closed (a wrong or half-set value means no claim page and no message). A person is sent their own link, `<app>/earlier-grant#<their row>`, by whoever holds the list; the part after the `#` is never sent to any server. |
 | `VITE_CREATON_PASSKEY_ACCOUNT=1`, `VITE_CREATON_BUNDLER_URL`, `VITE_CREATON_SPONSOR_URL` | Phone accounts (step 7). The switch needs the chain, the page's node and the bundler. The sponsor address is optional (the fee is then asked at the bundler). |
 
 With none of these the app is built with no network and shows no money screens, whatever the server says.
@@ -200,8 +200,7 @@ Then:
 
 `build` refuses before Docker starts on a half-set network, a malformed address, a key in an address, a phone-account switch
 without its bundler, and any `VITE_*` value still holding `CHANGE_ME`. The image's own build checks the same again and then
-checks its output: the page, its manifest, the service worker, and the Launcher inside the code. The old web app
-(`web/`) is not built into this image; `CREATON_IMAGE_TARGET=runtime` builds it instead.
+checks its output: the page, its manifest, the service worker, and the Launcher inside the code.
 
 ## 9. Alerts away from the app (optional)
 

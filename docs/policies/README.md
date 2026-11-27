@@ -28,7 +28,7 @@ Before a public launch:
 2. Check the drafts against how the server is really hosted and configured (logs, backups, error reports, the chain
    nodes, ZeroDev for passkey accounts, whether the AI service is on).
 3. Have a lawyer review them for the countries your users are in.
-4. Check the age box. The age is 18 everywhere (terms, sign-up box, privacy note, and the age text in the desktop and mobile apps). On a Creaton compose server the box
+4. Check the age box. The age is 18 everywhere (terms, sign-up box and privacy note). On a Creaton compose server the box
    is on by default: the Creaton part of the env has `BUZZ_AGE_ATTESTATION_REQUIRED=true` and the compose file turns it
    on even if `.env` leaves it out. On any other way of running the server the box only appears when
    `BUZZ_AGE_ATTESTATION_REQUIRED=true` is set (see below). The sentences in the drafts that describe the box are no longer in brackets;
@@ -67,10 +67,8 @@ Use the compose deployment for any real launch.
 On the compose deployment (`deploy/compose`, Creaton), name the finished files in `.env` instead
 (`BUZZ_TERMS_FILE=policies/terms.md`, `BUZZ_PRIVACY_FILE=policies/privacy.md`): `run.sh` reads them and refuses to start
 while a file still has a `[bracket]` left. The age box needs nothing more there: `.env.creaton.example` sets `BUZZ_AGE_ATTESTATION_REQUIRED=true`, and only
-`BUZZ_AGE_ATTESTATION_REQUIRED=false` in `.env` turns it off. The number 18 is written in three places: the web app
-(`web/src/features/identity/lib/account-copy.ts`), the desktop app (`desktop/src/shared/constants/age.ts`) and the mobile
-app (`mobile/lib/features/age_gate/age_restriction_page.dart`). Only the web app has the box and the terms screens; the
-mobile app has neither, and the owner decides how it is offered (N1 in the response file).
+`BUZZ_AGE_ATTESTATION_REQUIRED=false` in `.env` turns it off. The number 18 is written in the app's shared package
+(`packages/creaton-core/src/account/account-copy.ts`, `MINIMUM_AGE`), which the app's box and terms screens read.
 
 It then serves them at `/api/join-policy/terms` and `/api/join-policy/privacy`, and sign-up asks people to agree before
 an account is made (D83). When neither is set, sign-up shows no terms at all, so set them before inviting anyone. The

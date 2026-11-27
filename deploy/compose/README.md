@@ -97,8 +97,7 @@ $EDITOR .env               # every CHANGE_ME; the Creaton part says what each se
   says the box is not needed; `scripts/test-compose-age-box.sh` checks the default.
 - It also raises the per-person request limit (`BUZZ_RATE_LIMIT_HUMAN_WS_EVENTS_PER_SEC`, default 40;
   `BUZZ_RATE_LIMIT_HUMAN_MESSAGES_PER_MIN`, default 300): the web app's reads count against it, and one person may have
-  two tabs open. Someone over it is told to wait a few seconds. `HOSTED=1 SOCIAL_FRAME_REPORT=1
-  scripts/web-social-e2e.sh` runs the social suite under these values and prints the busiest five seconds it saw.
+  two tabs open. Someone over it is told to wait a few seconds.
 - Building takes a machine with several GB of memory and about 15 GB of disk for Docker (Rust's release build). A small
   server can load an image built elsewhere instead: `docker save creaton-relay:local | ssh <host> docker load`, built
   for the server's architecture (`docker build --platform linux/amd64 ...` from an Apple silicon Mac is slow but works).
@@ -243,8 +242,8 @@ On the server, with the host name's DNS pointing at it and ports 80 and 443 open
    `BUZZ_MEDIA_BASE_URL` (`https://<host>/media`), `BUZZ_MEDIA_SERVER_DOMAIN` (`<host>`) and `BUZZ_CORS_ORIGINS`
    (`https://<host>`). `start` refuses while any of them still says `CHANGE_ME_HOST`, or `buzz.example.com` (an older
    example's host). The three `BUZZ_EVM_*` lines (a Sepolia node) are commented out in `.env.creaton.example`: leave them
-   so for the founders' pilot, which needs no chain (docs/v3-review/PILOT-RUNBOOK.md, "Pilot A"), and uncomment them,
-   with a node in `BUZZ_EVM_RPC_URL`, only for contributor projects or for phone accounts on a test network.
+   so on a server with no chain, and uncomment them, with a node in `BUZZ_EVM_RPC_URL`, for phone accounts on a test
+   network (docs/next-version/DEPLOY-TEST-NETWORK.md, step 6).
 4. `mkdir -p policies && cp ../../docs/policies/TERMS-DRAFT.md policies/terms.md && cp
    ../../docs/policies/PRIVACY-DRAFT.md policies/privacy.md`, fill in every `[placeholder]` (the privacy note's log
    and backup periods should match "Logs" and "Backups" below), and set `BUZZ_TERMS_FILE=policies/terms.md` and
