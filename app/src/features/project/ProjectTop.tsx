@@ -37,7 +37,7 @@ const BackSection = lazy(() =>
   import("./BackSection").then((m) => ({ default: m.BackSection })),
 );
 
-// The share sheet loads when first opened (the picture's drawing is not needed to read the page) and then stays mounted.
+// The share sheet loads when first opened and then stays mounted.
 const ShareSheet = lazy(() =>
   import("./ShareSheet").then((m) => ({ default: m.ShareSheet })),
 );
@@ -246,8 +246,6 @@ export function ProjectTop({
             <Suspense fallback={null}>
               {shareSeen ? (
                 <ShareSheet
-                  now={now}
-                  numbers={numbers}
                   onOpenChange={setShareOpen}
                   open={shareOpen}
                   project={project}

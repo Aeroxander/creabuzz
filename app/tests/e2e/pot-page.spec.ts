@@ -10,7 +10,7 @@ test.skip(NO_CHAIN_WHY !== null, NO_CHAIN_WHY ?? "");
 /**
  * The project page's top in a real browser against a real chain (plan section 7.1): at 360 by 640 the name, the project's
  * money with its line, what taking out now would give, the banner and Back are all in view without scrolling; the banner is
- * on the page once; Share gives the link and a picture; a record past a day shows none of the money. The record's step 3 keys are the
+ * on the page once; Share gives the link; a record past a day shows none of the money. The record's step 3 keys are the
  * example's, moved to the chain's clock.
  */
 
@@ -106,7 +106,7 @@ test("the banner is on the page once, the Back box once, and Home has the shell'
   await expect(page.getByTestId("money-banner")).toHaveCount(1);
 });
 
-test("Share gives the link that shows only what the founder wrote, a copy that says so, and a picture", async ({
+test("Share gives the link that shows only what the founder wrote, and a copy that says so", async ({
   page,
 }) => {
   const w = world.get();
@@ -124,15 +124,6 @@ test("Share gives the link that shows only what the founder wrote, a copy that s
   await sheet.getByTestId("share-copy").click();
   await expect(sheet.getByTestId("share-said")).toHaveText("Link copied.");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(link);
-  // The picture is made on this device, 1,200 by 630, and has words for a screen reader.
-  const picture = sheet.getByTestId("share-picture");
-  await expect(picture).toBeVisible({ timeout: 10_000 });
-  await expect(picture).toHaveAttribute("alt", /Lantern/);
-  const size = await picture.evaluate((img: HTMLImageElement) => ({
-    w: img.naturalWidth,
-    h: img.naturalHeight,
-  }));
-  expect(size).toEqual({ w: 1200, h: 630 });
   await expect(sheet).toContainText(BANNER);
   await expectAccessible(page, "Share sheet");
   await page.keyboard.press("Escape");

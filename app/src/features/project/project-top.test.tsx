@@ -248,28 +248,6 @@ describe("assistive semantics", () => {
 });
 
 describe("the Share sheet", () => {
-  function stubCanvas(draws = true) {
-    const strings: string[] = [];
-    const ctx = {
-      fillText: (t: string) => strings.push(t),
-      measureText: (t: string) => ({ width: t.length * 10 }),
-      fillRect: () => undefined,
-      beginPath: () => undefined,
-      moveTo: () => undefined,
-      arcTo: () => undefined,
-      closePath: () => undefined,
-      fill: () => undefined,
-    };
-    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
-      (() => (draws ? ctx : null)) as never,
-    );
-    vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(((
-      cb: BlobCallback,
-    ) => cb(new Blob(["png"], { type: "image/png" }))) as never);
-    URL.createObjectURL = vi.fn(() => "blob:picture");
-    URL.revokeObjectURL = vi.fn();
-    return strings;
-  }
   const openShare = async () => {
     await screen.findByTestId("backing-box");
     fireEvent.click(screen.getByTestId("share-open"));
@@ -282,7 +260,6 @@ describe("the Share sheet", () => {
       ...navigator,
       clipboard: { writeText: write },
     });
-    stubCanvas();
     await page();
     const sheet = await openShare();
     expect(sheet.textContent).toContain(
@@ -308,7 +285,6 @@ describe("the Share sheet", () => {
       ...navigator,
       clipboard: { writeText: vi.fn().mockRejectedValue(new Error("no")) },
     });
-    stubCanvas();
     await page();
     const sheet = await openShare();
     fireEvent.click(within(sheet).getByTestId("share-copy"));
@@ -319,38 +295,13 @@ describe("the Share sheet", () => {
     );
   });
 
-  it("makes the picture on this device, with alt text, and no amount is drawn on it", async () => {
-    const drawn = stubCanvas();
-    await page();
-    const sheet = await openShare();
-    const picture = await within(sheet).findByTestId("share-picture");
-    expect(picture.getAttribute("alt")).toMatch(/^Lantern/);
-    expect(drawn).toContain("Lantern");
-    expect(drawn.join(" ")).not.toMatch(/[$€£%]/);
-    expect(within(sheet).getByTestId("share-picture-press").textContent).toBe(
-      "Save the picture",
-    );
-  });
-
-  it("with no canvas the link still works and the picture says it could not be made", async () => {
-    stubCanvas(false);
-    await page();
-    const sheet = await openShare();
-    expect(
-      (await within(sheet).findByTestId("share-no-picture")).textContent,
-    ).toMatch(/cannot make the picture/);
-    expect(within(sheet).getByTestId("share-copy")).not.toBeNull();
-  });
-
   it("offers the system's share only where it exists, with the link", async () => {
-    stubCanvas();
     await page();
     let sheet = await openShare();
     expect(within(sheet).queryByTestId("share-native")).toBeNull();
     cleanup();
     const share = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { ...navigator, share });
-    stubCanvas();
     await page();
     sheet = await openShare();
     fireEvent.click(within(sheet).getByTestId("share-native"));

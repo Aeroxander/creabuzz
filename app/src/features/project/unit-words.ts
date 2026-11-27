@@ -5,7 +5,7 @@
 import { durationWords } from "../tasks/chain/duration";
 
 /** One real week, in seconds. */
-export const WEEK_SECS = 604_800;
+const WEEK_SECS = 604_800;
 
 /** "1 week", "14 weeks"; for any other unit "1 period of 28 minutes", "14 periods of 28 minutes". */
 export function unitCount(n: number, unit: number): string {
