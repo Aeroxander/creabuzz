@@ -30,10 +30,6 @@ const SavedPage = lazyRouteComponent(
   () => import("../features/saved/SavedPage"),
   "SavedPage",
 );
-const SearchPage = lazyRouteComponent(
-  () => import("../features/search/SearchPage"),
-  "SearchPage",
-);
 const TopicPage = lazyRouteComponent(
   () => import("../features/tags/TopicPage"),
   "TopicPage",
@@ -87,17 +83,6 @@ const you = createRoute({
   getParentRoute: () => root,
   path: "/you",
   component: YouPage,
-});
-/** Search; the words typed are kept in the address (`?q=`), so Back returns to the same results. */
-const search = createRoute({
-  getParentRoute: () => root,
-  path: "/search",
-  validateSearch: (s: Record<string, unknown>): { q?: string } =>
-    typeof s.q === "string" && s.q !== "" ? { q: s.q.slice(0, 100) } : {},
-  component: function SearchRoute() {
-    const { q } = search.useSearch();
-    return <SearchPage q={q ?? ""} />;
-  },
 });
 /** Every post under one topic (`#lamps`). */
 const topic = createRoute({
@@ -154,7 +139,6 @@ export function createAppRouter() {
     week,
     you,
     saved,
-    search,
     topic,
     post,
     person,

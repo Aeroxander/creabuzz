@@ -1,5 +1,4 @@
-// What a person wrote is drawn as text on every list that shows it: a post, a quoted post, a search result (a person's about line
-// and a post), a topic's list and the saved list. Markup in it is shown as the characters written and never becomes an element,
+// What a person wrote is drawn as text on every list that shows it: a post, a quoted post, a topic's list and the saved list. Markup in it is shown as the characters written and never becomes an element,
 // so a post or a profile cannot run anything on a reader's page. (Biome's no-innerHTML rule holds the same line at the source;
 // this holds it at the page.)
 import { cleanup, screen, waitFor } from "@testing-library/react";
@@ -38,7 +37,6 @@ import { NO_ENGAGEMENT } from "@creaton/core/social/engagement.ts";
 import { PostCard } from "../posts/PostCard";
 import { QuotedPost } from "../posts/QuotedPost";
 import { SavedPage } from "../saved/SavedPage";
-import { SearchPage } from "../search/SearchPage";
 import { TopicPage } from "../tags/TopicPage";
 
 const MARKUP = '<img src=x onerror="alert(1)"><b>bold</b><script>1</script>';
@@ -71,19 +69,6 @@ describe("what people wrote is drawn as text", () => {
     const quoted = note(BO, POST, NOW - 10);
     const { container } = draw(<QuotedPost id={quoted.id} />);
     await screen.findByTestId("quoted-post");
-    expectText(container);
-  });
-
-  it("in a person's about line in search", async () => {
-    const { container } = draw(<SearchPage q="ana" />);
-    await screen.findByTestId("search-person");
-    expectText(container);
-  });
-
-  it("in a post found by search", async () => {
-    note(BO, POST, NOW - 10);
-    const { container } = draw(<SearchPage q="lamps" />);
-    await waitFor(() => expect(container.textContent).toContain(MARKUP));
     expectText(container);
   });
 

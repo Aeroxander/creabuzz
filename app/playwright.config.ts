@@ -28,8 +28,7 @@ export default defineConfig({
         "**/join.spec.ts",
         "**/a11y.spec.ts",
         "**/passkey.spec.ts",
-        // Search and topics, saved posts, hidden people and reports (the mock server, 360 wide).
-        "**/search.spec.ts",
+        // Topics, saved posts, hidden people and reports (the mock server, 360 wide).
         "**/bookmarks.spec.ts",
         "**/mutes.spec.ts",
         "**/report.spec.ts",

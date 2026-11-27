@@ -21,7 +21,6 @@ const TABS: readonly Tab[] = [
       p.startsWith("/p/") ||
       p.startsWith("/post/") ||
       p.startsWith("/u/") ||
-      p.startsWith("/search") ||
       p.startsWith("/tag/"),
   },
   { to: "/start", label: "Start", icon: Plus, owns: (p) => p === "/start" },
