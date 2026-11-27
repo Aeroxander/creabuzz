@@ -65,15 +65,10 @@ tests:
           path: spec.metrics[0].resource.name
           value: cpu
 
-  - it: leaves Deployment replicas to the HPA and disables in-process huddle audio
+  - it: leaves Deployment replicas to the HPA
     template: templates/deployment.yaml
     set:
       autoscaling.enabled: true
     asserts:
       - notExists:
           path: spec.replicas
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: BUZZ_HUDDLE_AUDIO_AVAILABLE
-            value: "false"

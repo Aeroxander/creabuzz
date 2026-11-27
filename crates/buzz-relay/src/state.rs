@@ -30,7 +30,6 @@ use buzz_workflow::WorkflowEngine;
 use chrono::{DateTime, Utc};
 use deadpool_redis;
 
-use crate::audio::AudioRoomManager;
 use crate::config::Config;
 use crate::connection::{ConnectionSubscriptions, RestartClose};
 use crate::subscription::SubscriptionRegistry;
@@ -50,8 +49,6 @@ pub(crate) enum CommunityDisconnectReason {
     CommunityDeleted,
     /// NIP-FI: the connection's proven pubkey was added to the deny set.
     AuthorizationDenied,
-    /// The authenticated pubkey lost access to the community (e.g. a ban).
-    AccessRevoked,
 }
 
 impl CommunityDisconnectReason {
@@ -69,24 +66,7 @@ impl CommunityDisconnectReason {
                 code: axum::extract::ws::close_code::POLICY,
                 reason: WsUtf8Bytes::from_static("authorization denied"),
             })),
-            Self::AccessRevoked => WsMessage::Close(Some(axum::extract::ws::CloseFrame {
-                code: axum::extract::ws::close_code::POLICY,
-                reason: WsUtf8Bytes::from_static("access revoked"),
-            })),
         }
-    }
-}
-
-/// NIP-42-proven key and the NIP-FI issuer a socket was admitted under.
-#[derive(Clone)]
-struct ProvenIdentity {
-    pubkey: Vec<u8>,
-    nip_fi_issuer: Option<String>,
-}
-
-impl ProvenIdentity {
-    fn matches(&self, issuer: &str, pubkey: &[u8]) -> bool {
-        self.pubkey == pubkey && self.nip_fi_issuer.as_deref() == Some(issuer)
     }
 }
 
@@ -95,17 +75,6 @@ impl ProvenIdentity {
 pub(crate) struct CommunityConnectionControl {
     cancel: CancellationToken,
     reason_tx: watch::Sender<Option<CommunityDisconnectReason>>,
-    /// NIP-42-proven pubkey plus the NIP-FI issuer the session was admitted
-    /// under; matched by the registry's `disconnect_nip_fi` scan.  [FI-TRACE-DENY-SET]
-    proven_identity: Arc<std::sync::RwLock<Option<ProvenIdentity>>>,
-    /// Serializes NIP-FI denial writers across reason-win + terminal enqueue,
-    /// and holds the audio terminal-frame sender (root connections leave it `None`).
-    terminal_frame_tx: Arc<std::sync::Mutex<Option<mpsc::Sender<WsMessage>>>>,
-    /// Pubkey proven by this socket's auth, set once auth succeeds. Sockets
-    /// whose pubkey is tracked by [`ConnectionManager`] leave it unset.
-    pubkey: Arc<std::sync::OnceLock<[u8; 32]>>,
-    /// Owner of an admitted agent; revoking the owner closes this socket.
-    owner: Arc<std::sync::OnceLock<[u8; 32]>>,
     /// Shadow-mode observation of this socket; no enforce path reads it.
     nip_fi_shadow: Arc<std::sync::OnceLock<Arc<crate::nip_fi_shadow_session::ShadowSession>>>,
 }
@@ -116,10 +85,6 @@ impl CommunityConnectionControl {
         Self {
             cancel,
             reason_tx,
-            proven_identity: Arc::new(std::sync::RwLock::new(None)),
-            terminal_frame_tx: Arc::new(std::sync::Mutex::new(None)),
-            pubkey: Arc::default(),
-            owner: Arc::default(),
             nip_fi_shadow: Arc::default(),
         }
     }
@@ -142,26 +107,6 @@ impl CommunityConnectionControl {
         self.nip_fi_shadow.get()
     }
 
-    /// Records the authenticated pubkey so pubkey-scoped disconnects reach this socket.
-    pub(crate) fn bind_pubkey(&self, pubkey: [u8; 32]) {
-        let _ = self.pubkey.set(pubkey);
-    }
-
-    /// Records the admitted agent's owner so revoking the owner reaches this
-    /// socket without a database lookup.
-    pub(crate) fn bind_owner(&self, owner: [u8; 32]) {
-        let _ = self.owner.set(owner);
-    }
-
-    fn matches_revocation(&self, pubkey: &[u8], unowned_only: bool) -> bool {
-        let principal = self.pubkey.get().map(|k| &k[..]) == Some(pubkey);
-        match self.owner.get() {
-            Some(_) if unowned_only => false,
-            Some(owner) => principal || owner[..] == *pubkey,
-            None => principal,
-        }
-    }
-
     pub(crate) fn cancellation_token(&self) -> CancellationToken {
         self.cancel.clone()
     }
@@ -170,48 +115,17 @@ impl CommunityConnectionControl {
         self.reason_tx.subscribe()
     }
 
-    /// Records the NIP-42-proven pubkey and admitting NIP-FI issuer for this
-    /// connection so the registry can close it via `disconnect_nip_fi`.
-    pub(crate) fn set_proven_identity(&self, pubkey: Vec<u8>, nip_fi_issuer: Option<String>) {
-        if let Ok(mut slot) = self.proven_identity.write() {
-            *slot = Some(ProvenIdentity {
-                pubkey,
-                nip_fi_issuer,
-            });
-        }
-    }
-
-    /// Registers the audio terminal-frame sender so `disconnect_nip_fi` can
-    /// enqueue the denial payload before cancelling.
-    ///
-    /// Called by `handle_active_audio_connection` immediately after the terminal
-    /// channel is created (before any `check_cancel!` or `send_loop`).  The
-    /// sender is optional — root relay connections leave this unset and rely on
-    /// the separate `ctrl_tx` path in `ConnectionManager::disconnect_nip_fi`.
-    pub(crate) fn set_terminal_frame_sender(&self, tx: mpsc::Sender<WsMessage>) {
-        let mut slot = self
-            .terminal_frame_tx
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *slot = Some(tx);
-    }
-
     /// First-writer-wins `authorization_denied` transition shared by every
     /// NIP-FI denial writer: under the transition lock, publishes
     /// `AuthorizationDenied` only if no reason is set yet, and only the winner
-    /// enqueues `route`'s denial frame — on `frame_tx`, else on the sender
-    /// registered by `set_terminal_frame_sender`.  Every writer therefore
-    /// yields the same single frame plus the reason's 1008 close.
+    /// enqueues `route`'s denial frame on `frame_tx`, when there is one.  Every
+    /// writer therefore yields the same single frame plus the reason's 1008 close.
     /// Does not cancel.  [FI-TRACE-DENIAL-ORACLE]
     fn publish_authorization_denied(
         &self,
         route: crate::nip_fi_session::NipFiWsRoute,
         frame_tx: Option<&mpsc::Sender<WsMessage>>,
     ) {
-        let slot = self
-            .terminal_frame_tx
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let won = self.reason_tx.send_if_modified(|current| match current {
             None => {
                 *current = Some(CommunityDisconnectReason::AuthorizationDenied);
@@ -222,7 +136,7 @@ impl CommunityConnectionControl {
         if !won {
             return;
         }
-        if let Some(tx) = frame_tx.or(slot.as_ref()) {
+        if let Some(tx) = frame_tx {
             let _ = tx.try_send(crate::nip_fi_session::denial_frame(
                 route,
                 buzz_auth::DenialClass::AuthorizationDenied,
@@ -253,38 +167,8 @@ impl CommunityConnectionControl {
         self.cancel.cancel();
     }
 
-    /// Audio-route denial transition, used by the registry scan and the audio
-    /// handler's own denials: the shared transition on the sender registered
-    /// by `set_terminal_frame_sender`, then cancels.
-    pub(crate) fn disconnect_nip_fi(&self) {
-        self.publish_authorization_denied(crate::nip_fi_session::NipFiWsRoute::Audio, None);
-        self.cancel.cancel();
-    }
-
     fn disconnect_community(&self, reason: CommunityDisconnectReason) {
         self.reason_tx.send_replace(Some(reason));
-        self.cancel.cancel();
-    }
-
-    /// Revoked community access. A NIP-FI socket takes the shared
-    /// `authorization_denied` transition, so its client sees the same denial
-    /// as any other NIP-FI refusal; an Off-mode socket closes `AccessRevoked`.
-    /// Neither overwrites a terminal response already chosen.
-    fn revoke_access(&self) {
-        let nip_fi = self
-            .proven_identity
-            .read()
-            .is_ok_and(|id| id.as_ref().is_some_and(|id| id.nip_fi_issuer.is_some()));
-        if nip_fi {
-            self.publish_authorization_denied(crate::nip_fi_session::NipFiWsRoute::Audio, None);
-        } else {
-            self.reason_tx.send_if_modified(|current| {
-                current.is_none() && {
-                    *current = Some(CommunityDisconnectReason::AccessRevoked);
-                    true
-                }
-            });
-        }
         self.cancel.cancel();
     }
 }
@@ -389,77 +273,6 @@ impl CommunityConnectionRegistry {
             }
         }
         closed
-    }
-
-    /// Disconnects every registered socket admitted under NIP-FI `issuer` whose
-    /// proven pubkey matches `pubkey`, across all communities.  A same-key
-    /// socket admitted under a different issuer (or with no assertion) is not
-    /// matched: this issuer's deny entry cannot block it.  [FI-TRACE-DENY-SET]
-    ///
-    /// Called by the admin disconnect route (`api/nip_fi.rs`) and the cross-pod
-    /// apply closure (`apply_nip_fi_disconnect`), each alongside
-    /// `ConnectionManager::disconnect_nip_fi` for Nostr relay connections.
-    /// A match fires `AuthorizationDenied`, which the send loop turns into a 1008
-    /// close frame before the socket shuts down.  Sockets not yet registered with
-    /// a proven identity are not matched; admission registers the identity first
-    /// and then runs the deny-set check, so such a socket is rejected there.
-    ///
-    /// Returns the number of connections closed.
-    pub fn disconnect_nip_fi(&self, issuer: &str, pubkey: &[u8]) -> usize {
-        let mut closed = 0;
-        for entry in self.connections.iter() {
-            let matches = entry
-                .value()
-                .1
-                .proven_identity
-                .read()
-                .ok()
-                .and_then(|v| v.as_ref().map(|id| id.matches(issuer, pubkey)))
-                .unwrap_or(false);
-            if matches {
-                entry.value().1.disconnect_nip_fi();
-                closed += 1;
-            }
-        }
-        closed
-    }
-
-    /// Disconnects every socket in `community` bound to `pubkey` or admitted
-    /// as an agent `pubkey` owns, attributing the close to revoked access.
-    /// With `unowned_only`, closes only `pubkey`'s sockets admitted without an
-    /// owner. Fenced to `community` like [`ConnectionManager::disconnect_pubkey`].
-    pub fn disconnect_pubkey(
-        &self,
-        community_id: CommunityId,
-        pubkey: &[u8],
-        unowned_only: bool,
-    ) -> usize {
-        let mut closed = 0;
-        for entry in self.connections.iter() {
-            let (community, control) = entry.value();
-            if *community == community_id && control.matches_revocation(pubkey, unowned_only) {
-                control.revoke_access();
-                closed += 1;
-            }
-        }
-        closed
-    }
-
-    /// The people with an audio socket in one community on this pod: each signed-in key once, with the owner an agent
-    /// was admitted through, when it has one. (Root sockets track theirs in the [`ConnectionManager`].)
-    pub(crate) fn bound_principals(
-        &self,
-        community_id: CommunityId,
-    ) -> Vec<(Vec<u8>, Option<[u8; 32]>)> {
-        self.connections
-            .iter()
-            .filter(|entry| entry.value().0 == community_id)
-            .filter_map(|entry| {
-                let control = &entry.value().1;
-                let pubkey = control.pubkey.get()?;
-                Some((pubkey.to_vec(), control.owner.get().copied()))
-            })
-            .collect()
     }
 
     /// Returns the distinct communities with live sockets on this pod.
@@ -1227,7 +1040,7 @@ pub struct AppState {
     pub sub_registry: Arc<SubscriptionRegistry>,
     /// Registry of active WebSocket connections.
     pub conn_manager: Arc<ConnectionManager>,
-    /// Lifecycle cancellation for every long-lived socket, including huddle audio.
+    /// Lifecycle cancellation for every long-lived socket, .
     pub community_connections: Arc<CommunityConnectionRegistry>,
     /// Stops only the periodic lifecycle revalidator during graceful shutdown.
     pub community_revalidator_cancel: CancellationToken,
@@ -1247,12 +1060,6 @@ pub struct AppState {
     pub workflow_engine: Arc<WorkflowEngine>,
     /// Relay signing keypair — used to sign system messages (kind 40099).
     pub relay_keypair: nostr::Keys,
-    /// Process-local generation advertised for non-mesh huddle liveness.
-    ///
-    /// A fresh value on every relay start lets desktop clients retire persisted
-    /// admissions when an in-memory audio room is recreated at the same roster
-    /// revision after a restart. Mesh rooms use their Redis-fenced generation.
-    pub huddle_liveness_generation: Uuid,
 
     /// Recently-published event IDs for local-echo deduplication, keyed by
     /// `(community_id, event_id)`. Events fanned out in-process are added here;
@@ -1302,8 +1109,6 @@ pub struct AppState {
     /// Object storage remains authoritative; this only avoids repeated reads
     /// and index generation for content-addressed packs.
     pub git_pack_cache: Arc<crate::api::git::pack_cache::GitPackCache>,
-    /// Audio relay room manager — tracks active huddle audio rooms.
-    pub audio_rooms: Arc<AudioRoomManager>,
     /// Set to `true` on SIGTERM — readiness probe returns 503.
     pub shutting_down: Arc<AtomicBool>,
     /// Cached shared-dependency evaluation behind the diagnostic `/_status`
@@ -1382,13 +1187,6 @@ pub struct AppState {
     /// See `crates/buzz-conformance/` and `crate::conformance` for the
     /// schema, emitter helpers, and the independent checker.
     pub tracer: Arc<dyn buzz_conformance::Tracer>,
-
-    /// Inter-relay mesh handle, set once by `main.rs` after `mesh_boot` (never
-    /// a constructor parameter, so `AppState::new` call sites are untouched).
-    /// `None`/unset ⇒ mesh-off / single-instance: consumers must behave
-    /// byte-identically to a relay without the mesh. Access via
-    /// [`AppState::mesh`].
-    pub mesh: Arc<std::sync::OnceLock<crate::mesh_boot::MeshHandle>>,
 
     /// NIP-FI federated-identity assertion verifier, shared across all HTTP
     /// ingress and WebSocket upgrade checks.
@@ -1558,7 +1356,6 @@ impl AppState {
             media_upload_semaphore: Arc::new(Semaphore::new(media_max_concurrent_uploads)),
             workflow_engine,
             relay_keypair,
-            huddle_liveness_generation: Uuid::new_v4(),
 
             local_event_ids: Arc::new(
                 moka::sync::Cache::builder()
@@ -1600,7 +1397,6 @@ impl AppState {
             )),
             git_store,
             git_pack_cache,
-            audio_rooms: Arc::new(AudioRoomManager::new()),
             shutting_down: Arc::new(AtomicBool::new(false)),
             dependency_diagnostics: Arc::new(crate::readiness::DependencyDiagnostics::default()),
             dependency_sampler_cancel: CancellationToken::new(),
@@ -1645,7 +1441,6 @@ impl AppState {
             // construction (see test helpers in
             // `crates/buzz-test-client` once those land).
             tracer: Arc::new(crate::conformance::NoopTracer),
-            mesh: Arc::new(std::sync::OnceLock::new()),
             nip_fi_verifier,
             nip_fi_jwks_source,
             // NIP-FI deny map and command verifier are initialized lazily by
@@ -1692,12 +1487,6 @@ impl AppState {
         self.dependency_diagnostics = Arc::new(
             crate::readiness::DependencyDiagnostics::with_evaluator(evaluator),
         );
-    }
-
-    /// Inter-relay mesh handle. `None` ⇒ mesh-off / single-instance: callers
-    /// must no-op to today's behavior. Set once by `main.rs` after boot.
-    pub fn mesh(&self) -> Option<&crate::mesh_boot::MeshHandle> {
-        self.mesh.get()
     }
 
     /// Publish a completed partition audit for cached diagnostics.
@@ -1933,7 +1722,7 @@ impl AppState {
     }
 
     /// Close everything `pubkey` has open in `community` on this pod: root
-    /// sockets (with a final `OK false` carrying `reason`) and audio sockets.
+    /// sockets (with a final `OK false` carrying `reason`).
     ///
     /// With `unowned_only`, only `pubkey`'s sockets admitted without an owner.
     ///
@@ -1949,9 +1738,6 @@ impl AppState {
     ) -> usize {
         self.conn_manager
             .disconnect_pubkey(community, pubkey, event_id, reason, unowned_only)
-            + self
-                .community_connections
-                .disconnect_pubkey(community, pubkey, unowned_only)
     }
 
     /// Close every live session of `pubkey` and of the agents it owns, on
@@ -2163,7 +1949,7 @@ impl AppState {
     }
 
     /// After a community becomes members-only, close this pod's sockets for everyone who is not a member (an agent
-    /// counts through its owner, as it does when it signs in), audio sockets included. Returns how many sockets were
+    /// counts through its owner, as it does when it signs in). Returns how many sockets were
     /// closed.
     ///
     /// Reads the setting and each person's membership from the writer, so a command that arrives late cannot close
@@ -2184,12 +1970,7 @@ impl AppState {
                 return (0, false);
             }
         }
-        let mut principals = self.conn_manager.live_principals(community);
-        for principal in self.community_connections.bound_principals(community) {
-            if !principals.contains(&principal) {
-                principals.push(principal);
-            }
-        }
+        let principals = self.conn_manager.live_principals(community);
         // One query for everyone, not one per person: a community with thousands connected is checked in a few reads.
         let keys: Vec<String> = principals
             .iter()
@@ -2916,143 +2697,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn nip_fi_disconnect_audio_is_issuer_scoped() {
-        let registry = CommunityConnectionRegistry::new();
-        let community = CommunityId::from_uuid(Uuid::from_u128(0xce));
-        let key = vec![0x42u8; 32];
-        let register = |issuer: Option<&str>| {
-            let cancel = CancellationToken::new();
-            let (terminal_tx, terminal_rx) = mpsc::channel::<WsMessage>(1);
-            let control = CommunityConnectionControl::new(cancel.clone());
-            control.set_proven_identity(key.clone(), issuer.map(str::to_owned));
-            control.set_terminal_frame_sender(terminal_tx);
-            let guard = registry.register(Uuid::new_v4(), community, control);
-            (cancel, terminal_rx, guard)
-        };
-        let (cancel_a, mut frames_a, _ga) = register(Some("https://issuer-a.example"));
-        let (cancel_b, mut frames_b, _gb) = register(Some("https://issuer-b.example"));
-        let (cancel_none, mut frames_none, _gn) = register(None);
-
-        assert_eq!(
-            registry.disconnect_nip_fi("https://issuer-a.example", &key),
-            1
-        );
-
-        assert!(cancel_a.is_cancelled(), "A audio session must be closed");
-        assert!(
-            frames_a.try_recv().is_ok(),
-            "A audio session must receive the denial frame"
-        );
-        assert!(
-            !cancel_b.is_cancelled(),
-            "B audio session must survive an A deny"
-        );
-        assert!(
-            frames_b.try_recv().is_err(),
-            "B audio session must not get a frame"
-        );
-        assert!(
-            !cancel_none.is_cancelled(),
-            "no-assertion audio session must survive"
-        );
-        assert!(
-            frames_none.try_recv().is_err(),
-            "no-assertion audio session must not get a frame"
-        );
-    }
-
-    #[test]
-    fn nip_fi_disconnect_closes_proven_audio_socket_and_sends_policy_close_reason() {
-        let registry = CommunityConnectionRegistry::new();
-        let community = CommunityId::from_uuid(Uuid::from_u128(0xca));
-        let target_pubkey = vec![0x42u8; 32];
-
-        let cancel = CancellationToken::new();
-        let control = CommunityConnectionControl::new(cancel.clone());
-        let reason_rx = control.disconnect_reason();
-        control.set_proven_identity(target_pubkey.clone(), Some("test-issuer".to_owned()));
-        let _guard = registry.register(Uuid::new_v4(), community, control);
-
-        assert_eq!(registry.disconnect_nip_fi("test-issuer", &target_pubkey), 1);
-        assert!(cancel.is_cancelled(), "audio socket must be cancelled");
-        assert_eq!(
-            *reason_rx.borrow(),
-            Some(CommunityDisconnectReason::AuthorizationDenied),
-            "close reason must be AuthorizationDenied so send_loop sends 1008"
-        );
-    }
-
-    #[test]
-    fn nip_fi_disconnect_closes_target_audio_only_and_preserves_collocated_peer() {
-        // Two audio sockets in the same community: only the target's is closed.
-        let registry = CommunityConnectionRegistry::new();
-        let community = CommunityId::from_uuid(Uuid::from_u128(0xcd));
-        let target_pubkey = vec![0x42u8; 32];
-        let peer_pubkey = vec![0x55u8; 32];
-
-        let target_cancel = CancellationToken::new();
-        let target_control = CommunityConnectionControl::new(target_cancel.clone());
-        target_control.set_proven_identity(target_pubkey.clone(), Some("test-issuer".to_owned()));
-        let _target_guard = registry.register(Uuid::new_v4(), community, target_control);
-
-        let peer_cancel = CancellationToken::new();
-        let peer_control = CommunityConnectionControl::new(peer_cancel.clone());
-        peer_control.set_proven_identity(peer_pubkey, Some("test-issuer".to_owned()));
-        let _peer_guard = registry.register(Uuid::new_v4(), community, peer_control);
-
-        assert_eq!(registry.disconnect_nip_fi("test-issuer", &target_pubkey), 1);
-        assert!(
-            target_cancel.is_cancelled(),
-            "target audio socket must be cancelled"
-        );
-        assert!(
-            !peer_cancel.is_cancelled(),
-            "collocated peer must remain connected"
-        );
-    }
-
-    #[test]
-    fn nip_fi_disconnect_does_not_close_different_pubkey_audio_socket() {
-        // A socket whose proven pubkey is different from the target must not
-        // be closed — the scan must be key-exact.
-        let registry = CommunityConnectionRegistry::new();
-        let community = CommunityId::from_uuid(Uuid::from_u128(0xcc));
-        let target_pubkey = vec![0x42u8; 32];
-        let other_pubkey = vec![0x99u8; 32];
-
-        let cancel = CancellationToken::new();
-        let control = CommunityConnectionControl::new(cancel.clone());
-        control.set_proven_identity(other_pubkey, Some("test-issuer".to_owned()));
-        let _guard = registry.register(Uuid::new_v4(), community, control);
-
-        assert_eq!(registry.disconnect_nip_fi("test-issuer", &target_pubkey), 0);
-        assert!(
-            !cancel.is_cancelled(),
-            "different-key socket must not be touched"
-        );
-    }
-
-    #[test]
-    fn nip_fi_disconnect_does_not_close_unproven_audio_socket() {
-        // A socket that registered but has not yet completed NIP-42 auth (no
-        // proven pubkey) must not be touched by a targeted disconnect.
-        let registry = CommunityConnectionRegistry::new();
-        let community = CommunityId::from_uuid(Uuid::from_u128(0xcb));
-        let target_pubkey = vec![0x42u8; 32];
-
-        let cancel = CancellationToken::new();
-        let control = CommunityConnectionControl::new(cancel.clone());
-        // Intentionally skip set_proven_pubkey — simulates pre-auth state.
-        let _guard = registry.register(Uuid::new_v4(), community, control);
-
-        assert_eq!(registry.disconnect_nip_fi("test-issuer", &target_pubkey), 0);
-        assert!(
-            !cancel.is_cancelled(),
-            "pre-auth socket must not be touched"
-        );
-    }
-
-    #[test]
     fn community_disconnect_then_nip_fi_keeps_community_deleted_reason() {
         // A community close fires first, AuthorizationDenied arrives second.
         // The slot must retain the community reason, archived or deleted.
@@ -3066,49 +2710,14 @@ pub(crate) mod tests {
 
             // First writer: the community reason (via disconnect_community).
             control.disconnect_community(reason);
-            // Second writer: AuthorizationDenied — must be ignored (via disconnect_nip_fi).
-            control.disconnect_nip_fi();
+            // Second writer: AuthorizationDenied — must be ignored (via manager_disconnect_nip_fi).
+            let (terminal_tx, _terminal_rx) = tokio::sync::mpsc::channel(1);
+            control.manager_disconnect_nip_fi(&terminal_tx);
 
             assert_eq!(
                 *reason_rx.borrow(),
                 Some(reason),
                 "{reason:?} (first writer) must not be clobbered by AuthorizationDenied"
-            );
-        }
-    }
-
-    #[test]
-    fn disconnect_community_wins_reason_losing_nip_fi_does_not_enqueue_frame() {
-        // disconnect_community fires first → wins reason → no payload (community
-        // closes are intentionally payload-less).
-        // disconnect_nip_fi fires second → loses reason → must NOT enqueue a denial
-        // frame against the community close.
-        for reason in [
-            CommunityDisconnectReason::CommunityDeleted,
-            CommunityDisconnectReason::CommunityArchived,
-        ] {
-            let (terminal_tx, mut terminal_rx) = tokio::sync::mpsc::channel(1);
-
-            let cancel = CancellationToken::new();
-            let control = CommunityConnectionControl::new(cancel.clone());
-            control.set_terminal_frame_sender(terminal_tx);
-
-            // First writer: disconnect_community.
-            control.disconnect_community(reason);
-            // Second writer: disconnect_nip_fi — loses reason slot.
-            control.disconnect_nip_fi();
-
-            assert_eq!(
-                *control.disconnect_reason().borrow(),
-                Some(reason),
-                "{reason:?} must be retained when community wins reason"
-            );
-
-            // No frame queued — losing deny must not send an authorization_denied
-            // payload against a community close.
-            assert!(
-                terminal_rx.try_recv().is_err(),
-                "losing disconnect_nip_fi must not enqueue a denial frame against {reason:?}"
             );
         }
     }
@@ -3651,63 +3260,33 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn pubkey_disconnect_reaches_only_that_bound_pubkey_in_that_community() {
-        let registry = CommunityConnectionRegistry::new();
-        let community_a = CommunityId::from_uuid(Uuid::from_u128(0xa));
-        let community_b = CommunityId::from_uuid(Uuid::from_u128(0xb));
-        let (target, other) = ([1u8; 32], [2u8; 32]);
-        let bound = |community, pubkey: Option<[u8; 32]>| {
-            let control = CommunityConnectionControl::new(CancellationToken::new());
-            if let Some(pubkey) = pubkey {
-                control.bind_pubkey(pubkey);
-            }
-            let guard = registry.register(Uuid::new_v4(), community, control.clone());
-            (control, guard)
-        };
-        let (hit, _g1) = bound(community_a, Some(target));
-        let (other_pubkey, _g2) = bound(community_a, Some(other));
-        let (other_community, _g3) = bound(community_b, Some(target));
-        let (unbound, _g4) = bound(community_a, None);
-
-        assert_eq!(registry.disconnect_pubkey(community_a, &target, false), 1);
-        assert!(hit.cancellation_token().is_cancelled());
-        assert_eq!(
-            *hit.disconnect_reason().borrow(),
-            Some(CommunityDisconnectReason::AccessRevoked)
-        );
-        for untouched in [other_pubkey, other_community, unbound] {
-            assert!(!untouched.cancellation_token().is_cancelled());
-        }
-    }
-
-    #[test]
     fn community_lifecycle_disconnect_covers_socket_types_and_preserves_tenant_fence() {
         let registry = CommunityConnectionRegistry::new();
         let community_a = CommunityId::from_uuid(Uuid::from_u128(0xa));
         let community_b = CommunityId::from_uuid(Uuid::from_u128(0xb));
         let ordinary_a = CancellationToken::new();
-        let audio_a = CancellationToken::new();
+        let second_a = CancellationToken::new();
         let ordinary_b = CancellationToken::new();
         let ordinary_a_control = CommunityConnectionControl::new(ordinary_a.clone());
-        let audio_a_control = CommunityConnectionControl::new(audio_a.clone());
+        let second_a_control = CommunityConnectionControl::new(second_a.clone());
         let ordinary_b_control = CommunityConnectionControl::new(ordinary_b.clone());
         let ordinary_a_reason = ordinary_a_control.disconnect_reason();
-        let audio_a_reason = audio_a_control.disconnect_reason();
+        let second_a_reason = second_a_control.disconnect_reason();
         let ordinary_b_reason = ordinary_b_control.disconnect_reason();
         let _ordinary_a_guard = registry.register(Uuid::new_v4(), community_a, ordinary_a_control);
-        let _audio_a_guard = registry.register(Uuid::new_v4(), community_a, audio_a_control);
+        let _second_a_guard = registry.register(Uuid::new_v4(), community_a, second_a_control);
         let _ordinary_b_guard = registry.register(Uuid::new_v4(), community_b, ordinary_b_control);
 
         assert_eq!(registry.disconnect_archived_community(community_a), 2);
         assert!(ordinary_a.is_cancelled());
-        assert!(audio_a.is_cancelled());
+        assert!(second_a.is_cancelled());
         assert!(!ordinary_b.is_cancelled());
         assert_eq!(
             *ordinary_a_reason.borrow(),
             Some(CommunityDisconnectReason::CommunityArchived)
         );
         assert_eq!(
-            *audio_a_reason.borrow(),
+            *second_a_reason.borrow(),
             Some(CommunityDisconnectReason::CommunityArchived)
         );
         assert_eq!(*ordinary_b_reason.borrow(), None);

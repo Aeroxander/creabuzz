@@ -300,8 +300,6 @@ fn p0_pool_acquisitions_use_typed_operation_pairs_without_other() {
     assert!(event.contains("pub async fn huddle_started_link_exists_for_event_write("));
     let ingest = include_str!("../../buzz-relay/src/handlers/ingest.rs");
     assert!(ingest.contains(".huddle_started_link_exists_for_event_write("));
-    let audio = include_str!("../../buzz-relay/src/audio/handler.rs");
-    assert!(audio.contains(".huddle_started_link_exists("));
 
     let workflow_sink = include_str!("../../buzz-relay/src/workflow_sink.rs");
     assert!(workflow_sink.contains(".get_members_for_event_write("));

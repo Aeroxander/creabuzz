@@ -4,7 +4,7 @@
 //! community on the same server stays open. The setting lives on the community's row
 //! (`communities.membership_required`), is asked through one predicate (`AppState::membership_required`, which also
 //! honours the server-wide `BUZZ_REQUIRE_RELAY_MEMBERSHIP`), and is enforced in the one membership check every way in
-//! shares (WebSocket sign-in, HTTP, git, audio). These tests pin the properties that matter:
+//! shares (WebSocket sign-in, HTTP, git). These tests pin the properties that matter:
 //!
 //! - a closed community refuses people who are not members, and an open community on the same server does not care;
 //! - the server-wide switch still closes everything;

@@ -11097,31 +11097,49 @@ mod postgres_tests {
         .expect("unbanned member is admitted");
     }
 
+    /// A pod-local root socket registered and bound to `keys`, as root AUTH
+    /// leaves it.
+    fn bound_root_socket(
+        state: &crate::state::AppState,
+        community: buzz_core::tenant::CommunityId,
+        keys: &nostr::Keys,
+    ) -> tokio_util::sync::CancellationToken {
+        let (tx, _rx) = tokio::sync::mpsc::channel(4);
+        let (ctrl, _ctrl_rx) = tokio::sync::mpsc::channel(4);
+        let (terminal, _terminal_rx) = tokio::sync::mpsc::channel(1);
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let conn_id = Uuid::new_v4();
+        state.conn_manager.register(
+            conn_id,
+            tx,
+            ctrl,
+            terminal,
+            None,
+            cancel.clone(),
+            community,
+            std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0)),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            3,
+            crate::state::CommunityConnectionControl::new(cancel.clone()),
+        );
+        state
+            .conn_manager
+            .set_authenticated_pubkey(conn_id, keys.public_key().to_bytes().to_vec());
+        cancel
+    }
+
     /// Revoking a member's live access also closes their agents' sockets, and
     /// no one else's.
     /// Mutation: disconnect only the target pubkey → RED.
     #[tokio::test]
     #[ignore = "requires Postgres"]
     async fn revoke_live_access_closes_owned_agent_sockets() {
-        use crate::state::CommunityConnectionControl;
-        use tokio_util::sync::CancellationToken;
-
         let state = ingest_state().await;
         let (tenant, owner, agent) = owned_agent_fixture(&state, "revoke").await;
         let bystander = nostr::Keys::generate();
-        let bound = |keys: &nostr::Keys| {
-            let control = CommunityConnectionControl::new(CancellationToken::new());
-            control.bind_pubkey(keys.public_key().to_bytes());
-            let guard = state.community_connections.register(
-                Uuid::new_v4(),
-                tenant.community(),
-                control.clone(),
-            );
-            (control, guard)
-        };
-        let (owner_socket, _g1) = bound(&owner);
-        let (agent_socket, _g2) = bound(&agent);
-        let (bystander_socket, _g3) = bound(&bystander);
+        let owner_socket = bound_root_socket(&state, tenant.community(), &owner);
+        let agent_socket = bound_root_socket(&state, tenant.community(), &agent);
+        let bystander_socket = bound_root_socket(&state, tenant.community(), &bystander);
 
         state
             .revoke_live_access(
@@ -11133,9 +11151,9 @@ mod postgres_tests {
             .await
             .expect("revoke");
 
-        assert!(owner_socket.cancellation_token().is_cancelled());
-        assert!(agent_socket.cancellation_token().is_cancelled());
-        assert!(!bystander_socket.cancellation_token().is_cancelled());
+        assert!(owner_socket.is_cancelled());
+        assert!(agent_socket.is_cancelled());
+        assert!(!bystander_socket.is_cancelled());
     }
 
     /// Revoking an owner closes the sockets of agents admitted under that
@@ -11148,7 +11166,6 @@ mod postgres_tests {
     #[tokio::test]
     #[ignore = "requires Postgres"]
     async fn owner_revoke_closes_recorded_agent_sockets_without_a_lookup() {
-        use crate::state::CommunityConnectionControl;
         use sqlx::postgres::PgConnectOptions;
         use tokio_util::sync::CancellationToken;
 
@@ -11181,21 +11198,8 @@ mod postgres_tests {
             nostr::Keys::generate(),
             nostr::Keys::generate(),
         );
-        let bound = |keys: &nostr::Keys, owner: Option<&nostr::Keys>| {
-            let control = CommunityConnectionControl::new(CancellationToken::new());
-            control.bind_pubkey(keys.public_key().to_bytes());
-            if let Some(owner) = owner {
-                control.bind_owner(owner.public_key().to_bytes());
-            }
-            let guard =
-                state
-                    .community_connections
-                    .register(Uuid::new_v4(), community, control.clone());
-            (control, guard)
-        };
-        let (owner_socket, _g1) = bound(&owner, None);
-        let (agent_audio, _g2) = bound(&agent, Some(&owner));
-        let (bystander_socket, _g3) = bound(&bystander, None);
+        let owner_socket = bound_root_socket(&state, community, &owner);
+        let bystander_socket = bound_root_socket(&state, community, &bystander);
         let (tx, _rx) = tokio::sync::mpsc::channel(4);
         let (ctrl, _ctrl_rx) = tokio::sync::mpsc::channel(4);
         let (terminal, _terminal_rx) = tokio::sync::mpsc::channel(1);
@@ -11244,16 +11248,12 @@ mod postgres_tests {
             revoked.is_err(),
             "the failed agent lookup is still reported"
         );
-        assert!(owner_socket.cancellation_token().is_cancelled());
-        assert!(
-            agent_audio.cancellation_token().is_cancelled(),
-            "the agent's audio socket closes by its recorded owner"
-        );
+        assert!(owner_socket.is_cancelled());
         assert!(
             agent_root.is_cancelled(),
             "the agent's root socket closes by its recorded owner"
         );
-        assert!(!bystander_socket.cancellation_token().is_cancelled());
+        assert!(!bystander_socket.is_cancelled());
         let _ = sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
             .execute(&admin)
             .await;

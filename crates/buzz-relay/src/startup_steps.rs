@@ -61,8 +61,6 @@ pub enum StartupStep {
     SearchConnect,
     /// Warm NIP-FI JWKS snapshots (only when NIP-FI is configured).
     NipFiJwksWarm,
-    /// Start the inter-relay mesh (no-op when the mesh is off).
-    MeshBoot,
     /// Run the git object-store conformance probe (when enabled).
     GitConformanceProbe,
     /// Verify the channel roster fence.
@@ -79,7 +77,7 @@ pub enum StartupStep {
 
 impl StartupStep {
     /// The complete `phase` label vocabulary.
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 17] = [
         Self::DbConnect,
         Self::DbMigrate,
         Self::PartitionEnsure,
@@ -91,7 +89,6 @@ impl StartupStep {
         Self::RedisConnect,
         Self::SearchConnect,
         Self::NipFiJwksWarm,
-        Self::MeshBoot,
         Self::GitConformanceProbe,
         Self::ChannelRosterFence,
         Self::LargeRosterReconcile,
@@ -114,7 +111,6 @@ impl StartupStep {
             Self::RedisConnect => "redis_connect",
             Self::SearchConnect => "search_connect",
             Self::NipFiJwksWarm => "nip_fi_jwks_warm",
-            Self::MeshBoot => "mesh_boot",
             Self::GitConformanceProbe => "git_conformance_probe",
             Self::ChannelRosterFence => "channel_roster_fence",
             Self::LargeRosterReconcile => "large_roster_reconcile",
@@ -368,12 +364,15 @@ mod tests {
     fn a_panic_inside_a_step_logs_it_failed() {
         let records = finished_records(|| {
             let result = std::panic::catch_unwind(|| {
-                let _step = StepTimer::start(StartupStep::MeshBoot);
+                let _step = StepTimer::start(StartupStep::GitConformanceProbe);
                 panic!("step body panicked");
             });
             assert!(result.is_err());
         });
-        assert_eq!(records, [("mesh_boot".to_owned(), "failed".to_owned())]);
+        assert_eq!(
+            records,
+            [("git_conformance_probe".to_owned(), "failed".to_owned())]
+        );
     }
 
     #[test]

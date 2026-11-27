@@ -280,20 +280,20 @@ mod tests {
         // The spec's FI-TRACE-DENIAL-ORACLE: all private-state denial causes
         // (key mismatch, claimless assertion, expired lease) MUST map to the
         // same denial class (`AuthorizationDenied`) and produce byte-identical
-        // wire frames on both ingresses.
+        // wire frames.
         //
         // With `enforce_nip_fi_key_pairing` owning the full denial path, both
         // conditions reach the exact same `denial_frame(route, AuthorizationDenied)`
         // call.  This test pins that call against the production frame builder
         // and asserts that:
-        //   1. Root and audio denial frames carry the correct denial text.
+        //   1. The root denial frame carries the correct denial text.
         //   2. `AuthorizationDenied` HTTP response is 403 exact bytes.
         //   3. `EvidenceRejected` (public) is distinct from `AuthorizationDenied`
         //      (private-state) — the oracle property.
         //
         // Mutation evidence:
         //   A) Change `DenialClass::AuthorizationDenied` in `denial_frame`
-        //      → `nostr_text()` differs → root/audio text assertions panic.
+        //      → `nostr_text()` differs → root text assertion panics.
         //   B) Swap the root NOTICE with a raw string → JSON parse fails or
         //      content assertion panics.
         //   C) Map `EvidenceRejected` to the same body → distinctness assert panics.
@@ -320,29 +320,6 @@ mod tests {
             other => panic!("root denial frame must be WsMessage::Text; got {other:?}"),
         }
 
-        // Audio frame: JSON object with type/message fields.
-        let audio_frame = denial_frame(
-            NipFiWsRoute::Audio,
-            buzz_auth::DenialClass::AuthorizationDenied,
-        );
-        match audio_frame {
-            WsMessage::Text(t) => {
-                let v: serde_json::Value =
-                    serde_json::from_str(&t).expect("audio denial frame is valid JSON");
-                assert_eq!(
-                    v.get("type").and_then(|x| x.as_str()),
-                    Some("restricted"),
-                    "audio denial frame type must be 'restricted'"
-                );
-                assert_eq!(
-                    v.get("message").and_then(|x| x.as_str()),
-                    Some(expected_text),
-                    "audio denial frame message must equal AuthorizationDenied.nostr_text()"
-                );
-            }
-            other => panic!("audio denial frame must be WsMessage::Text; got {other:?}"),
-        }
-
         // HTTP-level oracle: AuthorizationDenied → 403 exact bytes.
         let resp_private = http_denial(DenialClass::AuthorizationDenied);
         assert_eq!(resp_private.status(), StatusCode::FORBIDDEN);
@@ -365,16 +342,16 @@ mod tests {
 
     // ── Router-level gate: enforce mode, both WS ingresses ────────────────────
     //
-    // `check_nip_fi_at_upgrade` is the single pre-101 gate called by BOTH the
-    // root relay handler and the huddle audio handler (C1). Tests here drive it
+    // `check_nip_fi_at_upgrade` is the single pre-101 gate called by the
+    // root relay handler. Tests here drive it
     // with the exact request shapes that must deny and admit, establishing the
     // per-function mutation boundary.
     //
     // Note: these unit tests call `check_nip_fi_at_upgrade` directly and do NOT
     // falsify that the gate is wired into the router. The built-router integration
     // tests in `router.rs` (`nip_fi_enforce_*`) exercise the full WS upgrade
-    // path through the real router for both `/` and `/huddle/{id}/audio` —
-    // deleting either production gate call turns those tests red.
+    // path through the real router for `/` — deleting the production gate call
+    // turns those tests red.
     //
     // Enforce + no verifier → 503 (dependency fail-closed; startup race)
     #[test]
@@ -628,17 +605,15 @@ mod tests {
         };
     }
 
-    // Pins: a shadow upgrade would-deny records under its own ingress, so
-    // audio refusals never count toward root's rate. Mutation: hard-coding
-    // the `ws` route moves the audio records.
+    // Pins: a shadow upgrade would-deny records under the `ws` route label.
     #[test]
     fn shadow_upgrade_would_deny_records_its_ingress_route() {
-        use crate::nip_fi_session::NipFiWsRoute::Audio;
         use crate::nip_fi_shadow_session::tests::shadow_records_by_route;
         let rejecting =
             ScriptedVerifier::new(Err(buzz_auth::VerifierError::InvalidSignatureOrClaims));
         let records = shadow_records_by_route(async {
-            for route in [ROOT, Audio] {
+            {
+                let route = ROOT;
                 for headers in [host_headers(), headers_with("Bearer a.b.c")] {
                     let verifier = Some(&rejecting as &dyn VerifyAssertion);
                     let outcome = check_nip_fi_at_upgrade(
@@ -652,12 +627,7 @@ mod tests {
                 }
             }
         });
-        let expected = [
-            "audio assertion/missing",
-            "audio assertion/rejected",
-            "ws assertion/missing",
-            "ws assertion/rejected",
-        ];
+        let expected = ["ws assertion/missing", "ws assertion/rejected"];
         assert_eq!(records, expected);
     }
 }

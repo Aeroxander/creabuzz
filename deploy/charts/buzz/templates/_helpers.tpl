@@ -219,16 +219,6 @@ secrets.existingSecret, use that. Otherwise use the chart-managed one.
 {{- end -}}
 {{- end -}}
 
-{{/* Effective huddle-audio availability. Nil means safe chart default: on for
-     one replica, off for multi-pod until an SFU/shared-room story exists. */}}
-{{- define "buzz.huddleAudioAvailable" -}}
-{{- if kindIs "invalid" .Values.relay.huddleAudioAvailable -}}
-{{- if gt (include "buzz.minimumReplicas" . | int) 1 -}}false{{- else -}}true{{- end -}}
-{{- else -}}
-{{- .Values.relay.huddleAudioAvailable -}}
-{{- end -}}
-{{- end -}}
-
 {{/* Effective S3 endpoint: explicit s3.endpoint wins, else bundled MinIO. */}}
 {{- define "buzz.s3Endpoint" -}}
 {{- if .Values.s3.endpoint -}}

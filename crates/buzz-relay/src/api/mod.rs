@@ -81,7 +81,7 @@ pub(crate) fn parse_query_or_400<T: serde::de::DeserializeOwned + Default>(
 /// Relay membership enforcement — single gate for all authenticated entry points.
 ///
 /// Moved here from the deleted `relay_members` module. Called by `media.rs`, `bridge.rs`,
-/// `git/transport.rs`, and `audio/handler.rs`.
+/// and `git/transport.rs`.
 pub mod relay_members {
     use axum::{
         http::{HeaderMap, StatusCode},
@@ -184,7 +184,7 @@ pub mod relay_members {
         writer: bool,
     ) -> Result<MembershipDecision, String> {
         // The server-wide switch, or this community's own: one question, asked here, for every way in (WebSocket,
-        // HTTP, git, audio).
+        // HTTP, git).
         if !state
             .membership_required(community, writer)
             .await

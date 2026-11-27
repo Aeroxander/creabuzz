@@ -7,7 +7,7 @@
 //!   the full NIP-FI key-pairing verdict, denial frame delivery, metric,
 //!   auth-state transition (Root), and cancellation for both ingresses.
 //! * [`spawn_nip_fi_expiry_task`] — the shared session-lifetime enforcement
-//!   constructor used by both root and audio routes.
+//!   constructor.
 //! * [`denial_frame`] — route- and class-specific frame builder used by
 //!   both the pairing seam and the expiry seam.
 //!
@@ -18,7 +18,6 @@
 use axum::extract::ws::Message as WsMessage;
 use tokio::sync::mpsc;
 use tracing::warn;
-use uuid::Uuid;
 
 use crate::connection::ConnectionState;
 
@@ -28,7 +27,6 @@ use crate::connection::ConnectionState;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NipFiWsRoute {
     Root,
-    Audio,
 }
 
 impl NipFiWsRoute {
@@ -36,7 +34,6 @@ impl NipFiWsRoute {
     pub(crate) const fn shadow_label(self) -> &'static str {
         match self {
             Self::Root => "ws",
-            Self::Audio => "audio",
         }
     }
 }
@@ -57,15 +54,6 @@ pub(crate) enum PairingOutcome {
 /// Route-specific resources needed to deliver the pairing denial.
 pub(crate) enum PairingDenialTarget<'a> {
     Root(&'a ConnectionState),
-    Audio {
-        ws_send: &'a mut futures_util::stream::SplitSink<
-            axum::extract::ws::WebSocket,
-            axum::extract::ws::Message,
-        >,
-        control: &'a crate::state::CommunityConnectionControl,
-        terminal_rx: &'a mut mpsc::Receiver<WsMessage>,
-        channel_id: Uuid,
-    },
 }
 
 /// Enforce the NIP-FI key-pairing invariant [FI-INV-05].
@@ -123,20 +111,6 @@ pub(crate) async fn enforce_nip_fi_key_pairing(
                 .deny_authorization(&conn.terminal_ctrl_tx, NipFiWsRoute::Root);
             conn.cancel.cancel();
         }
-        PairingDenialTarget::Audio {
-            ws_send,
-            control,
-            terminal_rx,
-            channel_id,
-        } => {
-            warn!(
-                %channel_id,
-                route = "audio",
-                proven_pubkey = %proven_pubkey.to_hex(),
-                "NIP-FI key pairing mismatch — closing connection"
-            );
-            crate::audio::handler::deny_audio_authorization(ws_send, control, terminal_rx).await;
-        }
     }
 
     PairingOutcome::Denied
@@ -147,23 +121,17 @@ pub(crate) async fn enforce_nip_fi_key_pairing(
 /// Build the canonical NIP-FI denial frame for `route` and `class`.
 ///
 /// * Root: a Nostr NOTICE, e.g. `["NOTICE","restricted: authorization denied"]`.
-/// * Audio: `{"type":"restricted","message":"restricted: authorization denied"}`.
 pub(crate) fn denial_frame(route: NipFiWsRoute, class: buzz_auth::DenialClass) -> WsMessage {
     match route {
         NipFiWsRoute::Root => {
             WsMessage::Text(crate::protocol::RelayMessage::notice(class.nostr_text()).into())
         }
-        NipFiWsRoute::Audio => WsMessage::Text(
-            serde_json::json!({"type": "restricted", "message": class.nostr_text()})
-                .to_string()
-                .into(),
-        ),
     }
 }
 
 // ── Shared expiry task constructor ────────────────────────────────────────────
 
-/// Spawn the NIP-FI session-lifetime enforcement task for either route.
+/// Spawn the NIP-FI session-lifetime enforcement task.
 ///
 /// At `deadline`, the task:
 /// 1. Calls `gate.expire(terminal)` with the route-specific terminal closure.
@@ -377,11 +345,11 @@ mod tests {
         std::iter::from_fn(|| rx.try_recv().ok()).collect()
     }
 
-    fn assert_one_audio_denial(frames: &[WsMessage]) {
+    fn assert_one_denial(frames: &[WsMessage]) {
         assert_eq!(
             frames,
             [denial_frame(
-                NipFiWsRoute::Audio,
+                NipFiWsRoute::Root,
                 buzz_auth::DenialClass::AuthorizationDenied
             )],
             "exactly one canonical deadline denial must be queued"
@@ -399,7 +367,7 @@ mod tests {
             Arc::clone(&gate),
             crate::state::CommunityConnectionControl::new(cancel.clone()),
             terminal_tx,
-            NipFiWsRoute::Audio,
+            NipFiWsRoute::Root,
         );
         tokio::task::yield_now().await; // worker is parked on its (paused) timer
 
@@ -412,7 +380,7 @@ mod tests {
         cancel.cancel();
         worker.await.expect("expiry task");
 
-        assert_one_audio_denial(&denial_frames(&mut terminal_rx));
+        assert_one_denial(&denial_frames(&mut terminal_rx));
     }
 
     #[tokio::test]
@@ -426,7 +394,7 @@ mod tests {
             Arc::clone(&gate),
             crate::state::CommunityConnectionControl::new(cancel.clone()),
             terminal_tx,
-            NipFiWsRoute::Audio,
+            NipFiWsRoute::Root,
         );
         while !cancel.is_cancelled() {
             tokio::task::yield_now().await; // worker's timer arm wins and expires
@@ -436,7 +404,7 @@ mod tests {
         cancel.cancel();
         worker.await.expect("expiry task");
 
-        assert_one_audio_denial(&denial_frames(&mut terminal_rx));
+        assert_one_denial(&denial_frames(&mut terminal_rx));
     }
 
     #[tokio::test(start_paused = true)]
@@ -450,7 +418,7 @@ mod tests {
             Arc::clone(&gate),
             crate::state::CommunityConnectionControl::new(cancel.clone()),
             terminal_tx,
-            NipFiWsRoute::Audio,
+            NipFiWsRoute::Root,
         );
         cancel.cancel();
         worker.await.expect("expiry task");

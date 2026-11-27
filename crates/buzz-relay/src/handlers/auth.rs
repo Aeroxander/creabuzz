@@ -120,7 +120,7 @@ fn classify_relay_membership(
 }
 
 /// Community-ban verdict for an authenticating principal: shared by every
-/// socket auth seam (root and audio) so they cannot drift.
+/// socket auth seam so they cannot drift.
 ///
 /// Fails closed: a DB error is `DbError`, never `Clear`. NIP-OA cascade: a ban
 /// on the principal blocks it directly; if the principal is clear, a ban on
@@ -2409,7 +2409,7 @@ mod tests {
             let gate = crate::nip_fi_gate::SessionAdmissionGate::new(deadline, cancel.clone());
 
             // Use a unique community UUID so this test's deny_set_check_hook slot
-            // does not collide with other concurrent tests (audio-active uses Uuid::nil()).
+            // does not collide with other concurrent tests (other tests use Uuid::nil()).
             let community = buzz_core::tenant::CommunityId::from_uuid(Uuid::new_v4());
             let deny_straddle_control =
                 crate::state::CommunityConnectionControl::new(cancel.clone());
@@ -2590,7 +2590,7 @@ mod tests {
         //
         // Same seam as W_deny_straddle.  The session's assertion is issued by B
         // ("test-issuer"); at the hook the test inserts a deny entry for issuer A
-        // and runs A's close scan (root + audio), which must match nothing.  After
+        // and runs A's close scan, which must match nothing.  After
         // release the B session completes admission: OK(true), not cancelled.
         // Mutation: a pubkey-only scan closes the B session → `closed == 0` fails.
         // [FI-TRACE-DENY-SET]
@@ -2692,7 +2692,7 @@ mod tests {
                 .expect("handler must reach before_deny_set_check within 5s")
                 .expect("arrived channel closed");
 
-            // Issuer A's command lands in the window: entry + both close scans.
+            // Issuer A's command lands in the window: entry + close scan.
             assert!(matches!(
                 deny_map.merge_cross_pod_deny(
                     ISSUER_A,
@@ -2705,10 +2705,7 @@ mod tests {
             let pubkey_bytes = key.public_key().to_bytes().to_vec();
             let closed = state
                 .conn_manager
-                .disconnect_nip_fi(ISSUER_A, &pubkey_bytes)
-                + state
-                    .community_connections
-                    .disconnect_nip_fi(ISSUER_A, &pubkey_bytes);
+                .disconnect_nip_fi(ISSUER_A, &pubkey_bytes);
             assert_eq!(
                 closed, 0,
                 "issuer A's close scan must not match a session admitted under B"

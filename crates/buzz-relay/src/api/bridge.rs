@@ -8016,14 +8016,12 @@ pub(crate) mod postgres_tests {
     /// An agent socket admitted with no owner, then linked to its owner by a
     /// later `POST /events` carrying NIP-OA, closes when the owner is banned
     /// or removed even though the owner-to-agent lookup fails: recording the
-    /// owner made the ownerless sockets reconnect. The same agent's socket in
-    /// another community stays up.
+    /// owner made the ownerless sockets reconnect.
     /// Mutation: drop `disconnect_unowned_agent_clusterwide` from
     /// `materialize_nip_oa_owner` → the agent's sockets stay open → RED.
     #[tokio::test]
     #[ignore = "requires Postgres"]
     async fn late_owner_link_closes_ownerless_agent_sockets_on_owner_revoke() {
-        use crate::state::CommunityConnectionControl;
         use sqlx::postgres::PgConnectOptions;
         use tokio_util::sync::CancellationToken;
 
@@ -8057,12 +8055,10 @@ pub(crate) mod postgres_tests {
             Arc::get_mut(&mut state).expect("unique state").db = buzz_db::Db::from_pool(pool);
 
             let tenant = fresh_tenant("late-owner.test");
-            let other = fresh_tenant("late-owner-other.test");
             let (owner, agent) = (Keys::generate(), Keys::generate());
             let agent_bytes = agent.public_key().to_bytes();
 
-            // The agent's ownerless main and audio sockets, plus its socket in
-            // another community.
+            // The agent's ownerless main socket.
             let root = CancellationToken::new();
             let root_id = uuid::Uuid::new_v4();
             let (tx, _rx) = tokio::sync::mpsc::channel(4);
@@ -8084,18 +8080,6 @@ pub(crate) mod postgres_tests {
             state
                 .conn_manager
                 .set_authenticated_pubkey(root_id, agent_bytes.to_vec());
-            let bound = |community| {
-                let control = CommunityConnectionControl::new(CancellationToken::new());
-                control.bind_pubkey(agent_bytes);
-                let guard = state.community_connections.register(
-                    uuid::Uuid::new_v4(),
-                    community,
-                    control.clone(),
-                );
-                (control, guard)
-            };
-            let (audio, _g1) = bound(tenant.community());
-            let (elsewhere, _g2) = bound(other.community());
 
             // The real HTTP submit path records the owner from `x-auth-tag`.
             let auth_tag = buzz_sdk::nip_oa::compute_auth_tag(&owner, &agent.public_key(), "")
@@ -8178,14 +8162,6 @@ pub(crate) mod postgres_tests {
             assert!(
                 root.is_cancelled(),
                 "{action}: the agent's main socket closes"
-            );
-            assert!(
-                audio.cancellation_token().is_cancelled(),
-                "{action}: the agent's audio socket closes"
-            );
-            assert!(
-                !elsewhere.cancellation_token().is_cancelled(),
-                "{action}: the agent's socket in another community stays"
             );
             let _ = sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
                 .execute(&admin)

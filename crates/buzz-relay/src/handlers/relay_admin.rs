@@ -958,9 +958,6 @@ mod postgres_tests {
     #[tokio::test]
     #[ignore = "requires Postgres"]
     async fn removing_a_member_closes_their_live_connections() {
-        use crate::state::CommunityConnectionControl;
-        use tokio_util::sync::CancellationToken;
-
         let host = format!("remove-revoke-{}.example", uuid::Uuid::new_v4().simple());
         let (state, tenant) = workspace_profile_test_state(&host, true).await;
         let (owner, member, bystander) = (Keys::generate(), Keys::generate(), Keys::generate());
@@ -975,18 +972,8 @@ mod postgres_tests {
                 .await
                 .expect("seed member");
         }
-        let bound = |keys: &Keys| {
-            let control = CommunityConnectionControl::new(CancellationToken::new());
-            control.bind_pubkey(keys.public_key().to_bytes());
-            let guard = state.community_connections.register(
-                uuid::Uuid::new_v4(),
-                tenant.community(),
-                control.clone(),
-            );
-            (control, guard)
-        };
-        let (member_socket, _g1) = bound(&member);
-        let (bystander_socket, _g2) = bound(&bystander);
+        let member_socket = bound_root_socket(&state, tenant.community(), &member);
+        let bystander_socket = bound_root_socket(&state, tenant.community(), &bystander);
 
         let removal = EventBuilder::new(Kind::Custom(RELAY_ADMIN_REMOVE_MEMBER as u16), "")
             .tags(vec![Tag::public_key(member.public_key())])
@@ -996,8 +983,8 @@ mod postgres_tests {
             .await
             .expect("owner removes member");
 
-        assert!(member_socket.cancellation_token().is_cancelled());
-        assert!(!bystander_socket.cancellation_token().is_cancelled());
+        assert!(member_socket.is_cancelled());
+        assert!(!bystander_socket.is_cancelled());
     }
 
     /// A pod-local root socket registered and bound to `keys`, as root AUTH
@@ -1040,22 +1027,17 @@ mod postgres_tests {
         (conn_id, cancel)
     }
 
-    /// Live sockets around a NIP-43 self-leave: the member's root and audio
-    /// sockets, their owned agent's root and audio sockets, and the member's
-    /// root socket in another community.
+    /// Live sockets around a NIP-43 self-leave: the member's and their owned
+    /// agent's root sockets, and the member's root socket in another community.
     struct SelfLeaveFixture {
         state: std::sync::Arc<crate::state::AppState>,
         tenant: buzz_core::tenant::TenantContext,
         member: Keys,
         closing: Vec<(&'static str, tokio_util::sync::CancellationToken)>,
         other_community: tokio_util::sync::CancellationToken,
-        _guards: Vec<crate::state::CommunityConnectionGuard>,
     }
 
     async fn self_leave_fixture() -> SelfLeaveFixture {
-        use crate::state::CommunityConnectionControl;
-        use tokio_util::sync::CancellationToken;
-
         let host = format!("self-leave-{}.example", uuid::Uuid::new_v4().simple());
         let (state, tenant) = workspace_profile_test_state(&host, true).await;
         let other_host = format!(
@@ -1091,20 +1073,7 @@ mod postgres_tests {
             .await
             .expect("link agent"));
 
-        let mut guards = Vec::new();
-        let mut audio = |keys: &Keys| {
-            let control = CommunityConnectionControl::new(CancellationToken::new());
-            control.bind_pubkey(keys.public_key().to_bytes());
-            guards.push(state.community_connections.register(
-                uuid::Uuid::new_v4(),
-                tenant.community(),
-                control.clone(),
-            ));
-            control.cancellation_token()
-        };
         let closing = vec![
-            ("member audio", audio(&member)),
-            ("agent audio", audio(&agent)),
             (
                 "member root",
                 bound_root_socket(&state, tenant.community(), &member),
@@ -1121,7 +1090,6 @@ mod postgres_tests {
             member,
             closing,
             other_community,
-            _guards: guards,
         }
     }
 
@@ -1150,7 +1118,7 @@ mod postgres_tests {
     /// Mutation: drop `revoke_live_access` from the leave path → RED.
     #[tokio::test]
     #[ignore = "requires Postgres — runs in postgres-ci nextest lane"]
-    async fn self_leave_closes_member_audio_and_agent_sockets() {
+    async fn self_leave_closes_member_and_agent_sockets() {
         let f = self_leave_fixture().await;
         let auth = crate::handlers::ingest::IngestAuth::Http {
             pubkey: f.member.public_key(),
@@ -1530,19 +1498,15 @@ mod postgres_tests {
     }
 
     /// A server that never heard the closing (a lost cross-server message) still closes its strangers on its next
-    /// periodic revalidation, once per change, audio sockets included. Members stay.
+    /// periodic revalidation, once per change. Members stay.
     /// Mutation: drop the `enforce_members_only` call from the revalidation → RED.
     #[tokio::test]
     #[ignore = "requires Postgres"]
     async fn a_server_that_missed_the_closing_still_closes_its_strangers_on_the_next_revalidation()
     {
-        use crate::state::CommunityConnectionControl;
-        use tokio_util::sync::CancellationToken;
-
         let host = format!("access-missed-{}.example", uuid::Uuid::new_v4().simple());
         let (state, tenant) = workspace_profile_test_state(&host, false).await;
-        let (owner, member, stranger, audio_stranger, late) = (
-            Keys::generate(),
+        let (owner, member, stranger, late) = (
             Keys::generate(),
             Keys::generate(),
             Keys::generate(),
@@ -1558,18 +1522,10 @@ mod postgres_tests {
         };
         let member_socket = admitted_root(&member);
         let stranger_socket = admitted_root(&stranger);
-        let audio_control = CommunityConnectionControl::new(CancellationToken::new());
-        audio_control.bind_pubkey(audio_stranger.public_key().to_bytes());
-        let _guard = state.community_connections.register(
-            uuid::Uuid::new_v4(),
-            tenant.community(),
-            audio_control.clone(),
-        );
-        let audio_socket = audio_control.cancellation_token();
 
         // Open: a tick closes nobody.
         assert_eq!(state.revalidate_live_communities().await, 0);
-        assert!(!stranger_socket.is_cancelled() && !audio_socket.is_cancelled());
+        assert!(!stranger_socket.is_cancelled());
 
         // The community becomes members-only in the database; this server was told nothing.
         state
@@ -1579,7 +1535,6 @@ mod postgres_tests {
             .expect("close it");
         state.revalidate_live_communities().await;
         assert!(stranger_socket.is_cancelled(), "a connected stranger");
-        assert!(audio_socket.is_cancelled(), "a stranger in a huddle");
         assert!(!member_socket.is_cancelled(), "a member stays");
 
         // Once per change: someone who got in afterwards is not swept by the next tick (sign-in is what refuses them).

@@ -104,7 +104,7 @@ access information.
 ```
 crates/
   # Relay + core
-  buzz-relay          # WebSocket relay server — main entry point; also hosts git + huddle audio
+  buzz-relay          # WebSocket relay server — main entry point; also hosts git
   buzz-core           # Core types, event verification, filter matching, kind registry
   buzz-db             # Postgres event store and data access layer
   buzz-auth           # Authentication and authorization

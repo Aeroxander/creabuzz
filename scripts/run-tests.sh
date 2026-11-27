@@ -142,16 +142,10 @@ run_unit_tests() {
   run_test_step "buzz-relay storage snapshot tests" \
     cargo test -p buzz-relay --lib storage_sweep::tests:: -- --nocapture
 
-  # Mirror the four audio/FI suites from `just test-unit`'s nextest expression.
+  # Mirror the FI suites from `just test-unit`'s nextest expression.
   # These are infra-free (no DB, no Redis); the `#[ignore]`-gated DB witnesses
   # are excluded by cargo test's default filter. Keep in step with the Justfile
   # `test-unit` relay expression.
-  run_test_step "buzz-relay audio join tests" \
-    cargo test -p buzz-relay --lib audio::join::tests:: -- --nocapture
-
-  run_test_step "buzz-relay audio handler tests" \
-    cargo test -p buzz-relay --lib audio::handler::tests:: -- --nocapture
-
   run_test_step "buzz-relay NIP-FI gate tests" \
     cargo test -p buzz-relay --lib nip_fi_gate::tests:: -- --nocapture
 
@@ -219,9 +213,6 @@ run_unit_tests() {
   run_test_step "buzz-relay community close first-writer tests" \
     cargo test -p buzz-relay --lib state::tests::community_disconnect_then_nip_fi_keeps_community_deleted_reason -- --exact --nocapture
 
-  run_test_step "buzz-relay community close suppresses losing denial frame test" \
-    cargo test -p buzz-relay --lib state::tests::disconnect_community_wins_reason_losing_nip_fi_does_not_enqueue_frame -- --exact --nocapture
-
   run_test_step "buzz-relay router tests" \
     cargo test -p buzz-relay --lib router::tests:: -- --nocapture
 
@@ -247,12 +238,7 @@ run_unit_tests() {
     cargo test -p buzz-relay --lib metrics::contract_tests:: -- --nocapture
 
   local nip_fi_exact_tests=(
-    audio::room::tests::roster_revisions_are_ordered_and_snapshot_is_authoritative
     connection::tests::auth_lifecycle_reconciles_every_terminal_and_never_leaks_gauge
-    audio::room::tests::b1_pending_peer_removed_before_commit_emits_no_delta
-    audio::room::tests::b2_commit_peer_emits_exactly_one_joined_delta_and_marks_visible
-    audio::room::tests::b3_commit_peer_revision_is_monotone_between_concurrent_events
-    audio::room::tests::f7a_pending_peer_excluded_from_snapshot_until_committed
     connection::tests::b2_cancelled_connection_event_frame_not_dispatched
     connection::tests::b3_expiry_denial_precedes_close_through_send_loop
     connection::tests::b3_root_pairing_denial_precedes_close_through_send_loop
@@ -275,19 +261,12 @@ run_unit_tests() {
     handlers::event::tests::fanout_access::owner_only_kinds_keep_only_the_owner
     handlers::event::tests::pubsub_fanout::pubsub_owner_only_kinds_reach_only_the_owner
     handlers::event::tests::pubsub_fanout::dispatch_owner_only_kinds_reach_only_the_owner
-    handlers::req::tests::p1a_huddle_liveness_req_barrier_expiry_blocks_query_and_emission
     state::tests::f3_cancellation_during_check_terminates_socket_without_waiting_for_check
     state::tests::on_not_run_runs_once_on_each_deny_arm_and_never_on_admit
     state::tests::conn_manager_disconnect_nip_fi_ignores_unproven_connection
     state::tests::conn_manager_disconnect_nip_fi_is_issuer_scoped
     state::tests::conn_manager_disconnect_nip_fi_sets_authorization_denied_reason
-    state::tests::nip_fi_disconnect_audio_is_issuer_scoped
-    state::tests::nip_fi_disconnect_closes_proven_audio_socket_and_sends_policy_close_reason
-    state::tests::nip_fi_disconnect_closes_target_audio_only_and_preserves_collocated_peer
-    state::tests::nip_fi_disconnect_does_not_close_different_pubkey_audio_socket
-    state::tests::nip_fi_disconnect_does_not_close_unproven_audio_socket
     state::tests::community_disconnect_then_nip_fi_keeps_community_deleted_reason
-    state::tests::disconnect_community_wins_reason_losing_nip_fi_does_not_enqueue_frame
     state::tests::manager_disconnect_sets_reason_enqueues_frame_then_cancels
   )
   local name

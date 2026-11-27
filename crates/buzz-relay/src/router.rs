@@ -20,7 +20,6 @@ use tower_http::services::ServeDir;
 use tower_http::trace::{HttpMakeClassifier, TraceLayer};
 
 use crate::api;
-use crate::audio;
 use crate::connection::handle_connection;
 use crate::metrics::track_metrics;
 use crate::nip11::{nip11_document, relay_info_handler};
@@ -123,8 +122,6 @@ const NIP_FI_EXEMPT_PREFIXES: &[&str] = &[
     "/api/join-policy",
     // Webhook trigger — secret-header auth; subtree for /hooks/{id}
     "/hooks/",
-    // Huddle audio WebSocket — WS-NIP-FI governs WebSocket; subtree
-    "/huddle/",
     // NIP-FI admin disconnect — authenticated by its own command JWT
     // (`nip-fi-command+jwt` in the same header), which the assertion verifier
     // would reject.  No trailing slash, so the matcher exempts the exact path
@@ -351,11 +348,6 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         )
         // Webhook trigger (secret-authenticated, no NIP-98)
         .route("/hooks/{id}", post(api::bridge::workflow_webhook))
-        // Huddle audio WebSocket route
-        .route(
-            "/huddle/{channel_id}/audio",
-            get(audio::handler::ws_audio_handler),
-        )
         // Reject request bodies larger than 1 MB to prevent resource exhaustion.
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
         .with_state(state.clone());
@@ -568,7 +560,6 @@ pub fn build_health_router(state: Arc<AppState>) -> Router {
         .route("/_liveness", get(liveness_handler))
         .route("/_readiness", get(kubernetes_readiness_handler))
         .route("/_status", get(status_handler))
-        .route("/_mesh", get(mesh_status_handler))
         .with_state(state)
 }
 
@@ -647,7 +638,7 @@ async fn nip11_or_ws_handler(
                 .unwrap_or(false);
         // HTTP/2 extended-CONNECT (RFC 8441), latent until Axum's `http2` is
         // enabled. Gated here too so an unmapped Host gets 503 before the
-        // tenant lookup's 404, matching h1 and audio. [F3-H2-GATE]
+        // tenant lookup's 404, matching h1. [F3-H2-GATE]
         let is_h2_ws_connect = req.version() == axum::http::Version::HTTP_2
             && req.method() == axum::http::Method::CONNECT;
         if is_h1_ws_upgrade || is_h2_ws_connect {
@@ -962,18 +953,6 @@ async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
         });
     }
     Json(payload)
-}
-
-/// `/_mesh` — live mesh status: peer table, connection/phi state, per-peer
-/// counters, fence-rejection totals. Mesh-off reports `{"enabled": false}` so
-/// operators can distinguish "off" from "on with zero peers".
-async fn mesh_status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    match state.mesh() {
-        Some(handle) => Json(serde_json::to_value(handle.status()).unwrap_or_else(
-            |e| json!({"enabled": true, "error": format!("status serialize: {e}")}),
-        )),
-        None => Json(json!({"enabled": false})),
-    }
 }
 
 /// Build a CORS layer from the configured origins list.
@@ -2152,14 +2131,12 @@ mod tests {
 
     // ── NIP-FI built-router gate: both WS ingresses ───────────────────────────
     //
-    // Drive the REAL built router (via tower `oneshot`) for both the root `/`
-    // and the huddle audio `/huddle/{id}/audio` WebSocket ingresses in NIP-FI
-    // enforce mode. These tests prove that both gate call sites live in
-    // production: deleting either gate call (the pre-extractor h1 block in
-    // `nip11_or_ws_handler`, or at the top of `ws_audio_handler` in
-    // `audio/handler.rs`) causes the request to proceed past the pre-101 check
-    // and receive a 404 (tenant not found) instead of the expected denial,
-    // turning these tests red.
+    // Drive the REAL built router (via tower `oneshot`) for the root `/`
+    // WebSocket ingress in NIP-FI enforce mode. These tests prove the gate
+    // call site lives in production: deleting it (the pre-extractor h1 block in
+    // `nip11_or_ws_handler`) causes the request to proceed past the pre-101
+    // check and receive a 404 (tenant not found) instead of the expected
+    // denial, turning these tests red.
     //
     // ## F3 structural proof
     //
@@ -2189,10 +2166,8 @@ mod tests {
     //   B) Delete the [F3-H2-GATE] backstop in the `Ok(ws)` arm → h2 extended-
     //      CONNECT upgrades would bypass the gate when `http2` is eventually
     //      enabled; h1 tests still pass but the latent path loses its safety net.
-    //   C) Delete the gate call in `ws_audio_handler` → audio request returns
-    //      404 (no community) instead of 401/503 → assert_eq panics.
-    //   D) Switch `Enforce` to `Off` in the test state → both ingresses skip
-    //      the gate and return 404 (no community) → status assertions panic.
+    //   C) Switch `Enforce` to `Off` in the test state → the ingress skips
+    //      the gate and returns 404 (no community) → status assertions panic.
 
     /// Build AppState with NIP-FI enforce mode and no verifier (simulates
     /// startup with no JWKS yet warmed). The verifier is `None` because
@@ -2345,18 +2320,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn nip_fi_off_audio_passes_without_header() {
-        let path = format!("/huddle/{}/audio", uuid::Uuid::new_v4());
-        assert_off_mode_ignores_header(&path, false).await;
-    }
-
-    #[tokio::test]
-    async fn nip_fi_off_audio_ignores_malformed_header() {
-        let path = format!("/huddle/{}/audio", uuid::Uuid::new_v4());
-        assert_off_mode_ignores_header(&path, true).await;
-    }
-
-    #[tokio::test]
     async fn nip_fi_enforce_root_denies_missing_assertion_401() {
         let state = nip_fi_enforce_state().await;
         let status = nip_fi_gate_status(state, "/", None, None).await;
@@ -2364,19 +2327,6 @@ mod tests {
             status,
             axum::http::StatusCode::UNAUTHORIZED,
             "root WebSocket upgrade without assertion must be denied 401 in enforce mode"
-        );
-    }
-
-    #[tokio::test]
-    async fn nip_fi_enforce_audio_denies_missing_assertion_401() {
-        let state = nip_fi_enforce_state().await;
-        let channel_id = uuid::Uuid::new_v4();
-        let path = format!("/huddle/{channel_id}/audio");
-        let status = nip_fi_gate_status(state, &path, None, None).await;
-        assert_eq!(
-            status,
-            axum::http::StatusCode::UNAUTHORIZED,
-            "audio WebSocket upgrade without assertion must be denied 401 in enforce mode"
         );
     }
 
@@ -2396,25 +2346,6 @@ mod tests {
             status,
             axum::http::StatusCode::SERVICE_UNAVAILABLE,
             "root WebSocket upgrade with token but no verifier must be denied 503 in enforce mode"
-        );
-    }
-
-    #[tokio::test]
-    async fn nip_fi_enforce_audio_denies_token_when_no_verifier_503() {
-        let state = nip_fi_enforce_state().await;
-        let channel_id = uuid::Uuid::new_v4();
-        let path = format!("/huddle/{channel_id}/audio");
-        let status = nip_fi_gate_status(
-            state,
-            &path,
-            Some("Nostr-Federated-Identity"),
-            Some("Bearer eyJhbGciOiJFUzI1NiJ9.e30.sig"),
-        )
-        .await;
-        assert_eq!(
-            status,
-            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            "audio WebSocket upgrade with token but no verifier must be denied 503 in enforce mode"
         );
     }
 
@@ -3989,14 +3920,13 @@ mod tests {
     }
 
     // Pins ruling: in enforce, an unmapped Host is 503 at the router guard
-    // (protected HTTP) and at the upgrade (root and audio WS) — with or
+    // (protected HTTP) and at the upgrade (root WS) — with or
     // without an assertion, and before any verification.
     // Mutation: dropping `resolve_community` at either site lets the
     // verifier run (or a 401 through).
     #[tokio::test]
     async fn nip_fi_enforce_unmapped_host_is_503_before_verification() {
-        let audio = format!("/huddle/{}/audio", uuid::Uuid::new_v4());
-        for path in [GUARD_PROTECTED_PATH, "/", audio.as_str()] {
+        for path in [GUARD_PROTECTED_PATH, "/"] {
             for token in [None, Some("Bearer a.b.c")] {
                 let (state, verifier) = guard_state_with(Ok(None)).await;
                 let mut state = (*state).clone();
@@ -4033,8 +3963,7 @@ mod tests {
     // into 503.
     #[tokio::test]
     async fn nip_fi_off_unmapped_host_is_byte_identical_404() {
-        let audio = format!("/huddle/{}/audio", uuid::Uuid::new_v4());
-        for path in ["/", audio.as_str()] {
+        for path in ["/"] {
             for token in [None, Some("Bearer a.b.c")] {
                 let mut state = (*nip_fi_off_state().await).clone();
                 Arc::make_mut(&mut state.config).nip_fi.communities = Default::default();

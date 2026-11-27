@@ -23,8 +23,6 @@ pub(crate) mod nip_fi_upgrade;
 
 /// REST API route handlers.
 pub mod api;
-/// WebSocket audio relay for huddle voice channels.
-pub mod audio;
 /// Chain reader: indexes the contracts' events and signs the project numbers.
 pub mod chain_reader;
 /// Relay configuration from environment variables.
@@ -44,8 +42,6 @@ pub mod handlers;
 pub mod invite_token;
 /// Fixed-schema evidence for the relay's earliest startup steps.
 pub mod lifecycle;
-/// Inter-relay mesh startup wiring (`BUZZ_MESH` seam).
-pub mod mesh_boot;
 /// Prometheus metrics: recorder, upkeep, HTTP middleware.
 pub mod metrics;
 /// NIP-11 relay information document.
@@ -77,8 +73,6 @@ pub mod telemetry;
 pub mod tenant;
 #[cfg(test)]
 mod test_support;
-/// Relay-side tunnel session directory and routing.
-pub mod tunnel;
 /// Web push alerts: encryption, VAPID, the alert maker and the sender (off unless the operator configures it).
 pub mod web_push;
 /// Webhook secret generation and constant-time comparison.

@@ -228,7 +228,7 @@ impl ShadowSession {
     }
 }
 
-/// One AUTH attempt, audio's through its join commit: refused, or dropped,
+/// One AUTH attempt: refused, or dropped,
 /// while the session is still pending, it ended unadmitted for a non-NIP-FI
 /// reason (NIP-42 failure, ordinary policy refusal), so the session retires
 /// without a record.

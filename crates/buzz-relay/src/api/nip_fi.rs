@@ -142,9 +142,6 @@ pub async fn disconnect(
                 state
                     .conn_manager
                     .disconnect_nip_fi(&cmd.caller_iss, &pubkey_bytes)
-                    + state
-                        .community_connections
-                        .disconnect_nip_fi(&cmd.caller_iss, &pubkey_bytes)
             } else {
                 state
                     .nip_fi_shadow_sessions
@@ -401,10 +398,7 @@ pub fn apply_nip_fi_disconnect(
         }
         let closed = state
             .conn_manager
-            .disconnect_nip_fi(&message.issuer, &message.pubkey_bytes)
-            + state
-                .community_connections
-                .disconnect_nip_fi(&message.issuer, &message.pubkey_bytes);
+            .disconnect_nip_fi(&message.issuer, &message.pubkey_bytes);
         if closed > 0 {
             tracing::debug!(closed, reason = reason, "nip-fi cross-pod: closed sessions");
         }
@@ -1222,9 +1216,7 @@ mod route_integration_tests {
     async fn consumer_capacity_miss_closes_targeted_session_without_map_denial() {
         use super::apply_nip_fi_disconnect;
         use super::NipFiDisconnectApplyResult;
-        use crate::state::CommunityConnectionControl;
         use buzz_auth::CrossPodMergeResult;
-        use tokio_util::sync::CancellationToken;
 
         let state = {
             let mut config = crate::config::Config::for_test();
@@ -1294,19 +1286,8 @@ mod route_integration_tests {
         );
 
         // Register live sessions for targeted (k_b) and unrelated (k_unrelated) peers.
-        let cancel_b = CancellationToken::new();
-        let cancel_unrelated = CancellationToken::new();
-        let registry = &state.community_connections;
-        let community = buzz_core::tenant::CommunityId::from_uuid(uuid::Uuid::new_v4());
-
-        let ctrl_b = CommunityConnectionControl::new(cancel_b.clone());
-        ctrl_b.set_proven_identity(k_b.to_bytes().to_vec(), Some(TEST_ISS.to_owned()));
-        let _guard_b = registry.register(uuid::Uuid::new_v4(), community, ctrl_b);
-
-        let ctrl_unrelated = CommunityConnectionControl::new(cancel_unrelated.clone());
-        ctrl_unrelated
-            .set_proven_identity(k_unrelated.to_bytes().to_vec(), Some(TEST_ISS.to_owned()));
-        let _guard_unrelated = registry.register(uuid::Uuid::new_v4(), community, ctrl_unrelated);
+        let cancel_b = IssuerSessions::register(&state, TEST_ISS, &k_b).root;
+        let cancel_unrelated = IssuerSessions::register(&state, TEST_ISS, &k_unrelated).root;
 
         // Deliver k_b — capacity exhausted, no map entry added.
         let msg_b = buzz_pubsub::NipFiDisconnect {
@@ -1359,34 +1340,25 @@ mod route_integration_tests {
         );
     }
 
-    // ── Test: Item 5 — dual-transport registration witness ──────────────────────────────────────
+    // ── Test: Item 5 — registration witness ─────────────────────────────────────────────────────
     //
-    // Proves that the production audio post-auth registration helper
-    // (`audio_post_auth_register`) is the seam used to register audio connections
-    // in the fan-out, and that apply_nip_fi_disconnect drives both connection
-    // registries (ordinary WS via conn_manager and audio via community_connections).
+    // Proves that apply_nip_fi_disconnect drives the connection manager.
     //
-    // Four sub-claims verified:
+    // Three sub-claims verified:
     //  1. targeted ordinary WS is cancelled (conn_manager path)
-    //  2. targeted audio is cancelled with AuthorizationDenied (community_connections path,
-    //     registered via the production audio_post_auth_register helper)
-    //  3. unrelated ordinary WS and audio peers remain open
-    //  4. capacity-failure variant: the delivered target still closes both transports
+    //  2. unrelated ordinary WS peers remain open
+    //  3. capacity-failure variant: the delivered target still closes
     //     despite no map entry
     //
     // Mandatory reds:
-    //  - no-op audio_post_auth_register leaves targeted audio open
-    //  - removing community_connections from the fan-out leaves audio open
     //  - removing conn_manager from the fan-out leaves ordinary WS open
     //  - broad/non-key-exact matching would close unrelated peers (asserted absent)
     //  - skipping close on CapacityExceeded leaves targeted sessions open (capacity variant)
 
     #[tokio::test]
-    async fn dual_transport_registration_witness() {
+    async fn ws_registration_witness() {
         use super::apply_nip_fi_disconnect;
         use super::NipFiDisconnectApplyResult;
-        use crate::audio::handler::audio_post_auth_register;
-        use crate::state::CommunityConnectionControl;
         use buzz_auth::CrossPodMergeResult;
         use tokio::sync::mpsc;
         use tokio_util::sync::CancellationToken;
@@ -1476,32 +1448,10 @@ mod route_integration_tests {
         let now = chrono::Utc::now();
         let until_unix = (now + chrono::Duration::seconds(300)).timestamp();
 
-        // Register targeted ordinary WS and audio controls.
+        // Register targeted and unrelated ordinary WS connections.
         let (_target_ws_id, cancel_target_ws) = register_ws(&state, target.to_bytes().to_vec());
-
-        // Register targeted audio via the production helper.
-        // Guards must live until after the assertions — declared here, not in a sub-block.
-        let audio_registry = &state.community_connections;
-        let cancel_audio_target = CancellationToken::new();
-        let _audio_target_guard = {
-            let ctrl = CommunityConnectionControl::new(cancel_audio_target.clone());
-            audio_post_auth_register(&ctrl, target.to_bytes().to_vec(), Some(TEST_ISS.to_owned()));
-            audio_registry.register(Uuid::new_v4(), community, ctrl)
-        };
-
-        // Register unrelated ordinary WS and audio controls.
         let (_unrelated_ws_id, cancel_unrelated_ws) =
             register_ws(&state, unrelated.to_bytes().to_vec());
-        let cancel_audio_unrelated = CancellationToken::new();
-        let _audio_unrelated_guard = {
-            let ctrl = CommunityConnectionControl::new(cancel_audio_unrelated.clone());
-            audio_post_auth_register(
-                &ctrl,
-                unrelated.to_bytes().to_vec(),
-                Some(TEST_ISS.to_owned()),
-            );
-            audio_registry.register(Uuid::new_v4(), community, ctrl)
-        };
 
         // Drive apply_nip_fi_disconnect for the target (Merged case).
         let msg = buzz_pubsub::NipFiDisconnect {
@@ -1522,20 +1472,10 @@ mod route_integration_tests {
             cancel_target_ws.is_cancelled(),
             "targeted ordinary WS must be cancelled by disconnect fan-out"
         );
-        // Claim 2: targeted audio is cancelled (registered via audio_post_auth_register).
-        assert!(
-            cancel_audio_target.is_cancelled(),
-            "targeted audio connection must be cancelled via community_connections fan-out"
-        );
-        // Claim 3a: unrelated ordinary WS remains open.
+        // Claim 2: unrelated ordinary WS remains open.
         assert!(
             !cancel_unrelated_ws.is_cancelled(),
             "unrelated ordinary WS must remain open"
-        );
-        // Claim 3b: unrelated audio remains open.
-        assert!(
-            !cancel_audio_unrelated.is_cancelled(),
-            "unrelated audio connection must remain open"
         );
 
         // ── Capacity-failure variant ──────────────────────────────────────────────
@@ -1543,18 +1483,8 @@ mod route_integration_tests {
         // (capacity exceeded). Assert target2's sessions still close despite no map entry.
         let target2 = nostr::Keys::generate().public_key();
 
-        // Register target2 ordinary WS and audio.
+        // Register target2 ordinary WS.
         let (_t2_ws_id, cancel_t2_ws) = register_ws(&state, target2.to_bytes().to_vec());
-        let cancel_t2_audio = CancellationToken::new();
-        let _t2_audio_guard = {
-            let ctrl = CommunityConnectionControl::new(cancel_t2_audio.clone());
-            audio_post_auth_register(
-                &ctrl,
-                target2.to_bytes().to_vec(),
-                Some(TEST_ISS.to_owned()),
-            );
-            audio_registry.register(Uuid::new_v4(), community, ctrl)
-        };
 
         // The map is now at capacity (target is in it from the Merged above, plus we need
         // one more to saturate cap=2). Pre-fill the second slot with a filler key.
@@ -1586,15 +1516,10 @@ mod route_integration_tests {
             "second target must hit capacity"
         );
 
-        // Claim 4a: targeted ordinary WS still closes despite CapacityExceeded.
+        // Claim 3: targeted ordinary WS still closes despite CapacityExceeded.
         assert!(
             cancel_t2_ws.is_cancelled(),
             "target2 ordinary WS must close even on CapacityExceeded"
-        );
-        // Claim 4b: targeted audio still closes despite CapacityExceeded.
-        assert!(
-            cancel_t2_audio.is_cancelled(),
-            "target2 audio must close even on CapacityExceeded"
         );
     }
 
@@ -2078,12 +2003,10 @@ mod route_integration_tests {
 
     const OTHER_ISS: &str = "https://idp-b.test.example.com";
 
-    /// Live root + audio sessions for one (issuer, key), with the tokens the
-    /// close path cancels.  The guard keeps the audio socket registered.
+    /// A live root session for one (issuer, key), with the token the close
+    /// path cancels.
     struct IssuerSessions {
         root: tokio_util::sync::CancellationToken,
-        audio: tokio_util::sync::CancellationToken,
-        _audio_guard: crate::state::CommunityConnectionGuard,
     }
 
     impl IssuerSessions {
@@ -2112,37 +2035,17 @@ mod route_integration_tests {
                 key.to_bytes().to_vec(),
                 Some(issuer.to_owned()),
             );
-            let audio = CancellationToken::new();
-            let ctrl = CommunityConnectionControl::new(audio.clone());
-            crate::audio::handler::audio_post_auth_register(
-                &ctrl,
-                key.to_bytes().to_vec(),
-                Some(issuer.to_owned()),
-            );
-            let _audio_guard =
-                state
-                    .community_connections
-                    .register(uuid::Uuid::new_v4(), community, ctrl);
-            Self {
-                root,
-                audio,
-                _audio_guard,
-            }
+            Self { root }
         }
 
         fn assert_closed(&self, who: &str) {
             assert!(self.root.is_cancelled(), "{who}: root session must close");
-            assert!(self.audio.is_cancelled(), "{who}: audio session must close");
         }
 
         fn assert_open(&self, who: &str) {
             assert!(
                 !self.root.is_cancelled(),
                 "{who}: root session must survive"
-            );
-            assert!(
-                !self.audio.is_cancelled(),
-                "{who}: audio session must survive"
             );
         }
     }

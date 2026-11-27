@@ -3,18 +3,14 @@ ignore = [
     # instant 0.1.13 — unmaintained crate. Transitive dep: nostr → instant.
     # Will be resolved when nostr crate updates its dependencies.
     { id = "RUSTSEC-2024-0384", reason = "transitive dep via nostr; no upstream fix available" },
-    # paste 1.0.15 — unmaintained. Transitive dep: mesh-llm → iroh → netlink-* → paste.
-    # No safe upgrade available; tracked for upstream (iroh/netlink) replacement.
-    { id = "RUSTSEC-2024-0436", reason = "transitive dep via mesh-llm → iroh → netlink; no upstream fix available" },
     # quick-xml < 0.41: quadratic runtime on duplicate-attribute check (0194) and
     # unbounded namespace-declaration allocation in NsReader (0195). Both DoS-class,
-    # requiring attacker-controlled XML. Our two locked versions only parse trusted
-    # input: 0.38.4 (rust-s3/aws-creds — responses from our own S3/MinIO endpoint)
-    # and 0.39.4 (mesh-llm → iroh → netdev → plist — local macOS system plists).
-    # Patched release (>= 0.41.0) is unreachable until rust-s3 and plist/netdev bump;
-    # remove these when upstream catches up.
-    { id = "RUSTSEC-2026-0194", reason = "transitive via rust-s3 and mesh-llm→plist; trusted-input XML only; no upstream fix available yet" },
-    { id = "RUSTSEC-2026-0195", reason = "transitive via rust-s3 and mesh-llm→plist; trusted-input XML only; no upstream fix available yet" },
+    # requiring attacker-controlled XML. Our one locked version (0.38.4, via
+    # rust-s3/aws-creds) only parses responses from our own S3/MinIO endpoint.
+    # Patched release (>= 0.41.0) is unreachable until rust-s3 bumps; remove
+    # these when upstream catches up.
+    { id = "RUSTSEC-2026-0194", reason = "transitive via rust-s3; trusted-input XML only; no upstream fix available yet" },
+    { id = "RUSTSEC-2026-0195", reason = "transitive via rust-s3; trusted-input XML only; no upstream fix available yet" },
     # unsafe-libyaml 0.2.11 — unmaintained (repository archived 2024-03-25), not a
     # vulnerability report. Transitive dep: serde_yaml → unsafe-libyaml. The
     # serde_yaml_ng fork uses the same crate, so removing it means migrating YAML

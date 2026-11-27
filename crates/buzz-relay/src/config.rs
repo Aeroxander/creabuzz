@@ -398,30 +398,6 @@ pub struct Config {
     /// stored as verified. Equity records (`"type":"equity"`) are exempt.
     pub org_grant_enforcement: bool,
 
-    /// Whether this deployment can serve huddle (voice) audio.
-    ///
-    /// Huddle audio frames are relayed peer-to-peer *within a single pod*
-    /// (`AudioRoomManager` is an in-process map; only huddle lifecycle events
-    /// cross pods via Redis). Under horizontal scaling (any-pod-any-connection,
-    /// plan §4 fork B) two peers in the same huddle can land on different pods
-    /// and never hear each other. Rather than sticky-route huddles or ship a
-    /// silent split-room (plan §5b, decided by Tyler), a horizontally-scaled
-    /// deployment sets this `false` and the relay surfaces a clear, client-
-    /// handleable "huddle audio unavailable" signal on join.
-    ///
-    /// Defaults to `true` so single-pod deployments (the N=1 case) keep today's
-    /// behavior unchanged. Operators running multiple relay pods MUST set
-    /// `BUZZ_HUDDLE_AUDIO_AVAILABLE=false` until the out-of-relay media/SFU
-    /// service lands.
-    pub huddle_audio_available: bool,
-
-    /// Inter-relay mesh configuration (`BUZZ_MESH`, `BUZZ_MESH_BIND_ADDR`).
-    /// Opt-in: mesh forms only when `BUZZ_MESH=on` is explicit. The default
-    /// (absent/off) is exact single-instance behavior — no bind, no Redis
-    /// registry write — so an image upgrade with untouched env is a strict
-    /// no-regression rollout.
-    pub mesh: buzz_relay_mesh::MeshConfig,
-
     /// Optional hex-encoded pubkey of the relay owner.
     /// When set, this pubkey is automatically bootstrapped into `relay_members`
     /// with the `owner` role on first startup.
@@ -941,33 +917,6 @@ impl Config {
                 }
             },
             Err(_) => true,
-        };
-
-        // Defaults true → single-pod (N=1) keeps today's huddle behavior. A
-        // horizontally-scaled deployment sets this false; see the field doc.
-        let huddle_audio_available = std::env::var("BUZZ_HUDDLE_AUDIO_AVAILABLE")
-            .map(|v| !(v == "false" || v == "0"))
-            .unwrap_or(true);
-
-        // Mesh opt-in: default OFF. Strict rollout no-regression — an image
-        // upgrade with untouched env must not bind a new UDP port or write a
-        // new Redis key. Horizontally-scaled deployments explicitly set
-        // `BUZZ_MESH=on`; anything else (absent, `off`, other values) keeps
-        // exact single-instance behavior.
-        let mesh_enabled = std::env::var("BUZZ_MESH")
-            .map(|v| v.eq_ignore_ascii_case("on") || v == "true" || v == "1")
-            .unwrap_or(false);
-        let mesh_bind_addr = std::env::var("BUZZ_MESH_BIND_ADDR")
-            .map(|raw| {
-                raw.parse::<SocketAddr>().map_err(|e| {
-                    ConfigError::InvalidValue(format!("invalid BUZZ_MESH_BIND_ADDR: {e}"))
-                })
-            })
-            .unwrap_or_else(|_| Ok("0.0.0.0:3478".parse().expect("static default parses")))?;
-        let mesh = buzz_relay_mesh::MeshConfig {
-            enabled: mesh_enabled,
-            bind_addr: mesh_bind_addr,
-            registry_refresh: std::time::Duration::from_secs(15),
         };
 
         let allow_nip_oa_auth = std::env::var("BUZZ_ALLOW_NIP_OA_AUTH")
@@ -1558,8 +1507,6 @@ impl Config {
             pubkey_allowlist_enabled,
             require_relay_membership,
             org_grant_enforcement,
-            huddle_audio_available,
-            mesh,
             relay_owner_pubkey,
             boards_per_person_per_day,
             new_account_posts_per_hour,
@@ -1777,10 +1724,6 @@ mod tests {
         assert!(
             config.join_policy.is_none(),
             "join_policy should default to None so policy prompts and acceptance receipts are opt-in"
-        );
-        assert!(
-            config.huddle_audio_available,
-            "huddle_audio_available should default to true so single-pod (N=1) keeps today's huddle behavior"
         );
     }
 
@@ -3159,18 +3102,6 @@ mod tests {
             Err(ConfigError::InvalidValue(ref message))
                 if message.contains("BUZZ_PUSH_EXECUTOR_KEY_ID")
         ));
-    }
-
-    #[test]
-    fn huddle_audio_available_can_be_disabled_for_horizontal_scaling() {
-        let _guards = env_guards();
-        std::env::set_var("BUZZ_HUDDLE_AUDIO_AVAILABLE", "false");
-        let config = Config::from_env().expect("config");
-        std::env::remove_var("BUZZ_HUDDLE_AUDIO_AVAILABLE");
-        assert!(
-            !config.huddle_audio_available,
-            "BUZZ_HUDDLE_AUDIO_AVAILABLE=false must disable huddle audio (multi-pod deployments)"
-        );
     }
 
     #[test]

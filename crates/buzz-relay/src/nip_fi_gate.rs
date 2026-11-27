@@ -84,7 +84,7 @@ pub(crate) struct SessionExpired;
 ///
 /// Create one per WS connection via [`SessionAdmissionGate::new`] (with a
 /// deadline) or [`SessionAdmissionGate::off_mode`] (no deadline, never expires
-/// on its own). Root and audio connections use the same type.
+/// on its own). Root connections use this type.
 #[derive(Debug)]
 pub(crate) struct SessionAdmissionGate {
     /// UTC deadline after which new effect permits are rejected.
