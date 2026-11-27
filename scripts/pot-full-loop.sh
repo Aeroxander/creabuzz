@@ -21,15 +21,11 @@
 # The two journeys do not share a world because the first moves the chain's clock by days (a record is dated by the server's own
 # clock, so a chain that is days ahead of it reads as an old record for the rest of that world).
 #
-# Step 3's journeys (app/tests/e2e-pot-full/pot-room.spec.ts, pot-seasons.spec.ts, pot-push.spec.ts), each in a world of its own:
+# Step 3's journeys (app/tests/e2e-pot-full/pot-room.spec.ts, pot-push.spec.ts), each in a world of its own:
 #   pot-room      a visitor opens a project's link and reads the page (one banner, the line "not a return", play money, one Back);
 #                 two people back and one takes out, and the live feed shows it rounded, with no names and the net money in; a holder
 #                 writes in the room, a stranger is refused in the server's own words, and after taking out and one time unit the
 #                 person is read-only (the server says so too);
-#   pot-seasons   ten backers and a Pair on one project and the badge appears exactly when its three inputs say so (the chain's clock is
-#                 moved by days); Home ranks by money held 30 days or more with the number of different accounts beside it, and a late
-#                 buyer does not move it; the operator starts a season with the real `buzz` command, a founder enters two projects from
-#                 Home, and the demo day page lists them;
 #   pot-push      the relay with web push on and a local stand-in for a push service: a holder turns alerts on from You, a task is
 #                 planned, and the stand-in receives the message the device decrypts; the real service worker shows its fixed sentence
 #                 for the same kind of news as the in-app alert; after Turn off the next task reaches nobody.
@@ -68,10 +64,7 @@
 #   anyone on the same network can send play-money transactions to it while it runs: use a network you trust. It also leaves one
 #   planned task on the project (see the words it prints). With WORLD_PUSH=1 (and SERVE_HOST=localhost, a secure address on this
 #   computer) the server also has web push switched on, with a key made for the run, so a desktop browser can be tried with alerts.
-# Env:    OPERATOR_KEY (the platform's operator key, 64 hex characters, read from the environment and never printed or written to a
-#         file: with it set, the server's owner is that key's account, so you can start a season yourself; with --serve and none
-#         given, a throwaway key is made for the run and the ready-made season command is printed),
-#         BUZZ_BIN (the `buzz` command, default target/debug/buzz, for the season journey), SERVE_HOST (with --serve: the address a phone reaches this computer at), POSTGRES_ADMIN_URL (default postgres://buzz:buzz_dev@127.0.0.1:5432/postgres), REDIS_URL, RELAY_BIN, FOUNDRY_BIN,
+# Env:    SERVE_HOST (with --serve: the address a phone reaches this computer at), POSTGRES_ADMIN_URL (default postgres://buzz:buzz_dev@127.0.0.1:5432/postgres), REDIS_URL, RELAY_BIN, FOUNDRY_BIN,
 #         RUN_TIMEOUT (seconds for the browser run, default 900), KEEP_DB=1 (keep the scratch database),
 #         RELAY_LOG_COPY=<file>, PW_CHROMIUM_PATH / PW_CHROMIUM_EXTRA_ARGS (a Chromium other than Playwright's pinned one),
 #         SHOTS_DIR=<folder> (keep the journey's screenshots there).
@@ -110,13 +103,12 @@ command -v curl >/dev/null 2>&1 || lack "curl is missing: on a Mac 'brew install
 command -v node >/dev/null 2>&1 || lack "Node is missing: run '. ./bin/activate-hermit' in this folder, or install Node 22 from nodejs.org."
 command -v pnpm >/dev/null 2>&1 || lack "pnpm is missing: run '. ./bin/activate-hermit' in this folder, or 'npm install -g pnpm'."
 [[ -d app/node_modules ]] || lack "The app's libraries are not installed: run 'pnpm install' in this folder (and 'git submodule update --init --recursive' once)."
-[[ -x "${RELAY_BIN:-target/debug/buzz-relay}" && -x "${BUZZ_BIN:-target/debug/buzz}" ]] || lack "The server or the buzz command is not built: run 'cargo build -p buzz-relay -p buzz-cli' once (this script never builds)."
+[[ -x "${RELAY_BIN:-target/debug/buzz-relay}" ]] || lack "The server is not built: run 'cargo build -p buzz-relay' once (this script never builds)."
 [[ -f contracts/pot/out/Launcher.sol/Launcher.json ]] || lack "The contracts are not built: run 'scripts/ensure-solc.sh 0.8.37' and then 'forge build' in contracts/pot."
 [[ $missing -eq 0 ]] || exit 2
 ADMIN_URL="${POSTGRES_ADMIN_URL:-postgres://buzz:buzz_dev@127.0.0.1:5432/postgres}"
 REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379}"
 RELAY_BIN="${RELAY_BIN:-target/debug/buzz-relay}"
-BUZZ_BIN="${BUZZ_BIN:-target/debug/buzz}"
 RUN_TIMEOUT="${RUN_TIMEOUT:-1500}"
 POT="$REPO_ROOT/contracts/pot"
 DB=""
@@ -146,12 +138,6 @@ STANDIN_URL=""
 WORLD_PUSH="${WORLD_PUSH:-}"
 # What the deployment of a world is given: "default" (no switch) or "pause" (HOLDER_PAUSE=1).
 WORLD_KIND="${WORLD_KIND:-default}"
-# The operator's key when the person gave one: kept out of every file and every line this script prints.
-GIVEN_OPERATOR_KEY="${OPERATOR_KEY:-}"
-unset OPERATOR_KEY
-if [[ -n "$GIVEN_OPERATOR_KEY" && ! "$GIVEN_OPERATOR_KEY" =~ ^[0-9a-fA-F]{64}$ ]]; then
-  fail "OPERATOR_KEY must be 64 hexadecimal characters (the operator's secret key); it is not printed here."
-fi
 RELAY_PID=""
 REDIS_PID=""
 PG_CLUSTER=""
@@ -303,14 +289,8 @@ world_up() {
   [[ -x "$STATE/buzz-relay" ]] || ln "$RELAY_BIN" "$STATE/buzz-relay" 2>/dev/null || cp "$RELAY_BIN" "$STATE/buzz-relay" || fail "could not take a copy of $RELAY_BIN"
   BASE="http://localhost:$PORT"
   PUBLIC_BASE="http://$PUBLIC_HOST:$PORT"
-  # The platform's operator: the key in OPERATOR_KEY when the person gave one (read from the environment, never printed or written
-  # to a file), else a key made for this run (also never written to a file). Its public half is the server's owner; the season
-  # journey signs with the key through the real `buzz` command.
-  if [[ -n "$GIVEN_OPERATOR_KEY" ]]; then
-    OPERATOR_KEY="$GIVEN_OPERATOR_KEY"
-  else
-    OPERATOR_KEY="$(openssl rand -hex 32)"
-  fi
+  # The server's owner: a key made for this run (never written to a file); only its public half is used.
+  OPERATOR_KEY="$(openssl rand -hex 32)"
   OPERATOR_PUB="$(cd app && OPERATOR_KEY="$OPERATOR_KEY" node --input-type=module -e "import {getPublicKey} from 'nostr-tools/pure'; import {hexToBytes} from 'nostr-tools/utils'; console.log(getPublicKey(hexToBytes(process.env.OPERATOR_KEY)))")" \
     || fail "could not derive the operator's public key"
   PUSH_ENV=()
@@ -379,7 +359,6 @@ POT_CHECKS_FILE=$CHECKS_FILE
 POT_REPO_ROOT=$REPO_ROOT
 POT_DB_URL=$DB_URL
 POT_HELPER_ADDRESS=$(cast wallet address --private-key "$K_HELPER" | tr 'A-F' 'a-f')
-POT_BUZZ_BIN=$REPO_ROOT/$BUZZ_BIN
 POT_STANDIN_URL=$STANDIN_URL
 EOF
 }
@@ -401,15 +380,6 @@ if [[ -n "$SERVE" ]]; then
   if [[ "$WORLD_KIND" == "pause" ]]; then
     STEP4_NOTE="  This world was deployed with HOLDER_PAUSE=1: the project has the holders' pause. The steps are in TRY-IT.md, part 4.8.
 "
-  fi
-  # What starts a season: with a key given in OPERATOR_KEY the command names that variable (the key is never printed); with a key
-  # made for this run (a throwaway: it only exists in this world) the ready-made command carries it.
-  if [[ -n "$GIVEN_OPERATOR_KEY" ]]; then
-    SEASON_KEY_WORDS='"$OPERATOR_KEY"'
-    SEASON_KEY_NOTE="(the key you gave in OPERATOR_KEY is the server's operator; set it in the window where you run this, it is not printed)"
-  else
-    SEASON_KEY_WORDS="$OPERATOR_KEY"
-    SEASON_KEY_NOTE="(a key made up for this run: the server's operator in this world, worth nothing outside it)"
   fi
   PUSH_NOTE=""
   [[ -n "$WORLD_PUSH" ]] && PUSH_NOTE="  Alerts away from the app: this server has a push key made for this run. Open the app at an address that is secure (http://localhost
@@ -435,10 +405,6 @@ The page is plain http on this network, so a passkey, alerts away from the app a
   The server and the page keep their own clocks, so after a jump the project's record reads as old and Back waits until the next
   record. Move the clock only when TRY-IT.md says.
 
-  To start a season (Home then offers a founder to enter a project) run this on this computer, in this folder:
-      BUZZ_RELAY_URL=$PUBLIC_BASE BUZZ_PRIVATE_KEY=$SEASON_KEY_WORDS $BUZZ_BIN launchpad seasons start --number 1
-  $SEASON_KEY_NOTE
-
 ${PUSH_NOTE}${STEP4_NOTE}  The numbered steps, with what working looks like, are in docs/next-version/TRY-IT.md.
 
 EOF
@@ -455,7 +421,7 @@ run_journey() {
     env BUZZ_REAL_RELAY_URL="$BASE" POT_RPC_URL="$RPC" POT_DEPLOYMENTS_FILE="$STATE/deployments.json" \
       POT_STATE_DIR="$STATE" POT_CHECKS_FILE="$CHECKS_FILE" POT_REPO_ROOT="$REPO_ROOT" POT_DB_URL="$DB_URL" \
       POT_HELPER_ADDRESS="$(cast wallet address --private-key "$K_HELPER" | tr 'A-F' 'a-f')" \
-      POT_OPERATOR_KEY="$OPERATOR_KEY" POT_BUZZ_BIN="$REPO_ROOT/$BUZZ_BIN" POT_STANDIN_URL="$STANDIN_URL" \
+      POT_STANDIN_URL="$STANDIN_URL" \
       POT_WORLD_KIND="$WORLD_KIND" \
       ${SHOTS_DIR:+POT_SHOTS_DIR="$SHOTS_DIR"} \
       "$BOUNDED" "$RUN_TIMEOUT" node_modules/.bin/playwright test --config=playwright.pot-full.config.ts \
@@ -493,9 +459,9 @@ elif [[ $# -gt 0 ]]; then
   run_journey "$@"
   world_down
 else
-  # Step 1's journey, step 2's task queue, step 3's three and step 4's one, each in a world of its own (the chain's clock is moved by days in
+  # Step 1's journey, step 2's task queue, step 3's two and step 4's one, each in a world of its own (the chain's clock is moved by days in
   # most of them, and a world that is days ahead of the server's clock cannot be reused). Only the push world has a stand-in.
-  for journey in pot-full.spec pot-tasks.spec pot-room.spec pot-seasons.spec pot-push.spec pot-pause.spec; do
+  for journey in pot-full.spec pot-tasks.spec pot-room.spec pot-push.spec pot-pause.spec; do
     WORLD_PUSH=""
     WORLD_KIND=default
     [[ "$journey" == pot-push.spec ]] && WORLD_PUSH=1

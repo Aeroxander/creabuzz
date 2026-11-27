@@ -30,7 +30,7 @@ export function windowWords(secs: number): string {
 }
 
 /** "1 person" / "12 people". */
-export function peopleCount(n: number): string {
+function peopleCount(n: number): string {
   return `${n.toLocaleString("en-GB")} ${n === 1 ? "person" : "people"}`;
 }
 

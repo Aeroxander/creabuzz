@@ -20,16 +20,12 @@ import {
   useReposts,
 } from "../posts/use-posts";
 import { useVisibleRows } from "../safety/use-hidden";
-import { SeasonBand } from "../season/SeasonBand";
 import { ProjectCard } from "./ProjectCard";
-import { RankedSection } from "./RankedSection";
 import { Section } from "./Section";
 import { useHomeProjects } from "./use-home";
-import { useRanking } from "./use-ranking";
 
 /**
- * Home: the projects you follow, the money that stayed (the one place a list is sorted by money, and by money that has stayed,
- * never by a price), the projects shipping now (newest first, never sorted by money), and recent posts.
+ * Home: the projects you follow, the projects shipping now (newest first, never sorted by money), and recent posts.
  */
 export function HomePage() {
   const { pubkey } = useAccount();
@@ -37,7 +33,6 @@ export function HomePage() {
   const [composing, setComposing] = useState(false);
   const follows = useFollows().data;
   const projects = useHomeProjects();
-  const ranking = useRanking();
   const followedPeople = follows ? [...follows.people] : [];
   const posts = useRecentPosts(
     followedPeople.length > 0 ? followedPeople : null,
@@ -116,8 +111,6 @@ export function HomePage() {
         </section>
       )}
 
-      <SeasonBand />
-
       {followed.length > 0 ? (
         <Section testId="home-following" title="Projects you follow">
           {followed.map((project) => (
@@ -129,8 +122,6 @@ export function HomePage() {
           ))}
         </Section>
       ) : null}
-
-      <RankedSection ranking={ranking.data} />
 
       <Section testId="home-projects" title="Shipping now">
         {projects.isPending ? (

@@ -46,10 +46,6 @@ const TopicPage = lazyRouteComponent(
   () => import("../features/tags/TopicPage"),
   "TopicPage",
 );
-const SeasonPage = lazyRouteComponent(
-  () => import("../features/season/SeasonPage"),
-  "SeasonPage",
-);
 const StartPage = lazyRouteComponent(
   () => import("../features/start/StartPage"),
   "StartPage",
@@ -93,18 +89,6 @@ const project = createRoute({
         projectRef={ref}
       />
     );
-  },
-});
-
-/** A season's page: the projects that entered, together, on demo day (and for good after). */
-const season = createRoute({
-  getParentRoute: () => root,
-  path: "/season/$n",
-  component: function SeasonRoute() {
-    const { n } = season.useParams();
-    // A number is 1 to 9999 with no leading zero, as the server's season records have it; anything else is no season.
-    const number = /^[1-9][0-9]{0,3}$/.test(n) ? Number(n) : 0;
-    return <SeasonPage key={number} number={number} />;
   },
 });
 
@@ -198,7 +182,6 @@ export function createAppRouter() {
   const routeTree = root.addChildren([
     home,
     project,
-    season,
     start,
     week,
     you,

@@ -2,24 +2,8 @@
 import { expect, type Page, test } from "@playwright/test";
 import { expectAccessible } from "../helpers/a11y";
 import { expectNoSidewaysScroll } from "../helpers/layout";
-import {
-  backFor,
-  chainNow,
-  launchProject,
-  NO_CHAIN_WHY,
-} from "./helpers/live-chain";
-import {
-  coordinateOf,
-  FOUNDER_NOSTR,
-  liveWorld,
-  openMoney,
-} from "./helpers/live-browser";
-import { RELAY } from "./helpers/money-world";
-import { event } from "./helpers/world";
-import {
-  exampleRecord,
-  shapeOnlyIndexContent,
-} from "../helpers/numbers-v2-fixture";
+import { backFor, launchProject, NO_CHAIN_WHY } from "./helpers/live-chain";
+import { FOUNDER_NOSTR, liveWorld, openMoney } from "./helpers/live-browser";
 
 test.skip(NO_CHAIN_WHY !== null, NO_CHAIN_WHY ?? "");
 
@@ -178,64 +162,6 @@ test("a record past a day shows none of the money, and Back waits while taking o
   await expect(page.getByTestId("top-banner")).toHaveText(BANNER);
 });
 
-test("Home ranks by money that stayed from the server's index: one link per row, the line under the heading, and it is accessible", async ({
-  page,
-}) => {
-  const w = world.get();
-  const project = await launchProject(w, "ranked", FOUNDER_NOSTR);
-  await backFor(w, project, w.who.backer, 100n);
-  const { relay } = await openMoney(page, w, project, {
-    account: w.who.backer,
-    tab: null,
-  });
-  // The index the server signs (the example's own money and people for it; the shape is `RECORD-V2.md` 11.6).
-  const rank = (exampleRecord().held as Record<string, any>).rank;
-  const windowSecs = (exampleRecord().held as Record<string, any>).windows
-    .rankSecs as number;
-  const at = await chainNow();
-  relay.seed(
-    event(
-      39009,
-      RELAY,
-      shapeOnlyIndexContent(
-        [
-          {
-            key: project.key,
-            a: coordinateOf(project.label),
-            launchedAt: at - 3 * windowSecs,
-            windowSecs,
-            money: rank.money,
-            accounts: rank.accounts,
-            reached: false,
-          },
-        ],
-        { now: at },
-      ),
-      [["d", "explore"]],
-      at,
-    ),
-  );
-  await page.getByTestId("tab-link-home").click();
-  const section = page.getByTestId("home-ranked");
-  await expect(section).toBeVisible({ timeout: 20_000 });
-  await expect(
-    section.getByRole("heading", { name: "Money that stayed" }),
-  ).toBeVisible();
-  await expect(section).toContainText(NOT_A_RETURN);
-  const rows = section.getByRole("listitem");
-  await expect(rows).toHaveCount(1);
-  await expect(rows.first()).toContainText("Lantern");
-  await expect(rows.first()).toContainText("30 days or more by");
-  await expect(rows.first().getByRole("link")).toHaveCount(1);
-  await expect(section.getByTestId("ranked-footnote")).toContainText(
-    "among the projects this server has numbers for",
-  );
-  await expectAccessible(page, "Home with the ranking");
-  // The row opens the project.
-  await rows.first().getByRole("link").click();
-  await expect(page.getByTestId("project-name")).toHaveText("Lantern");
-});
-
 test("by the keyboard alone: Share is reached in the page's own order, the sheet keeps focus inside, and Escape gives it back", async ({
   page,
 }) => {
@@ -291,7 +217,7 @@ for (const size of [
   { name: "phone-390", width: 390, height: 844 },
   { name: "desktop-1280", width: 1280, height: 800 },
 ])
-  test(`the page's top and Home with the ranking do not scroll sideways at ${size.name}`, async ({
+  test(`the page's top and Home do not scroll sideways at ${size.name}`, async ({
     browser,
   }) => {
     const w = world.get();
@@ -301,7 +227,7 @@ for (const size of [
       viewport: { width: size.width, height: size.height },
     });
     const page = await context.newPage();
-    const { relay } = await openMoney(page, w, project, {
+    await openMoney(page, w, project, {
       account: w.who.backer,
       tab: null,
     });
@@ -312,32 +238,8 @@ for (const size of [
     await page.screenshot({
       path: `test-results/pot-screens/page-top-${size.name}.png`,
     });
-    const held = exampleRecord().held as Record<string, any>;
-    const at = await chainNow();
-    relay.seed(
-      event(
-        39009,
-        RELAY,
-        shapeOnlyIndexContent(
-          [
-            {
-              key: project.key,
-              a: coordinateOf(project.label),
-              launchedAt: at - 3 * held.windows.rankSecs,
-              windowSecs: held.windows.rankSecs,
-              money: held.rank.money,
-              accounts: held.rank.accounts,
-              reached: false,
-            },
-          ],
-          { now: at },
-        ),
-        [["d", "explore"]],
-        at,
-      ),
-    );
     await page.getByTestId("tab-link-home").click();
-    await expect(page.getByTestId("home-ranked")).toBeVisible({
+    await expect(page.getByTestId("home-projects")).toBeVisible({
       timeout: 20_000,
     });
     await expectNoSidewaysScroll(page, `Home at ${size.name}`);

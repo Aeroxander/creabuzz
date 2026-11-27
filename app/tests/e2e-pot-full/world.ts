@@ -521,37 +521,10 @@ export function startMiner(): () => void {
   return () => clearInterval(timer);
 }
 
-// --- Things the step 3 journeys do in the app and with the operator's tools ------------------------------------------
-
-/** The operator's key and the `buzz` command, for the one thing only the platform's operator does: start a season. */
-export const OPERATOR = {
-  key: process.env.POT_OPERATOR_KEY ?? "",
-  bin: process.env.POT_BUZZ_BIN ?? "",
-};
+// --- Things the step 3 journeys do in the app and with a stand-in push service ---------------------------------------
 
 /** The local stand-in for a push service the loop started (empty when this world has none). */
 export const STANDIN_URL = process.env.POT_STANDIN_URL ?? "";
-
-/** Run the real `buzz` command as the operator against this run's server; returns what it printed and its exit code. */
-export function buzzAsOperator(args: string[]): {
-  status: number;
-  stdout: string;
-  stderr: string;
-} {
-  if (!OPERATOR.key || !OPERATOR.bin)
-    throw new Error(
-      "no operator key or `buzz` command: run this with scripts/pot-full-loop.sh",
-    );
-  const out = spawnSync(OPERATOR.bin, args, {
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      BUZZ_RELAY_URL: RUN.relay,
-      BUZZ_PRIVATE_KEY: OPERATOR.key,
-    },
-  });
-  return { status: out.status ?? 1, stdout: out.stdout, stderr: out.stderr };
-}
 
 /** Say something to the push stand-in (its own small HTTP interface) and read the answer as JSON. */
 export async function standin<T = unknown>(
@@ -615,7 +588,7 @@ export async function startAndLaunch(
   });
   // The sheet closes when the launch lands; the founder's own record naming the launch is written a moment later. A page left in
   // that moment (the next step of a journey is a new address) leaves the project launched on the network and not tied to its
-  // page: its record names no launch, so no list of the founder's projects offers it (the season band), until "Finish linking" is
+  // page: its record names no launch, so no list of the founder's projects offers it, until "Finish linking" is
   // pressed. The app's own sign that the page is tied is that the launch card is gone.
   await expect(founder.getByTestId("launch-card")).toBeHidden({
     timeout: 30_000,

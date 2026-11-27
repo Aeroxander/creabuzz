@@ -24,7 +24,7 @@ import {
 } from "@creaton/core/project/team.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { publishAsUser, read, readMulti } from "../../lib/relay";
-import { isNotAnUpdate } from "../season/season-records";
+import { isNotAnUpdate } from "./not-an-update";
 import {
   latestProjects,
   parseProjectRef,
@@ -78,7 +78,7 @@ export interface ProjectActivity {
   declines: JoinDecline[];
 }
 
-export function updateText(content: string): { title: string; body: string } {
+function updateText(content: string): { title: string; body: string } {
   try {
     const parsed: unknown = JSON.parse(content);
     if (parsed && typeof parsed === "object") {

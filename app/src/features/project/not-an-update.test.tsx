@@ -5,15 +5,25 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { NOW } from "../../../tests/helpers/money-harness";
-import { serve, step, update } from "../../../tests/helpers/season-relay";
-import { type Project, parseProject } from "../project/project-record";
-import { projectUpdates, useProjectActivity } from "../project/use-project";
+import { type Project, parseProject } from "./project-record";
+import { projectUpdates, useProjectActivity } from "./use-project";
 
-vi.mock(
-  "../../lib/relay",
-  async () =>
-    (await import("../../../tests/helpers/season-relay")).seasonRelayMock,
-);
+interface Stored {
+  id: string;
+  pubkey: string;
+  kind: number;
+  created_at: number;
+  tags: string[][];
+  content: string;
+}
+
+/** The records the mocked server holds; it answers a read by kind only, which is all this page asks. */
+const served: { events: Stored[] } = vi.hoisted(() => ({ events: [] }));
+
+vi.mock("../../lib/relay", () => ({
+  readMulti: async (filters: { kinds: number[] }[]) =>
+    filters.map((f) => served.events.filter((e) => f.kinds.includes(e.kind))),
+}));
 
 const FOUNDER = "a".repeat(64);
 const record = {
@@ -29,6 +39,20 @@ const record = {
 };
 const project = parseProject(record) as Project;
 
+/** A record of kind 47003 about the project, with the tags that say what it is. */
+const record47003 = (
+  extra: string[][],
+  content: string,
+  ago: number,
+): Stored => ({
+  id: `${ago}`.padStart(64, "0"),
+  pubkey: FOUNDER,
+  kind: 47003,
+  created_at: NOW - ago,
+  tags: [["a", project.coordinate], ...extra],
+  content,
+});
+
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider
     client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
@@ -39,25 +63,17 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 
 describe("a project's updates", () => {
   it("leave out the records that put the project in a season or stop a person writing in its room", async () => {
-    serve([
-      step(1, project.coordinate, "entry", FOUNDER, 500),
-      step(1, project.coordinate, "leave", FOUNDER, 400),
-      step(1, project.coordinate, "remove", FOUNDER, 300),
-      {
-        ...update(project.coordinate, FOUNDER, { title: "", body: "" }, 200),
-        tags: [
-          ["a", project.coordinate],
-          ["room-mute", "c".repeat(64)],
-        ],
-        content: "{}",
-      },
-      update(
-        project.coordinate,
-        FOUNDER,
-        { title: "Real news", body: "We shipped." },
+    served.events = [
+      record47003([["season-entry", "1"]], "{}", 500),
+      record47003([["season-leave", "1"]], "{}", 400),
+      record47003([["season-remove", "1"]], "{}", 300),
+      record47003([["room-mute", "c".repeat(64)]], "{}", 200),
+      record47003(
+        [],
+        JSON.stringify({ title: "Real news", body: "We shipped." }),
         100,
       ),
-    ]);
+    ];
     const { result } = renderHook(() => useProjectActivity(project), {
       wrapper,
     });
