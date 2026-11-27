@@ -57,7 +57,7 @@ same("the room's limit on the server equals the app's MAX_POST_CHARS", rustLimit
 same("the number in the server's refusal sentence is the same limit", rustSentence, appLimit);
 must(
   "the app's composer takes its limit from MAX_POST_CHARS (no second number)",
-  /MAX_POST_CHARS/.test(text("app/src/features/room/RoomComposer.tsx") || ""),
+  /MAX_POST_CHARS/.test(text("app/src/features/posts/Composer.tsx") || ""),
 );
 
 // 2. The sponsor's refusal words.

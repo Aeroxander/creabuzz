@@ -18,7 +18,6 @@ import {
   useWalletAddress,
 } from "../money/use-money";
 import { ProjectFeed } from "../feed/ProjectFeed";
-import { useRoomNews } from "../room/use-room-news";
 import { PlannedStrips } from "../tasks/chain/holder/PlannedStrips";
 import { JoinBox } from "./JoinBox";
 import { PeopleTab } from "./PeopleTab";
@@ -40,12 +39,8 @@ const ProjectMoney = lazy(() =>
 const LaunchCard = lazy(() =>
   import("../launch/LaunchCard").then((m) => ({ default: m.LaunchCard })),
 );
-// The room carries the writing, the report, the team's tools and perks: it loads when its tab is opened.
-const RoomTab = lazy(() =>
-  import("../room/RoomTab").then((m) => ({ default: m.RoomTab })),
-);
 
-/** The project page: its top (what it is, its money, Back, Share), Ask to join, then Updates, Tasks, People, Money and Room. */
+/** The project page: its top (what it is, its money, Back, Share), Ask to join, then Updates, Tasks, People and Money. */
 export function ProjectPage({
   projectRef,
   initialTab,
@@ -126,7 +121,6 @@ function ProjectView({
       : null;
   const now = Math.floor(Date.now() / 1000);
   const walletAddress = useWalletAddress().data ?? null;
-  const roomNews = useRoomNews(project, investing, activity.data);
   const team = [project.author, ...accepted.map((m) => m.pubkey)];
   return (
     <main
@@ -240,30 +234,6 @@ function ProjectView({
                           profiles={profiles}
                           project={project}
                           projectName={project.name}
-                          team={team}
-                        />
-                      </Suspense>
-                    </ChunkBoundary>
-                  ),
-                },
-              ]
-            : []),
-          // The room is the holders' place under a project that is launched: it needs the server's chain reader.
-          ...(investing && chainKeyOfProject(project)
-            ? [
-                {
-                  value: "room",
-                  label: "Room",
-                  news: roomNews && tab !== "room",
-                  content: (
-                    <ChunkBoundary>
-                      <Suspense
-                        fallback={<Card className="h-24 animate-pulse" />}
-                      >
-                        <RoomTab
-                          numbers={numbers}
-                          profiles={profiles}
-                          project={project}
                           team={team}
                         />
                       </Suspense>

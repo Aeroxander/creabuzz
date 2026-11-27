@@ -9,7 +9,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SERVER, wrap } from "../../../tests/helpers/money-harness";
 import { nameTheNetwork, numbersFor } from "../../../tests/helpers/pot-harness";
 import { WalletGate } from "../pot/use-pot";
-import { ConfirmAccount } from "../room/ConfirmAccount";
 import { ACCOUNT_MISMATCH_WORDS } from "./money-copy";
 import { senderWords } from "./sender";
 import { type MoneyWallet, WalletStepError } from "./wallet";
@@ -77,17 +76,6 @@ describe("the words of a passkey person", () => {
     const wallet = senderWords(stand("wallet", async () => ACCOUNT));
     expect(wallet.own).toBe("your wallet");
     expect(wallet.waiting).toBe("Waiting for your wallet…");
-  });
-
-  it("the room's confirm press says the passkey account's own line, not the wallet's", () => {
-    current = stand("passkey", async () => ACCOUNT);
-    wrap(<ConfirmAccount />);
-    expect(text()).toMatch(/passkey account/);
-    expect(text()).not.toMatch(/wallet/i);
-    cleanup();
-    current = stand("wallet", async () => ACCOUNT);
-    wrap(<ConfirmAccount />);
-    expect(text()).toMatch(/links your wallet to your account/);
   });
 });
 

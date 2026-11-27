@@ -4,7 +4,7 @@
 #
 # Each journey boots its own throwaway chain and/or a real server and database, and plays a story against the real
 # contracts (contracts/pot) and the real relay: the app in a real browser, the server's chain reader, the phone path with a
-# passkey account, the holder room and seasons. This runs them all so "does the whole product still work"
+# passkey account. This runs them all so "does the whole product still work"
 # is one command. The unit and browser suites run separately (`just ci`); this is the part that needs a chain or a real
 # server.
 #
@@ -21,7 +21,7 @@
 # Usage:  scripts/mvp-gate.sh [--pilot | --later] [--list] [journey ...]   (no journeys named: all of them)
 #           --pilot  only the journeys the product's core depends on (the "Pilot" set below): run this green on the
 #                    build you host before inviting anyone
-#           --later  only the other journeys: the chain reader, the phone path, the room loop
+#           --later  only the other journeys: the chain reader, the phone path
 #           --list   print the journeys it would run, and run nothing
 #           --outside print the journey scripts no set runs, each with the reason, and run nothing
 #         A journey script (scripts/*-e2e.sh) in no set and with no reason is reported as a WARNING on standard error.
@@ -79,22 +79,21 @@ trap 'exit 130' INT TERM
 # Pilot: the product's core. The app against a real server and database with nothing mocked (Start, the week's update, a
 # stranger joining from a project's link), and the whole join-and-leave loop in a real browser against a real chain, the
 # real relay with its chain reader and the app built for that chain (a project from its start to a Take out, tasks and exit
-# notes, the holder room and seasons).
+# notes).
 PILOT=(
   app-real-loop-e2e
   pot-full-loop
 )
 # Later: the loops that each prove one layer on its own. The contracts through `cast` (pot-chain-loop), the chain reader
 # against the contracts' own views (chain-loop-pot), the app's money calls on the real contracts (pot-app-loop), the phone
-# path with a passkey account (phone-loop, in Node; pot-app-phone-e2e, in a browser), the holder room and seasons over the
-# wire (room-loop) and the server's query of work-check records (work-check-query-e2e).
+# path with a passkey account (phone-loop, in Node; pot-app-phone-e2e, in a browser) and the server's query of work-check
+# records (work-check-query-e2e).
 LATER=(
   pot-chain-loop
   chain-loop-pot
   pot-app-loop
   phone-loop
   pot-app-phone-e2e
-  room-loop
   work-check-query-e2e
 )
 # Journey scripts that are in neither set, each with the reason. A *-e2e.sh script in none of PILOT, LATER and this list

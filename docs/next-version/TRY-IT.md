@@ -76,7 +76,7 @@ works if your wallet extension is allowed in it):
 |---|---|---|---|
 | Fay, the founder | 2 | profile 1 | starts and runs the project |
 | Abe | 3 | the phone (a fifth profile if the app is on `localhost`) | backs first with no sign-up, then signs up |
-| Bea | 6 | profile 2 | backs with the room box ticked, takes out later |
+| Bea | 6 | profile 2 | backs, takes out later |
 | Cy | 9 | profile 3 | a third backer (only the season needs him) |
 | Wes, the worker | 8 | profile 4 | takes the tasks |
 
@@ -96,8 +96,7 @@ Each account can use the faucet once, so a second Back by the same account uses 
 3. Open the **Money** tab. **Working:** "Your Shares", "Play dollars you hold", "Get play dollars". Press it, then the sheet's
    "Get 1,000 play dollars". The wallet asks once.
 4. Type 25 in "How many dollars?" and press "Back". **Working:** a sheet "Back Lantern" with "You pay", "Fee to the platform, part of
-   that", "You get" and "Taking out right now would give you", and, because you have no account, "To write in this project's room you
-   need an account first. You can back now without one." Press "Back with 25 dollars". The wallet asks once. "You hold" shows about
+   that", "You get" and "Taking out right now would give you". There is no box to tick. Press "Back with 25 dollars". The wallet asks once. "You hold" shows about
    2,450 Shares.
 5. Press "Take out", then the sheet's button. **Working:** "Take out of Lantern", one wallet question, then "Taken out. The money is
    in your wallet." and "You hold no Shares in this project yet. Back it to get some."
@@ -131,22 +130,16 @@ bracketed items for counsel: that is expected on a test world. Never move the cl
    **Working:** "It is on the network. Tying your page to it now." and then "Your project is open to backers." Until the server has read
    the block the Money tab says "No numbers yet" and shows no figure.
 
-### 4.2 Backers, and the room both ways
+### 4.2 Backers
 
 The other profiles find Beacon on **Home**, where the new project is listed (or paste the address from Fay's address bar).
 
 1. **Abe, on the phone, signed out:** open Beacon's address, Money tab, connect account 3 (he already has play dollars from part 3: the
    faucet gives them once per account), Back 10. (Two presses are called "Back" on a project's page: the one with the arrow at the top left
-   goes to the last page; the one you want sits under "How many dollars?".) **Working:** no box in the sheet, only "To write in this project's room you need an account first. You can back now without one."
-2. **Bea, profile 2:** sign up, open Beacon, connect account 6, "Get play dollars", Back 100. In the sheet the box "Let me write in
-   this project's room" starts unticked, with "This links your wallet to your account. Anyone on this server can see the link, and so
-   can see how many Shares that wallet holds." Tick it and press "Back with 100 dollars". **Working:** the wallet asks twice (the Back,
-   then once more to confirm the account is the wallet's); the Room tab then offers "Write to the people who back this" under "Posts
-   and votes are public."
-3. **Cy, profile 3:** sign up, connect account 9, "Get play dollars", Back 20 (tick or not). Three people now back it.
-4. **Abe's one press in the room:** on the phone sign up (name Abe), open Beacon's Room tab. **Working:** "To tell that you back this
-   project, the server needs this account confirmed." and the press "Confirm this account backs the project". Press it, sign once in
-   the wallet, and "Write to the people who back this" opens. Write "Hello" and press "Post".
+   goes to the last page; the one you want sits under "How many dollars?".) **Working:** no box in the sheet; one wallet question.
+2. **Bea, profile 2:** sign up, open Beacon, connect account 6, "Get play dollars", Back 100. **Working:** one wallet question for the
+   Back and no second one: Back does not link the account to the wallet.
+3. **Cy, profile 3:** sign up, connect account 9, "Get play dollars", Back 20. Three people now back it.
 
 ### 4.3 Check-in and the season
 
@@ -178,16 +171,14 @@ The other profiles find Beacon on **Home**, where the new project is listed (or 
    "Take out before" the date. On **You**: "NEWS ABOUT YOUR PROJECTS" with a row for each plan. Signed out, the same two lines show.
 5. **Abe takes out before the notice ends:** Money tab, "Take out", the sheet "Take out of Beacon" ("All of it", "Half", "A quarter"),
    "Take out" with the amount. One wallet question. **Working:** "You hold no Shares in this project yet. Back it to get some." Then
-   Abe's Room tab says "You took out" and a date, then "You can write here for 7 days more, then this room is read only for you."
+   the Money tab shows no Shares for Abe.
 
 ### 4.5 The clock moves: the worker, the allowance, the note
 
 1. Move the clock past the notice (this is a little over 17 days, which covers both plans):
    `cast rpc --rpc-url <the chain address> evm_increaseTime 1500000`, wait two seconds.
 2. **Look at what the pages say now (all expected):** the project page says "as of" a December date with "This may be out of date: the
-   server has not refreshed this project since." and "The door to new backing is shut right now. Look again in a moment." Abe's room
-   still shows the writing box (the page judges the week by its own clock), and a post is answered "Not ready yet. Try again in a
-   minute." The room goes read only for someone who took out only after a real week of the page's clock: that cannot be tried by hand.
+   server has not refreshed this project since." and "The door to new backing is shut right now. Look again in a moment." Back waits until the next record.
 3. **Fay:** **This week**, "Check in only", sign once. Wait up to a minute for the server to read it.
 4. **Wes**, Tasks tab: **working:** "Can be taken now, until" a date, then the press "Set the money aside" on each task. Press it; the
    sheet "Set the money aside for “Translate the stall guide”" says "You are named for this task: 4 dollars at most.", "Set aside now,
@@ -296,8 +287,7 @@ in Chromium.
 
 A passkey, alerts when the app is closed, and the Copy and Share presses need a real certificate (the address of a test deployment:
 `docs/next-version/DEPLOY-TEST-NETWORK.md`). A laptop browser on `http://localhost` is secure enough for alerts in principle. Tried
-here, in Chromium with no connection to a push service: you sign up, back with the room box ticked (or press "Confirm this account backs the project" in the room: alerts are offered only to an account
-linked to its wallet; before that the **You** page says "To tell which projects you back, the server needs this account confirmed."), open **You** (the server has a push key when you start the
+here, in Chromium with no connection to a push service: you sign up, back, open **You** (the server has a push key when you start the
 script with `WORLD_PUSH=1 SERVE_HOST=localhost`), and under "Alerts when you are away" press "Turn on alerts". **What I saw:** the
 press ended with "Alerts could not be turned on. Try again." because a test browser has no push service. In a desktop Chrome with a
 connection it is **not tried by anyone yet**. The server's side of alerts (the message, its encryption, the three fixed sentences) is

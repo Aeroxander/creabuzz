@@ -1,8 +1,8 @@
 # MVP gate: the full loop of the phone-first app on a real server (scripts/pot-full-loop.sh), in CI.
 #
 # The real relay with its chain reader and helper, Postgres, Redis, a local chain with contracts/pot deployed by its own
-# script, and the app in Chromium on a phone-sized screen: five journeys, each in a world of its own (a project from its
-# start to a Take out, the task queue, the holder room). About half an hour. Too heavy for a pull request,
+# script, and the app in Chromium on a phone-sized screen: journeys that each get a world of their own (a project from its
+# start to a Take out, the task queue). About half an hour. Too heavy for a pull request,
 # so it runs on the nightly schedule and by hand. The cheap lanes (the app's checks and tests, the pot suite, the loops that
 # need no server) are in ci.yml, on pull requests.
 name: MVP gate
@@ -71,7 +71,7 @@ jobs:
         with:
           # Saved only from the nightly and manual runs (never from a pull request).
           save-if: ${{ github.event_name != 'pull_request' }}
-      # The loop runs target/debug/buzz-relay and, for the room loop, target/debug/buzz, and builds neither.
+      # The loops run target/debug/buzz-relay and target/debug/buzz, and build neither.
       - name: Build the server and the command line
         run: cargo build -p buzz-relay -p buzz-cli
       - name: Build the contracts

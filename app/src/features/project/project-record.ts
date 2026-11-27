@@ -36,8 +36,6 @@ export interface Project {
   team: TeamMember[];
   formerTeam: FormerMember[];
   unlisted: boolean;
-  /** What the founder says people who back the project get: words, never money (at most 600 characters), or null. */
-  perks: string | null;
   event: RecordEvent;
 }
 
@@ -46,15 +44,6 @@ const HEX64 = /^[0-9a-f]{64}$/;
 function tagValue(tags: readonly string[][], name: string): string | null {
   const value = tags.find((tag) => tag[0] === name)?.[1];
   return typeof value === "string" && value.trim() !== "" ? value : null;
-}
-
-/** The longest perks text a record may carry. */
-export const PERKS_MAX = 600;
-
-/** The perks the founder wrote on the record (`perks` tag), cut to its bound, or null when there are none. */
-function perksOf(tags: readonly string[][]): string | null {
-  const value = tagValue(tags, "perks");
-  return value ? value.trim().slice(0, PERKS_MAX) : null;
 }
 
 /** A project from its record, or null when the record is not one (no id, no name, a malformed author). */
@@ -95,7 +84,6 @@ export function parseProject(event: RecordEvent): Project | null {
     team: parseTeam(event.tags, event.pubkey),
     formerTeam: parseFormerTeam(event.tags),
     unlisted: body.listing === "unlisted",
-    perks: perksOf(event.tags),
     event,
   };
 }

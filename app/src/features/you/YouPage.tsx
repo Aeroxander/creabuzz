@@ -33,7 +33,6 @@ import { SenderChoice } from "../money/SenderChoice";
 import { ProfileHead } from "../profile/ProfilePage";
 import { HiddenSheet } from "../room/HiddenSheet";
 import { NOT_SAVED } from "../room/room-words";
-import { forgetRoomDrafts } from "../room/use-draft";
 import { forgetAllHiddenPictures } from "../pictures/hidden-pictures";
 import { forgetAllReported } from "../safety/reported";
 import { useProjectsBy } from "../profile/use-own-projects";
@@ -295,7 +294,6 @@ function AccountTab() {
               clearPasskeySession();
               if (hasPasskeyIdentity()) removePasskeyIdentity();
               forgetIdentity();
-              forgetRoomDrafts();
               forgetAllReported();
               forgetAllHiddenPictures();
               try {

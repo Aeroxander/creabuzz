@@ -1,19 +1,15 @@
 /**
  * Each person's linked wallet (kind 37017, the same record web/ writes and reads, `@creaton/core/account/wallet-proof.ts`):
- * read for teammates, so the runner can offer a seat or give Shares to an address only that person proved, and written
- * for the signed-in person by the room's confirm press.
+ * read for teammates, so the runner can offer a seat or give Shares to an address only that person proved.
  */
 import {
   type ChainChecker,
-  newWalletAttestation,
   resolvePaymentWalletChecked,
-  siweMessageHash,
-  walletTypedData,
 } from "@creaton/core/account/wallet-proof.ts";
 import { KIND_EVM_BINDING } from "@creaton/core/kinds.ts";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import type { NostrEvent } from "nostr-tools/pure";
-import { publishAsUser, read } from "../../lib/relay";
+import { read } from "../../lib/relay";
 import { investingOn } from "../../lib/server";
 import { useWallet } from "../money/use-money";
 import { senderKind } from "../money/wallet";
@@ -57,7 +53,7 @@ function chainChecker(wallet: MoneyWallet): ChainChecker | undefined {
  * is checked on this device; a smart account's (a phone account) is checked by asking the account on the network, and until
  * that can be asked it is shown as not checked.
  */
-export async function readWalletLinks(
+async function readWalletLinks(
   wallet: MoneyWallet,
   sorted: readonly string[],
 ): Promise<Record<string, TeamWallet>> {
@@ -100,60 +96,5 @@ export function useTeamWallets(pubkeys: readonly string[]) {
     enabled: investingOn() && sorted.length > 0,
     staleTime: 60_000,
     queryFn: () => readWalletLinks(wallet, sorted),
-  });
-}
-
-/** The words of the wallet link a person approves in their wallet (its hash is kept in the record). */
-const LINK_STATEMENT = "Link this wallet to my Creaton account.";
-
-/**
- * Link the wallet in this browser to the signed-in account: the wallet signs a one-year proof naming this account (never
- * a transfer), and the account publishes it. Teammates then see the address, so they can offer a seat or give Shares.
- */
-export async function linkWalletNow(
-  wallet: MoneyWallet,
-  pubkey: string | null,
-): Promise<string> {
-  if (!pubkey) throw new Error("Sign in first.");
-  const address = await wallet.getAddress();
-  const chain = await wallet.chainId();
-  const now = Math.floor(Date.now() / 1000);
-  const nonce = crypto.getRandomValues(new Uint32Array(1))[0];
-  const attestation = newWalletAttestation(address, pubkey, chain, now, nonce);
-  attestation.signature = await wallet.signTypedData(
-    address,
-    walletTypedData(attestation),
-  );
-  await publishAsUser(
-    {
-      kind: KIND_EVM_BINDING,
-      created_at: now,
-      tags: [
-        ["d", address],
-        ["address", address],
-        ["chain", String(chain)],
-      ],
-      content: JSON.stringify({
-        v: 1,
-        address,
-        siweMessageHash: siweMessageHash(LINK_STATEMENT),
-        attestation,
-      }),
-    },
-    `Your ${senderKind(wallet) === "passkey" ? "account" : "wallet"} was not linked. Try again.`,
-  );
-  return address;
-}
-
-/** The press that links this browser's wallet (or the person's passkey account) to the signed-in account. */
-export function useLinkWallet(pubkey: string | null) {
-  const wallet = useWallet();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => linkWalletNow(wallet, pubkey),
-    onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: ["team"] });
-      void queryClient.invalidateQueries({ queryKey: ["room"] });
-    },
   });
 }

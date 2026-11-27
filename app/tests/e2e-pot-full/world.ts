@@ -21,7 +21,6 @@ import {
   launchedProject,
   type LiveProject,
 } from "../e2e/helpers/live-chain";
-import { buildPost } from "../../../packages/creaton-core/src/social/feed/feed-events.ts";
 import type { LiveWorld } from "../e2e/helpers/live-chain";
 
 const need = (name: string): string => {
@@ -576,26 +575,13 @@ export async function startAndLaunch(
   return { name, link, projectId, founderPub, project };
 }
 
-/**
- * A person presses Back from the project's page with `dollars` play dollars (the faucet first when they have none): two presses.
- * The box that links the account to the wallet starts unticked (a box that makes something public is never pre-ticked): the
- * helper checks that, then ticks it unless `linkWallet` is false, so a person who does not tick it can be followed into the room.
- */
-export async function backInApp(
-  page: Page,
-  dollars: number,
-  options: { linkWallet?: boolean } = {},
-): Promise<void> {
-  const linkWallet = options.linkWallet ?? true;
+/** A person presses Back from the project's page with `dollars` play dollars (the faucet first when they have none): two presses. */
+export async function backInApp(page: Page, dollars: number): Promise<void> {
   const amount = page.getByTestId("backing-amount");
   await expect(amount).toBeVisible({ timeout: 20_000 });
   await amount.fill(String(dollars));
   await page.getByTestId("backing-review").click();
   await expect(page.getByTestId("back-sheet")).toBeVisible();
-  const choice = page.getByTestId("back-link-choice");
-  await expect(choice).toBeVisible({ timeout: 20_000 });
-  await expect(choice, "the link box starts unticked").not.toBeChecked();
-  if (linkWallet) await choice.check();
   await page.getByTestId("sheet-confirm").click();
   await expect(page.getByTestId("back-sheet")).toBeHidden({ timeout: 30_000 });
 }
@@ -605,24 +591,6 @@ export async function syncClock(page: Page): Promise<void> {
   const chain = await chainNow();
   if (chain - Math.floor(Date.now() / 1000) > 30)
     await page.clock.install({ time: chain * 1000 });
-}
-
-/** A room post signed by `key` for a project (what the app's composer sends), not yet sent: for what a refusal says. */
-export function signedRoomPost(
-  key: Uint8Array,
-  text: string,
-  founderPub: string,
-  projectId: string,
-  chainKey: string,
-): ReturnType<typeof finalizeEvent> {
-  const template = buildPost({
-    text,
-    room: { launch: { pubkey: founderPub, id: projectId }, key: chainKey },
-  });
-  return finalizeEvent(
-    { ...template, created_at: Math.floor(Date.now() / 1000) },
-    key,
-  );
 }
 
 /** One number from the server's own database (a count the journey checks directly: what the server kept, never what a page says). */

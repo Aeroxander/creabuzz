@@ -175,11 +175,8 @@ describe("the banner on every sheet that shows money", () => {
     "features/account/TermsAgainHost.tsx": "the terms, no money",
     "features/posts/Composer.tsx": "a post, no money",
     "features/room/HiddenSheet.tsx": "the people you hide, no money",
-    "features/room/PerksBlock.tsx":
-      "the founder's words for those who back the project, no money figure",
     "features/room/PostMenu.tsx": "a list of presses on a post, no money",
-    "features/room/RoomSheets.tsx":
-      "report, remove and stop-writing forms, no money",
+    "features/room/RoomSheets.tsx": "the report form, no money",
     "features/safety/PostMore.tsx":
       "the question before deleting a post, no money",
     "features/tasks/PostTaskSheet.tsx": "the old task board: not mounted",

@@ -21,12 +21,6 @@
 # The two journeys do not share a world because the first moves the chain's clock by days (a record is dated by the server's own
 # clock, so a chain that is days ahead of it reads as an old record for the rest of that world).
 #
-# Step 3's journey (app/tests/e2e-pot-full/pot-room.spec.ts), in a world of its own:
-#   pot-room      a visitor opens a project's link and reads the page (one banner, the line "not a return", play money, one Back);
-#                 two people back and one takes out, and the live feed shows it rounded, with no names and the net money in; a holder
-#                 writes in the room, a stranger is refused in the server's own words, and after taking out and one time unit the
-#                 person is read-only (the server says so too);
-#
 # Step 4's journey (app/tests/e2e-pot-full/pot-pause.spec.ts), in a world of its own, deployed with the setting step 4 adds (it is
 # off in every other world, as in a default deployment):
 #   pot-pause     the deploy script is run with HOLDER_PAUSE=1: a founder launches in the app (and is told, before signing, that holders
@@ -46,7 +40,7 @@
 # Linux and macOS (`timeout` and `hostname -I` are not needed). Uses anvil's well-known development accounts only; every amount
 # is play money.
 #
-# Usage:  scripts/pot-full-loop.sh [playwright args]     with no arguments: all six journeys, each in a world of its own;
+# Usage:  scripts/pot-full-loop.sh [playwright args]     with no arguments: all three journeys, each in a world of its own;
 #                                                          with arguments (a file name such as pot-tasks.spec, a --grep): one world, those only
 #         scripts/pot-full-loop.sh --serve       the same world, left running for a person to try on a phone (see below)
 #         scripts/pot-full-loop.sh --hold        one world, left running for an engineer: it writes the environment a journey needs to
@@ -423,9 +417,9 @@ elif [[ $# -gt 0 ]]; then
   run_journey "$@"
   world_down
 else
-  # Step 1's journey, step 2's task queue, step 3's one and step 4's one, each in a world of its own (the chain's clock is moved by days in
+  # Step 1's journey, step 2's task queue and step 4's one, each in a world of its own (the chain's clock is moved by days in
   # most of them, and a world that is days ahead of the server's clock cannot be reused).
-  for journey in pot-full.spec pot-tasks.spec pot-room.spec pot-pause.spec; do
+  for journey in pot-full.spec pot-tasks.spec pot-pause.spec; do
     WORLD_KIND=default
     [[ "$journey" == pot-pause.spec ]] && WORLD_KIND=pause
     world_up

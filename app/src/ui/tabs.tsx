@@ -7,8 +7,6 @@ export interface TabItem {
   label: string;
   /** Marks a tab whose content is not built yet, so it is never mistaken for an empty list. */
   soon?: boolean;
-  /** Something new in this tab since the person last looked: a small dot, and "new" said to a screen reader. */
-  news?: boolean;
   content: ReactNode;
 }
 
@@ -45,16 +43,6 @@ export function Tabs({
             value={item.value}
           >
             {item.label}
-            {item.news ? (
-              <>
-                <span
-                  aria-hidden="true"
-                  className="ml-1 inline-block h-2 w-2 -translate-y-1.5 rounded-full bg-mint-ink"
-                  data-testid={`tab-${item.value}-new`}
-                />
-                <span className="sr-only">, new</span>
-              </>
-            ) : null}
             {item.soon ? (
               <>
                 {" "}

@@ -102,6 +102,8 @@ describe("the Back sheet shows what is put into the call", () => {
       screen.getByText(/This can go up or down. It is not a return./),
     ).not.toBeNull();
     expect(screen.getByTestId("sheet-play-money")).not.toBeNull();
+    // Nothing to tick: Back is one press, and it makes nothing public.
+    expect(screen.queryByRole("checkbox")).toBeNull();
     fireEvent.click(screen.getByTestId("sheet-confirm"));
     await waitFor(() => expect(chain.sent.length).toBe(1));
     // One signature: a single transferAndCall to the Treasury, with the amount shown and a guard 0.5% under the quote.
