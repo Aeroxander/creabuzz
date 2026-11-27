@@ -18,14 +18,6 @@ const SignUpPage = lazyRouteComponent(
   () => import("../features/account/SignUpPage"),
   "SignUpPage",
 );
-const ConversationPage = lazyRouteComponent(
-  () => import("../features/messages/ConversationPage"),
-  "ConversationPage",
-);
-const MessagesPage = lazyRouteComponent(
-  () => import("../features/messages/MessagesPage"),
-  "MessagesPage",
-);
 const PostPage = lazyRouteComponent(
   () => import("../features/posts/PostPage"),
   "PostPage",
@@ -96,19 +88,6 @@ const you = createRoute({
   path: "/you",
   component: YouPage,
 });
-const messages = createRoute({
-  getParentRoute: () => root,
-  path: "/you/messages",
-  component: MessagesPage,
-});
-const conversation = createRoute({
-  getParentRoute: () => root,
-  path: "/you/messages/$peer",
-  component: function ConversationRoute() {
-    const { peer } = conversation.useParams();
-    return <ConversationPage key={peer} peer={peer} />;
-  },
-});
 /** Search; the words typed are kept in the address (`?q=`), so Back returns to the same results. */
 const search = createRoute({
   getParentRoute: () => root,
@@ -174,8 +153,6 @@ export function createAppRouter() {
     start,
     week,
     you,
-    messages,
-    conversation,
     saved,
     search,
     topic,

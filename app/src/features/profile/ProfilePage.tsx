@@ -1,11 +1,10 @@
-import { MessageSquare } from "lucide-react";
 import { BackHeader } from "../../app/BackHeader";
 import { useAccount } from "../../lib/account";
 import { useFollowPerson, useFollows } from "../../lib/follows";
 import { nameOf, pictureOf, useProfiles } from "../../lib/profiles";
 import { useRequireAccount } from "../../lib/use-require-account";
 import { Avatar } from "../../ui/avatar";
-import { Button, ButtonLink } from "../../ui/button";
+import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { useToast } from "../../ui/toast";
 import { ProjectCard } from "../home/ProjectCard";
@@ -91,15 +90,6 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
           >
             {following ? "Following" : "Follow"}
           </Button>
-          <ButtonLink
-            data-testid="profile-message"
-            params={{ peer: pubkey }}
-            to="/you/messages/$peer"
-            variant="secondary"
-          >
-            <MessageSquare aria-hidden="true" size={18} />
-            Message
-          </ButtonLink>
         </div>
       )}
       {self ? null : (

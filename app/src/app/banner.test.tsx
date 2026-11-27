@@ -55,8 +55,6 @@ const SHELL_DRAWS: Record<string, 0 | 1> = {
   "/start": 1,
   "/week": 1,
   "/you": 1,
-  "/you/messages": 1,
-  "/you/messages/$peer": 1,
   "/you/saved": 1,
   "/search": 1,
   "/tag/$tag": 1,

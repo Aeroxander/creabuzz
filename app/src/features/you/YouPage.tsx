@@ -6,14 +6,7 @@ import {
 } from "@creaton/core/account/passkey-identity.ts";
 import { forgetIdentity } from "@creaton/core/client/identity.ts";
 import { Link } from "@tanstack/react-router";
-import {
-  Bookmark,
-  ChevronRight,
-  EyeOff,
-  KeyRound,
-  LogOut,
-  MessageSquare,
-} from "lucide-react";
+import { Bookmark, ChevronRight, EyeOff, KeyRound, LogOut } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
 import { ScreenHeader } from "../../app/BackHeader";
 import { useAccount } from "../../lib/account";
@@ -100,15 +93,6 @@ function SignedIn({ me }: { me: string }) {
         title="You"
       />
       <ProfileHead level="h2" pubkey={me} />
-      <Link
-        className="glass glass-text flex min-h-14 items-center gap-3 rounded-2xl px-4"
-        data-testid="you-messages"
-        to="/you/messages"
-      >
-        <MessageSquare aria-hidden="true" className="text-mint-ink" size={20} />
-        <span className="flex-1 font-semibold">Messages</span>
-        <ChevronRight aria-hidden="true" className="text-muted" size={20} />
-      </Link>
       <Link
         className="glass glass-text flex min-h-14 items-center gap-3 rounded-2xl px-4"
         data-testid="you-saved"

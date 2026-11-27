@@ -115,8 +115,6 @@ for (const size of WIDTHS)
 
       for (const [name, path] of [
         ["Start", "/start"],
-        ["Messages", "/you/messages"],
-        ["Conversation", `/you/messages/${FOUNDER}`],
         ["Post", `/post/${post.id}`],
         ["Profile", `/u/${FOUNDER}`],
       ] as const) {
