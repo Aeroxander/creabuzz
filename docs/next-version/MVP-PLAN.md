@@ -255,6 +255,23 @@ agent-supplied code.
 - [ ] Real-phone test done by the owner; only then `buzz-review-completed`
 - [ ] Invited testers in; one person on call
 
+## After the MVP: pool depth (not in the MVP)
+
+Read in the public docs of Mosh, Zora and Doppler (second-hand, not verified; their contract source was not read).
+None of them is a base to build on: Mosh locks capital with no exit, Zora's hook is heavy per swap and states no audit,
+Doppler's core is BUSL 1.1 and documents no tight range around a moving price. Reasons it stays out of the MVP: no
+trading volume exists without a pool, trading is off by default, the treasury already gives an exit at the
+leave-value, and the pool price is pinned to about 0.98 to 1.02 times the leave-value by Take out and Back, so a pool
+adds convenience, not upside, while the door is open.
+
+Order, later: (1) anyone may already create a plain Uniswap pool for a project's Shares, no hook; (2) when a project is
+Established, link to it; (3) only if volume appears, a small hook of our own that adds fee-funded depth inside the
+band and is recentred on the leave-value by a keeper (Zora's 20% of a 1% fee going to depth is the reference);
+(4) simulate first with test-network Back and Take out flows. Depth is bounded by slippage below (about
+`V >= 2*w*s/d`, w band width, s trade size, d slippage) and by liquidity-provider yield above; it scales with trading
+volume, not project size. Fee income, not backers' money, should fund it, so the treasury stays fully takeable.
+Counsel first: a pool is a secondary market.
+
 ## Corrections (after the critic's pass)
 
 Changed, each CHECKED against the repository: the "host binding at `main.rs:1532-1540`" claim was wrong (those lines are
