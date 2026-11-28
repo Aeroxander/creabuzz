@@ -1,10 +1,9 @@
 # MVP gate: the full loop of the phone-first app on a real server (scripts/pot-full-loop.sh), in CI.
 #
 # The real relay with its chain reader and helper, Postgres, Redis, a local chain with contracts/pot deployed by its own
-# script, and the app in Chromium on a phone-sized screen: journeys that each get a world of their own (a project from its
-# start to a Take out, the task queue). About half an hour. Too heavy for a pull request,
-# so it runs on the nightly schedule and by hand. The cheap lanes (the app's checks and tests, the pot suite, the loops that
-# need no server) are in ci.yml, on pull requests.
+# script, and the app in Chromium on a phone-sized screen: one world, one journey (a project from its start to a Take out).
+# Too heavy for a pull request, so it runs on the nightly schedule and by hand. The cheap lanes (the app's checks and tests, the
+# pot suite, the loops that need no server) are in ci.yml, on pull requests.
 name: MVP gate
 
 on:

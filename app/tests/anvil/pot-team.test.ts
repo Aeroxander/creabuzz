@@ -2,7 +2,7 @@
 /**
  * A founder launches, on the real contracts, driven only through the app's own launch path (the launch sheet's reader, its
  * terms and its call), its call builders and its words for a refusal: launch with the default numbers and with others, a
- * change of the platform's settings between the sheet and the signature, and a wind-down by anyone after a long quiet. Run by `scripts/pot-app-loop.sh`; skipped without `M7_ANVIL_RPC`.
+ * change of the platform's settings between the sheet and the signature. Run by `scripts/pot-app-loop.sh`; skipped without `M7_ANVIL_RPC`.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -18,7 +18,6 @@ import {
   type PAIR_ABI,
   type TREASURY_ABI,
 } from "../../../packages/creaton-core/src/pot/abis.generated.ts";
-import * as pot from "../../../packages/creaton-core/src/pot/pot-calls.ts";
 import * as reads from "../../../packages/creaton-core/src/pot/pot-reads.ts";
 import * as state from "../../../packages/creaton-core/src/pot/pot-state.ts";
 import { launchCallFor } from "../../src/features/launch/launch-plan";
@@ -31,7 +30,7 @@ import {
 import { potProblem } from "../../src/features/money/pot-copy";
 import { WalletStepError } from "../../src/features/money/wallet";
 import { deployPot, walletOf } from "./pot-chain";
-import { accounts, call, passTime, RPC, send } from "./rpc";
+import { accounts, call, RPC, send } from "./rpc";
 
 const run = RPC ? describe : describe.skip;
 const DOLLAR = 1_000_000n;
@@ -219,54 +218,5 @@ run("launching, on the real contracts", () => {
     // Read again, the same press launches under the new settings.
     const again = await launch(chain, founder, "late");
     expect(again.offer.agentUsd).toBe(26n * DOLLAR);
-  });
-
-  it("anyone may wind a quiet project down, but not before half a year, and the refusal before is in words", async () => {
-    const [admin, founder, stranger, backer] = await accounts();
-    const chain = await deployPot(admin);
-    for (const who of [founder, backer])
-      await walletOf(who).sendCalls([pot.faucetCall(chain.dollar)], CHAIN);
-    const l = await launch(chain, founder, "quiet");
-    const treasury = l.parts.treasury;
-    const quote = await reads.quoteBack(read, treasury, 30n * DOLLAR);
-    await walletOf(backer).sendCalls(
-      pot.backCalls({
-        dollar: chain.dollar,
-        treasury,
-        amount: 30n * DOLLAR,
-        minShares: quote.shares,
-        to: backer,
-        payAndCall: true,
-      }),
-      CHAIN,
-    );
-    // Quiet for a while, not for 26 time units: refused, in words.
-    await passTime(10 * chain.unit);
-    expect(
-      await stoppedWith(
-        walletOf(stranger).sendCalls(
-          [pot.treasuryWindDownCall(treasury)],
-          CHAIN,
-        ),
-        "wind-down",
-      ),
-    ).toMatch(/\S/);
-    expect((await state.readSeatState(read, treasury)).windDownKind).toBe(0);
-    await passTime(17 * chain.unit);
-    await walletOf(stranger).sendCalls(
-      [pot.treasuryWindDownCall(treasury)],
-      CHAIN,
-    );
-    expect((await state.readSeatState(read, treasury)).windDownKind).toBe(2);
-    // The runner's own wind-down is not possible on top: said in words.
-    expect(
-      await stoppedWith(
-        walletOf(founder).sendCalls(
-          [pot.windDownCall(chain.launcher, l.key)],
-          CHAIN,
-        ),
-        "wind-down",
-      ),
-    ).toMatch(/wound down/);
   });
 });

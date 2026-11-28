@@ -10,17 +10,12 @@ import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import * as nip49 from "nostr-tools/nip49";
 import { finalizeEvent, generateSecretKey } from "nostr-tools/pure";
-import { bytesToHex, hexToBytes } from "nostr-tools/utils";
+import { hexToBytes } from "nostr-tools/utils";
 import { withChainKey } from "../../../packages/creaton-core/src/launchpad/project-chain.ts";
-import { expect, type Page } from "@playwright/test";
-import { getPublicKey } from "nostr-tools/pure";
+import type { Page } from "@playwright/test";
 import { accounts, pointAtRpc, rpc } from "../anvil/rpc";
 import type { PotChain } from "../anvil/pot-chain";
-import {
-  chainNow,
-  launchedProject,
-  type LiveProject,
-} from "../e2e/helpers/live-chain";
+import { chainNow } from "../e2e/helpers/live-chain";
 import type { LiveWorld } from "../e2e/helpers/live-chain";
 
 const need = (name: string): string => {
@@ -173,47 +168,6 @@ export async function newestRecord(
     : null;
 }
 
-/** One task row of the record's `tasks` section (RECORD-V2 section 10): the parts a journey reads. Amounts are decimal strings. */
-export interface TaskRowJson {
-  serial: number;
-  what: string;
-  payee: string | null;
-  state: string;
-  shareBps: number;
-  maxDollars: string;
-  atMostNow: string | null;
-  announcedAt: number;
-  noticeEnd: number;
-  expiresAt: number;
-  takenBy: string | null;
-  takenAt: number | null;
-  deadline: number | null;
-  setAside: string;
-  stayerClaim: string;
-  noteFace: string;
-  pay: string;
-  returned: string;
-  notesLeft: string;
-  resolvedAt: number | null;
-  resolvedTx: string | null;
-  repeatOf: number | null;
-  notes: {
-    faceTotal: string;
-    holders: { account: string; face: string; claimable: string }[];
-  } | null;
-}
-
-/** The record's `tasks` section, as far as a journey reads it. */
-export interface TasksJson {
-  book: string;
-  bookBlock: number;
-  nextSerial: number;
-  openCount: number;
-  nextExpiry: number | null;
-  cap: { usedBps: number; roomBps: number };
-  list: TaskRowJson[];
-}
-
 /** The parts of a record (version 2) this journey reads. The whole record is checked by the checker script. */
 export interface NumbersJson {
   version: number;
@@ -249,51 +203,8 @@ export interface NumbersJson {
     paidToWorkers: string;
     noteClaims: string;
   };
-  tasks?: TasksJson | null;
+  tasks?: { list: { state: string }[] } | null;
   holders: { account: string; shares: string }[];
-  /** Step 3's keys (RECORD-V2 section 11): an object, or null for "not known here"; absent in a record from an older server. */
-  held?: HeldJson | null;
-  feed?: FeedJson | null;
-  streaks?: {
-    updates: { weeks: number; longest: number; lastAt: number | null };
-  } | null;
-  established?: EstablishedJson | null;
-}
-
-/** The record's `held` key: how long money has stayed (the ranking's and the badge's inputs). */
-export interface HeldJson {
-  windows: { rankSecs: number; badgeSecs: number };
-  rank: { shares: string; bps: number; money: string; accounts: number } | null;
-  badge: { shares: string; bps: number } | null;
-  countedAccounts: number;
-}
-
-/** The record's `feed` key: hours of joins and take-outs, rounded, with no names. */
-export interface FeedJson {
-  roundTo: string;
-  bucketSecs: number;
-  hours: {
-    at: number;
-    joins: number;
-    tookOut: number;
-    net: { dir: "in" | "out" | "even"; amount: string };
-  }[];
-  items: {
-    kind: string;
-    at: number;
-    serial: number | null;
-    date: number | null;
-  }[];
-  cut: number;
-}
-
-/** The record's `established` key: the badge's rule, its three inputs and the server's verdict. */
-export interface EstablishedJson {
-  rule: { minHeldBps: number; heldSecs: number; minAccounts: number };
-  heldBps: number | null;
-  accounts: number | null;
-  twoSigners: boolean;
-  reached: boolean | null;
 }
 
 /**
@@ -460,9 +371,6 @@ export function sharesAsPageSays(raw: bigint): string {
   return (raw / 10n ** 18n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
-/** A fresh random hex word, for names that must not meet an earlier run's. */
-export const tag = (): string => bytesToHex(generateSecretKey()).slice(0, 6);
-
 /** The server's helper jobs (its own table), for the one check that it sent only what it may. */
 export function helperJobs(): { call: string; state: string }[] {
   const out = spawnSync(
@@ -508,115 +416,9 @@ export function startMiner(): () => void {
   return () => clearInterval(timer);
 }
 
-/** A project started in the app and launched on the chain, as its founder's page sees it. */
-export interface StartedProject {
-  name: string;
-  /** The page's path: /p/<id>-<16 hex of the founder>. */
-  link: string;
-  projectId: string;
-  founderPub: string;
-  project: LiveProject;
-}
-
-/**
- * The founder's page (a phone with the founder's wallet and an account) starts a project from the app's own form and launches it
- * on the chain from the launch card, then reads what the chain made of it. One signature asks the wallet once.
- */
-export async function startAndLaunch(
-  w: LiveWorld,
-  founder: Page,
-  name: string,
-  goal = "A shared repair shop for night-market stalls.",
-  how = "Ten stalls bring their tools and share them.",
-  /** Run once the launch sheet is open and before the founder signs: what a journey reads on it. */
-  onLaunchSheet?: (page: Page) => Promise<void>,
-): Promise<StartedProject> {
-  await founder.goto("/start");
-  await founder.getByTestId("start-name").fill(name);
-  await founder.getByTestId("start-goal").fill(goal);
-  await founder.getByTestId("start-how").fill(how);
-  await founder.getByTestId("start-submit").click();
-  await expect(founder.getByTestId("project-name")).toHaveText(name);
-  const link = new URL(founder.url()).pathname;
-  const ref = /^\/p\/(.+)-([0-9a-f]{16})$/.exec(link);
-  if (!ref) throw new Error(`not a project link: ${link}`);
-  const projectId = ref[1];
-  const founderPub = getPublicKey(await secretKeyOf(founder));
-  await expect(founder.getByTestId("launch-card")).toBeVisible({
-    timeout: 20_000,
-  });
-  await founder.getByTestId("launch-open").click();
-  await expect(founder.getByTestId("launch-sheet")).toBeVisible();
-  if (onLaunchSheet) await onLaunchSheet(founder);
-  await founder.getByTestId("sheet-confirm").click();
-  await expect(founder.getByTestId("launch-sheet")).toBeHidden({
-    timeout: 30_000,
-  });
-  // The sheet closes when the launch lands; the founder's own record naming the launch is written a moment later. A page left in
-  // that moment (the next step of a journey is a new address) leaves the project launched on the network and not tied to its
-  // page: its record names no launch, so no list of the founder's projects offers it, until "Finish linking" is
-  // pressed. The app's own sign that the page is tied is that the launch card is gone.
-  await expect(founder.getByTestId("launch-card")).toBeHidden({
-    timeout: 30_000,
-  });
-  const project = await launchedProject(w, projectId, founderPub);
-  return { name, link, projectId, founderPub, project };
-}
-
-/** A person presses Back from the project's page with `dollars` play dollars (the faucet first when they have none): two presses. */
-export async function backInApp(page: Page, dollars: number): Promise<void> {
-  const amount = page.getByTestId("backing-amount");
-  await expect(amount).toBeVisible({ timeout: 20_000 });
-  await amount.fill(String(dollars));
-  await page.getByTestId("backing-review").click();
-  await expect(page.getByTestId("back-sheet")).toBeVisible();
-  await page.getByTestId("sheet-confirm").click();
-  await expect(page.getByTestId("back-sheet")).toBeHidden({ timeout: 30_000 });
-}
-
 /** Put a page's clock on the chain's when the chain's clock was moved ahead of the computer's (the page then agrees what day it is). */
 export async function syncClock(page: Page): Promise<void> {
   const chain = await chainNow();
   if (chain - Math.floor(Date.now() / 1000) > 30)
     await page.clock.install({ time: chain * 1000 });
-}
-
-/** One number from the server's own database (a count the journey checks directly: what the server kept, never what a page says). */
-export function dbCount(sql: string): number {
-  const out = spawnSync("psql", [need("POT_DB_URL"), "-Atc", sql], {
-    encoding: "utf8",
-  });
-  if (out.status !== 0)
-    throw new Error(`could not read the server's database: ${out.stderr}`);
-  return Number(out.stdout.trim());
-}
-
-/**
- * The screen as it is now, at the narrowest phone this app holds (360 x 640): nothing sticks out sideways (the page, and an open
- * sheet inside it), and each of `ids` is on the screen. The page goes back to the journey's own size afterwards.
- */
-export async function atNarrowPhone(
-  page: Page,
-  what: string,
-  ids: string[],
-): Promise<void> {
-  const before = page.viewportSize();
-  await page.setViewportSize({ width: 360, height: 640 });
-  // Let the layout settle (text wraps again at the new width).
-  await page.waitForTimeout(300);
-  const sideways = await page.evaluate(() => {
-    const widest = (el: Element | null) =>
-      el ? el.scrollWidth - el.clientWidth : 0;
-    return {
-      page: document.documentElement.scrollWidth - window.innerWidth,
-      sheet: widest(document.querySelector("[role='dialog']")),
-    };
-  });
-  check(
-    sideways.page <= 0 && sideways.sheet <= 0,
-    `${what}: nothing sticks out sideways at 360 px`,
-  );
-  for (const id of ids) await expect(page.getByTestId(id)).toBeVisible();
-  ok(`${what}: ${ids.join(", ")} are on the screen at 360 px`);
-  if (before) await page.setViewportSize(before);
 }

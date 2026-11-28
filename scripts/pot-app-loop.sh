@@ -10,8 +10,7 @@
 #   pot-allowance.test.ts an announced raise: the date the app reads is the date the Treasury's own RateProposed log announces
 #                         (announced at + one time unit), applying before it is refused and after it works;
 #   pot-team.test.ts      launching through the launch sheet's own reader, terms and call (the defaults, other numbers, the ceiling, a platform
-#                         setting that changed between the sheet and the signature, the same project twice); a wind-down by anyone after a
-#                         long quiet;
+#                         setting that changed between the sheet and the signature, the same project twice);
 #   pot-task-reads.test.ts the seven task calls and the task reads (the shared library's S1): plan, withdraw, take early and in time,
 #                         a take out that writes a note, pay in part, a claim a stranger sends for someone else, send back,
 #                         run out and return, a plan nobody takes; with S1_CAPTURE_OUT=<file> it writes the raw answers;

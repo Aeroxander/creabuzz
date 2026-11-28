@@ -34,23 +34,14 @@ export const JOIN_PATH_HOSTED_BUDGET = { presses: 4, fields: 1 } as const;
 /** What the founder does to accept an ask: one press on Accept, nothing typed. */
 export const ACCEPT_PATH_BUDGET = { presses: 1, fields: 0 } as const;
 
-/**
- * The press and field budgets of plan v2, section 6 ("Press and field budgets, each held by a test"). The new app holds
- * them as its screens arrive; the ones not built yet are listed so the next part has them to hand.
- */
+/** The press and field budgets of the app's journeys, each held by a test. */
 export const PLAN_V2_BUDGETS = {
   start: { presses: 3, fields: 3 },
-  openBacking: { presses: 1, fields: 0 },
   back: { presses: 2, fields: 1 },
   takeMoneyBack: { presses: 2, fields: 0 },
   weeklyUpdate: { presses: 2, fields: 1 },
-  giveShares: { presses: 4, fields: 0 },
-  addSecondPerson: { presses: 2, fields: 0 },
-  postTask: { presses: 2, fields: 2 },
-  acceptAndPay: { presses: 1, fields: 0 },
   /** Measured in milestone 0: the hosted sign-up (age and terms boxes) included. */
   join: JOIN_PATH_HOSTED_BUDGET,
-  bidBuySellHandBack: { presses: 2, fields: 1 },
 } as const;
 
 /** Reading speed, press time and typing speed behind the estimate (the same ones the first walk of the app used). */

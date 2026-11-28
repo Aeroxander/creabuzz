@@ -190,33 +190,3 @@ export function withSocial(
     }
   };
 }
-
-/**
- * **SHAPE ONLY.** The ranking index (kind 39009, `d = explore`) as `RECORD-V2.md` section 11.6 says the server signs it. The
- * fixture chain has no project whose id hashes to a coordinate, so the server has no real example of it: this one is built
- * from that shape and from nothing else, and says so. An entry carries a coordinate, the project's chain key and the money
- * and the people it ranks by (6 decimals, a count); nothing else.
- */
-export interface ShapeOnlyEntry {
-  key: string;
-  a: string;
-  launchedAt: number;
-  windowSecs: number;
-  money: string;
-  accounts: number;
-  reached: boolean | null;
-}
-export function shapeOnlyIndexContent(
-  entries: readonly ShapeOnlyEntry[],
-  o: { now: number; extra?: Json },
-): Json {
-  return {
-    version: 1,
-    kind: "explore",
-    asOf: { block: 1000, time: o.now - 60 },
-    entries: entries.map((e) => ({ ...e })),
-    seen: entries.length,
-    cut: 0,
-    ...o.extra,
-  };
-}

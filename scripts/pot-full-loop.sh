@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # pot-full-loop.sh: the join-and-leave design in a real browser: a project from its start to a Take out.
+# One world, one journey (app/tests/e2e-pot-full/pot-full.spec.ts): "pot-full-loop green" means that one run passed.
 #
 # Starts a local chain (anvil), deploys contracts/pot with its own deploy script (play dollars), starts Postgres and Redis when
 # they are not running, starts the real relay with its chain reader pointed at that chain (and its helper on, record version 2),
@@ -22,8 +23,8 @@
 # Linux and macOS (`timeout` and `hostname -I` are not needed). Uses anvil's well-known development accounts only; every amount
 # is play money.
 #
-# Usage:  scripts/pot-full-loop.sh [playwright args]     with no arguments: the journey in a world of its own;
-#                                                          with arguments (a file name such as pot-full.spec, a --grep): one world, those only
+# Usage:  scripts/pot-full-loop.sh [playwright args]     with no arguments: the journey (pot-full.spec) in the one world;
+#                                                          with arguments (a --grep, say): the same world, those only
 #         scripts/pot-full-loop.sh --serve       the same world, left running for a person to try on a phone (see below)
 #         scripts/pot-full-loop.sh --hold        one world, left running for an engineer: it writes the environment a journey needs to
 #                                                HOLD_ENV (default: a file in the temporary folder, printed) and waits for Ctrl-C. Run a
@@ -35,7 +36,7 @@
 #   this computer's network address (SERVE_HOST, default: its first address) and prints the addresses and the steps. It runs
 #   until you press Ctrl-C, then stops everything it started. The chain's development accounts are public and unlocked, so
 #   anyone on the same network can send play-money transactions to it while it runs: use a network you trust. It also leaves one
-#   planned task on the project (see the words it prints).
+#   planned task on the project (TRY-IT.md, part 3).
 # Env:    SERVE_HOST (with --serve: the address a phone reaches this computer at), POSTGRES_ADMIN_URL (default postgres://buzz:buzz_dev@127.0.0.1:5432/postgres), REDIS_URL, RELAY_BIN, FOUNDRY_BIN,
 #         RUN_TIMEOUT (seconds for the browser run, default 900), KEEP_DB=1 (keep the scratch database),
 #         RELAY_LOG_COPY=<file>, PW_CHROMIUM_PATH / PW_CHROMIUM_EXTRA_ARGS (a Chromium other than Playwright's pinned one),
@@ -106,8 +107,6 @@ DB_MADE=""
 CHECKS_FILE="$STATE/checks.log"
 : >"$CHECKS_FILE"
 MINER_PID=""
-BUILT_FOR=""
-WORLD=0
 # Where the browser and the phone reach things: this computer's own name, or (with --serve) its network address.
 BIND_HOST="127.0.0.1"
 PUBLIC_HOST="localhost"
@@ -191,20 +190,19 @@ if ! redis_ready; then
 fi
 
 
-# One chain port for the whole run: the app's build names it, so every world's chain listens there.
+# The chain's port: the app's build names it, so the world's chain listens there.
 CHAIN_PORT="$(free_port)"
 RPC="http://127.0.0.1:$CHAIN_PORT"
 PUBLIC_RPC="http://$PUBLIC_HOST:$CHAIN_PORT"
 
-# Starts a world: a chain, the contracts on it, the app built for it (once, while the contracts land where they did), the relay
+# Starts the world: a chain, the contracts on it, the app built for it, the relay
 # with its chain reader and helper serving the app, and a scratch database of its own. Sets RELAY_PID, ANVIL_PID, BASE, DB_URL
 # and the variables the journeys read.
 world_up() {
-  WORLD=$((WORLD + 1))
-  DB="buzz_pot_full_$$_$WORLD"
+  DB="buzz_pot_full_$$"
   DB_URL="${ADMIN_URL%/*}/$DB"
-  step "world $WORLD: a local chain on :$CHAIN_PORT"
-  anvil --host "$BIND_HOST" --port "$CHAIN_PORT" --chain-id 31337 --accounts 14 --gas-limit 100000000 --cache-path "$STATE/anvil-cache-$WORLD" \
+  step "a local chain on :$CHAIN_PORT"
+  anvil --host "$BIND_HOST" --port "$CHAIN_PORT" --chain-id 31337 --accounts 14 --gas-limit 100000000 --cache-path "$STATE/anvil-cache" \
     --silent >"$STATE/anvil.log" 2>&1 &
   ANVIL_PID=$!
   wait_for 50 cast block-number --rpc-url "$RPC" || fail "anvil did not start"
@@ -225,16 +223,13 @@ world_up() {
   step "play dollar $USD, Launcher $LAUNCHER (block $START_BLOCK)"
   PORT="$(free_port)"; HEALTH="$(free_port)"; METRICS="$(free_port)"
 
-  # ── the app, built for this chain: once, and again only if a later world's contracts landed elsewhere ────────────────────────
-  if [[ "$BUILT_FOR" != "$LAUNCHER" ]]; then
-    step "building the app for this chain into a temporary folder"
-    ( cd app && env CREATON_DEPLOYMENTS_FILE="$STATE/deployments.json" VITE_CREATON_RPC_URL="$PUBLIC_RPC" \
-        pnpm exec vite build --outDir "$APP_DIST" --emptyOutDir >"$STATE/app-build.log" 2>&1 ) \
-      || { tail -30 "$STATE/app-build.log" >&2; fail "app build failed"; }
-    [[ -f "$APP_DIST/index.html" ]] || fail "the app build has no index.html"
-    grep -rqi "$LAUNCHER" "$APP_DIST/assets" || fail "the app build does not name the Launcher $LAUNCHER"
-    BUILT_FOR="$LAUNCHER"
-  fi
+  # ── the app, built for this chain ────────────────────────────────────────────────────────────────────────────────────────
+  step "building the app for this chain into a temporary folder"
+  ( cd app && env CREATON_DEPLOYMENTS_FILE="$STATE/deployments.json" VITE_CREATON_RPC_URL="$PUBLIC_RPC" \
+      pnpm exec vite build --outDir "$APP_DIST" --emptyOutDir >"$STATE/app-build.log" 2>&1 ) \
+    || { tail -30 "$STATE/app-build.log" >&2; fail "app build failed"; }
+  [[ -f "$APP_DIST/index.html" ]] || fail "the app build has no index.html"
+  grep -rqi "$LAUNCHER" "$APP_DIST/assets" || fail "the app build does not name the Launcher $LAUNCHER"
 
   # ── the relay: the chain reader and its helper on, serving the app ────────────────────────────────────────────────────
   psql "$ADMIN_URL" -qc "create database $DB" || fail "could not create the scratch database"
@@ -321,9 +316,8 @@ The page is plain http on this network, so a passkey and the Copy press cannot b
       cast wallet private-key --mnemonic "test test test test test test test test test test test junk" --mnemonic-index 2
   They are public and worth nothing: never import a real account's key anywhere near this.
 
-  The chain's clock (to try the notice before a task, the worker's step and the room after taking out): move it, then wait two seconds
-  for the next block:
-      cast rpc --rpc-url $PUBLIC_RPC evm_increaseTime 1500000
+  The chain's clock (to let the allowance box fill, or a project go quiet): move it, then wait two seconds for the next block:
+      cast rpc --rpc-url $PUBLIC_RPC evm_increaseTime 86400
   The server and the page keep their own clocks, so after a jump the project's record reads as old and Back waits until the next
   record. Move the clock only when TRY-IT.md says.
 
@@ -335,7 +329,7 @@ EOF
 fi
 
 # ── the journeys ────────────────────────────────────────────────────────────────────────────────────────────────────
-# Runs one Playwright invocation in the world that is up now and judges its outcome.
+# Runs one Playwright invocation in the world and judges its outcome.
 run_journey() {
   step "running the journey in Chromium (up to ${RUN_TIMEOUT}s): $*"
   local code
@@ -363,26 +357,20 @@ run_journey() {
     echo "[pot-full-loop] the reader refused to sign a record at some point" >&2
     exit 1
   fi
-  printf '\033[32m[pot-full-loop] ok\033[0m the reader never refused to sign: no record failed its checks during the whole run of this world\n'
-  echo "ok --- the reader never refused to sign in world $WORLD" >>"$CHECKS_FILE"
+  printf '\033[32m[pot-full-loop] ok\033[0m the reader never refused to sign: no record failed its checks during the whole run\n'
+  echo "ok --- the reader never refused to sign" >>"$CHECKS_FILE"
 }
 
 if [[ -n "$HOLD" ]]; then
   world_up
   HOLD_ENV="${HOLD_ENV:-$STATE/world.env}"
   write_world_env "$HOLD_ENV"
-  echo "[pot-full-loop] HOLDING world $WORLD. Environment for a journey: $HOLD_ENV. The relay log: $STATE/relay.log. Press Ctrl-C to stop it all."
+  echo "[pot-full-loop] HOLDING the world. Environment for a journey: $HOLD_ENV. The relay log: $STATE/relay.log. Press Ctrl-C to stop it all."
   while kill -0 "$RELAY_PID" 2>/dev/null && kill -0 "$ANVIL_PID" 2>/dev/null; do sleep 2; done
   fail "the chain or the server stopped"
-elif [[ $# -gt 0 ]]; then
-  world_up
-  run_journey "$@"
-  world_down
 else
-  # The journey runs in a world of its own (the chain's clock is moved by days, and a world that is days ahead of the
-  # server's clock cannot be reused).
   world_up
-  run_journey pot-full.spec
+  if [[ $# -gt 0 ]]; then run_journey "$@"; else run_journey pot-full.spec; fi
   world_down
 fi
 CHECKS="$(grep -c '^ok' "$CHECKS_FILE" 2>/dev/null || true)"; CHECKS="${CHECKS:-0}"

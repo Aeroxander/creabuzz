@@ -15,8 +15,6 @@ import {
   functionOf,
 } from "../../../packages/creaton-core/src/pot/abi-codec.ts";
 import {
-  EARLIER_GRANTS_ABI,
-  HOLDER_PAUSE_ABI,
   LAUNCHER_ABI,
   PAIR_ABI,
   PLAY_DOLLAR_ABI,
@@ -36,8 +34,6 @@ const ABIS = [
   PLAY_DOLLAR_ABI,
   PAIR_ABI,
   LAUNCHER_ABI,
-  HOLDER_PAUSE_ABI,
-  EARLIER_GRANTS_ABI,
 ];
 
 /** The values a view returns, or a function of the call's arguments and the contract it was sent to. */

@@ -1,5 +1,5 @@
 /**
- * A project with a task queue and a team task that has a worker with a wallet, for the team side's screens: the parsed
+ * A project with a task queue and a task that has a worker with a wallet, for the holder side's screens: the parsed
  * example (moved to now, with its task queue), a task record in the shape the project page reads, and what the chain answers.
  * Nothing here is retyped from the example: a test reads a number from `numbers`, and changes a row through `withTasks`.
  */
