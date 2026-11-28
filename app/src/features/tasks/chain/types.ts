@@ -1,5 +1,5 @@
 /**
- * The shapes the task queue screens build against (`docs/next-version/STEP2-SERVER-APP-PLAN.md`, sections 1.3, 1.4 and 4.4).
+ * The shapes the task queue screens build against (`docs/archive/STEP2-SERVER-APP-PLAN.md`, sections 1.3, 1.4 and 4.4).
  *
  * Two readings of a task exist and are never mixed up:
  * - `ChainTask` is a row of the server's signed record (`numbers.tasks.list`): every number in it was checked against the

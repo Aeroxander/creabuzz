@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// check-cross-language.mjs: the numbers and word lists that exist in two languages (Rust on the server, TypeScript in the app), each tied by one check (docs/next-version/STEP3-PLAN.md, section 9.2, X3). It reads the sources as text, so a change on one side that the other did not
+// check-cross-language.mjs: the numbers and word lists that exist in two languages (Rust on the server, TypeScript in the app), each tied by one check (docs/archive/STEP3-PLAN.md, section 9.2, X3). It reads the sources as text, so a change on one side that the other did not
 // follow fails here and not on a person's phone.
 //
 //   1. the room's character limit: the server's `BODY_CHARS_MAX` (and the number in its refusal sentence) equals the app's

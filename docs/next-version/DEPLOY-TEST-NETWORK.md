@@ -108,7 +108,7 @@ server what happened.
 | The key | What it can do in the wrong hands | What you do |
 |---|---|---|
 | The server's signing key (`BUZZ_RELAY_PRIVATE_KEY`) | Sign anything the server signs, including project numbers. | Stop the server. Make a new key (`openssl rand -hex 32`), set it, restart. The server is from then on a different signer: say so, and treat every number the old key signed as untrusted. |
-| The operator's key (the secret half of `RELAY_OWNER_PUBKEY`) | Sign in as the owner, start seasons. | Make a new key, set `RELAY_OWNER_PUBKEY` to its public half, restart. The old key's rights end with the setting. |
+| The operator's key (the secret half of `RELAY_OWNER_PUBKEY`) | Sign in as the owner. | Make a new key, set `RELAY_OWNER_PUBKEY` to its public half, restart. The old key's rights end with the setting. |
 | The helper key (`BUZZ_CHAIN_HELPER_KEY`) | Spend the helper's ether on calls anyone may make (nothing else). | Set a new key, restart, send the new one a little ether, and sweep what is left from the old one. |
 | The backups' key (`BUZZ_BACKUP_AGE_RECIPIENT`'s secret half) | Read every backup ever made to that key. | Make a new pair, set the new public key. Backups already made must be treated as readable by whoever holds the leaked key: move anything of value they hold and say so. |
 
@@ -151,13 +151,9 @@ spend caps, so the fee and the settle keep their room. A failure is recorded in 
 2. The key is read from the server's environment and from nowhere else; it is never logged. Do not reuse a key that holds
    anything. Left out, the helper is off and fees are collected only when somebody calls `collectFees` by hand.
 
-## 6. Wallet links for phone accounts
+## 6. Wallet links (skip)
 
-A passkey account is a contract, so the server asks the chain to check its signature when a person links their account to the
-wallet that backs. In `.env`, uncomment the three lines in "Wallet links": `BUZZ_EVM_AUTH=1`, `BUZZ_EVM_CHAIN_ID=11155111`
-and `BUZZ_EVM_RPC_URL` (a node; it may be the server's node from step 4). They also switch on the server's sign-in with an
-Ethereum wallet, so set them only for phone accounts. Without them the app says plainly that the room and
-alerts are not switched on for phone accounts. Needed only when you turn phone accounts on (step 7).
+The app no longer links an account to a wallet, so the `BUZZ_EVM_*` lines do nothing for it: leave them commented out.
 
 ## 7. Phone accounts: the bundler and the sponsor
 
@@ -199,12 +195,9 @@ Then:
 without its bundler, and any `VITE_*` value still holding `CHANGE_ME`. The image's own build checks the same again and then
 checks its output: the page, its manifest, the service worker, and the Launcher inside the code.
 
-## 9. Alerts away from the app (optional)
+## 9. Alerts (skip)
 
-Needs the chain reader (step 4) and https (step 11). Make your own key and put your own contact beside it
-(`docs/web-push-deployment.md` has the command and what is stored about a device): `BUZZ_WEB_PUSH_VAPID_PRIVATE_KEY` (43
-characters; a secret that stays in `.env`) and `BUZZ_WEB_PUSH_SUBJECT` (`mailto:<your address>`). Both or neither. Without them
-there are no alerts and the app shows none.
+The app has no alerts, so the `BUZZ_WEB_PUSH_*` keys do nothing: leave them out.
 
 ## 10. The terms and the privacy note
 
@@ -228,7 +221,7 @@ anyone to a public test network with either missing.
 
 ## 11. https and the host name
 
-Passkeys and alerts work only over https. `BUZZ_COMPOSE_TLS=true` (already in `.env.creaton.example`) puts Caddy in front with a
+Passkeys work only over https. `BUZZ_COMPOSE_TLS=true` (already in `.env.creaton.example`) puts Caddy in front with a
 certificate for `BUZZ_DOMAIN`; `start` refuses a published relay port beside it.
 
 ## 12. Start

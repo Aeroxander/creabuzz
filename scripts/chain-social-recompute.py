@@ -5,7 +5,7 @@ Not run by itself: `scripts/chain-reader-example-check.py` (the example record a
 `scripts/chain-loop-pot-check.py` (the record a real relay signed against a live chain, at nine stops) load it with
 importlib and call `check_social`. It shares no code with the Rust (`chain_reader/held.rs`, `record_social.rs`): the raw logs of a
 project (topics and data, decoded here by position), the chain's own balances and per-Share figure, and the plan's rules
-(docs/next-version/STEP3-PLAN.md section 2) are all it uses.
+(docs/archive/STEP3-PLAN.md section 2) are all it uses.
 
 `logs` are tuples `(time, block, index, name, address, topics, words)` from `decode`; `ctx` says what the chain says (see
 `check_social`); `same(what, record, chain)` is the caller's comparison (it records or raises on a difference).

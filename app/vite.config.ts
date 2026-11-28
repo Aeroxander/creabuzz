@@ -19,7 +19,7 @@ if (deploymentsFile)
 
 // The relay serves one web folder and only `/assets/*` from it as files (everything else gets the app shell), so every
 // built file lands under `assets/`. `public/sw.js` is the one root file: a service worker controls only the path it is
-// served from and below (see docs/next-version/PLANV2-M6-REPORT.md, open items).
+// served from and below (see docs/archive/PLANV2-M6-REPORT.md, open items).
 export default defineConfig({
   plugins: [react()],
   server: {

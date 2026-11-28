@@ -1,4 +1,4 @@
-//! Tying the chain's helper limits to the server's labels (open item 4 of `docs/next-version/PLANV2-M8-REPORT.md`).
+//! Tying the chain's helper limits to the server's labels (open item 4 of `docs/archive/PLANV2-M8-REPORT.md`).
 //!
 //! A helper's daily limits bind an **address** on the network (`Treasury.setAgent`); the labels the server keeps bind a
 //! Nostr **account** (`agent_label`). The one link the server has is the wallet binding (`wallet_binding`: an account

@@ -131,27 +131,6 @@ $EDITOR .env               # every CHANGE_ME; the Creaton part says what each se
 - Taking down a post and its pictures, illegal content, and a person's request to see or delete their data:
   [docs/operator-takedown-and-data-requests.md](../../docs/operator-takedown-and-data-requests.md).
 
-### AI helpers (optional, no rebuild)
-
-The AI work check, the check-note draft and the newcomer interviewer call the server's own `/llm/chat/completions`, which
-forwards to an OpenAI-compatible provider you choose and keeps the key on the server. Without the first line below the
-buttons stay hidden. Put these in the server's part of `.env` (not the `VITE_` part), then `./run.sh restart`:
-
-```
-BUZZ_LLM_PROXY_URL=https://<your provider>/v1/chat/completions
-BUZZ_LLM_API_KEY=<the provider's key>
-BUZZ_LLM_MODEL=<the model name to use>
-```
-
-Set `BUZZ_LLM_MODEL`: the hosted web app sends no model name, so this one is used. Each call costs the owner money: set a
-spending cap at the provider too. The server also caps its own use so a busy day cannot run up the bill: each account
-gets `BUZZ_LLM_MAX_CALLS_PER_DAY` calls a day (default 500), and the whole community gets `BUZZ_LLM_MAX_CALLS_PER_DAY_TOTAL`
-(default 2000); both reset at midnight UTC. When a cap is reached the person sees a plain sentence saying what ran out and
-when it comes back, and can still write the text themselves. Other optional limits (`BUZZ_LLM_RATE_PER_MIN`, default 20;
-`BUZZ_LLM_MAX_TOKENS`, 4096) and the price lines for budgets that carry a cost limit are described in the repository's root
-`.env.example`. The key sits in `.env` in plain text and is inside the encrypted backup: keep `.env` mode 0600 and treat the
-key as one you can replace.
-
 ### Link previews
 
 A project's link (`/p/<project>-<founder>` and `/launchpad/<project>`) shows the project's name, pitch and main goal, with
@@ -241,9 +220,8 @@ On the server, with the host name's DNS pointing at it and ports 80 and 443 open
 3. Put the host name in place of `CHANGE_ME_HOST` in `BUZZ_DOMAIN`, `RELAY_URL` (`wss://<host>`),
    `BUZZ_MEDIA_BASE_URL` (`https://<host>/media`), `BUZZ_MEDIA_SERVER_DOMAIN` (`<host>`) and `BUZZ_CORS_ORIGINS`
    (`https://<host>`). `start` refuses while any of them still says `CHANGE_ME_HOST`, or `buzz.example.com` (an older
-   example's host). The three `BUZZ_EVM_*` lines (a Sepolia node) are commented out in `.env.creaton.example`: leave them
-   so on a server with no chain, and uncomment them, with a node in `BUZZ_EVM_RPC_URL`, for phone accounts on a test
-   network (docs/next-version/DEPLOY-TEST-NETWORK.md, step 6).
+   example's host). The three `BUZZ_EVM_*` lines are commented out in `.env.creaton.example`: leave them so (the app no longer
+   links a wallet to an account).
 4. `mkdir -p policies && cp ../../docs/policies/TERMS-DRAFT.md policies/terms.md && cp
    ../../docs/policies/PRIVACY-DRAFT.md policies/privacy.md`, fill in every `[placeholder]` (the privacy note's log
    and backup periods should match "Logs" and "Backups" below), and set `BUZZ_TERMS_FILE=policies/terms.md` and

@@ -1,5 +1,5 @@
 //! The ranking index's rule, the tie to a coordinate and what the index carries (the IX series of
-//! `docs/next-version/STEP3-PLAN.md` section 9.2). The Postgres half is in `explore_postgres_tests.rs`.
+//! `docs/archive/STEP3-PLAN.md` section 9.2). The Postgres half is in `explore_postgres_tests.rs`.
 
 use serde_json::Value;
 

@@ -1,5 +1,5 @@
 //! The ranking index: one small record the server signs, so Home reads one record and then the few projects
-//! it names (`docs/next-version/STEP3-PLAN.md` section 2.8).
+//! it names (`docs/archive/STEP3-PLAN.md` section 2.8).
 //!
 //! Home does not work the ranking out from the records it reads for browsing: that read is ordered by when a
 //! founder last edited a record, so an old project whose money has stayed longest could fall out of it, a

@@ -1,5 +1,5 @@
 //! The social keys of the record (`held`, `feed`, `streaks`, `established`), built from the real run's rows and
-//! from rows made for one rule at a time. The H, F, S, E, V and X series of `docs/next-version/STEP3-PLAN.md`
+//! from rows made for one rule at a time. The H, F, S, E, V and X series of `docs/archive/STEP3-PLAN.md`
 //! section 9.2; the Postgres half of H is in `held_postgres_tests.rs`.
 
 use std::collections::BTreeSet;

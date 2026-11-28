@@ -1,5 +1,5 @@
 //! The four social keys of the project numbers record: `held`, `feed`, `streaks` and `established`
-//! (`docs/next-version/RECORD-V2.md` section 11; the plan is `docs/next-version/STEP3-PLAN.md` section 2).
+//! (`docs/next-version/RECORD-V2.md` section 11; the plan is `docs/archive/STEP3-PLAN.md` section 2).
 //!
 //! They are display only: no screen unlocks a power from them, and no money rule reads them. Each is the
 //! server's own count from the chain's logs and is **either right or `null`**: a key whose input could not be

@@ -1,5 +1,5 @@
 //! How long money has stayed: the lowest balance each account had at any moment of a window
-//! (`docs/next-version/STEP3-PLAN.md` section 2.2).
+//! (`docs/archive/STEP3-PLAN.md` section 2.2).
 //!
 //! Two pieces, so the rule can be tested without a database:
 //!

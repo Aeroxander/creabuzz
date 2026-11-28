@@ -3,7 +3,7 @@
 //! listed), and the numbers the section derives from its rows (`next`, `atMostNow`,
 //! the cap).
 //!
-//! Every word, unit and bound is the plan's (`docs/next-version/STEP2-SERVER-APP-PLAN.md`
+//! Every word, unit and bound is the plan's (`docs/archive/STEP2-SERVER-APP-PLAN.md`
 //! section 1): amounts are decimal strings of whole dollar units (6 decimals),
 //! times unix seconds, counts and shares JSON integers, addresses and 32-byte
 //! values lower-case `0x` text.

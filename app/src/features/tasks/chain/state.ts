@@ -1,5 +1,5 @@
 /**
- * What a task is, from the network's numbers (`docs/next-version/STEP2-SERVER-APP-PLAN.md`, sections 4.4, 5.1 and 5.4).
+ * What a task is, from the network's numbers (`docs/archive/STEP2-SERVER-APP-PLAN.md`, sections 4.4, 5.1 and 5.4).
  * Pure functions, no reads: the state a person sees is a function of a row of the signed record and the clock. A team
  * member's own task record never changes what the app calls a state; it can only fail a tie.
  */

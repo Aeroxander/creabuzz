@@ -445,7 +445,7 @@ export const KIND_BOARD_STATE = 39008;
 /// total raised against the cap, each round's price and the money-weighted
 /// average, the stage and since when, "quiet since", the refund per 100 for
 /// each backing, and held and free Shares per account. Content is JSON with a
-/// `version` field (see `docs/next-version/PLANV2-M5-REPORT.md`). Only the
+/// `version` field (see `docs/archive/PLANV2-M5-REPORT.md`). Only the
 /// server writes it; a posted copy is refused. Republished when the numbers
 /// change.
 export const KIND_PROJECT_NUMBERS = 39009;

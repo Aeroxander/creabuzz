@@ -1,5 +1,5 @@
 //! The ranking index against real Postgres and the real run of the contracts (IX2 and IX3 of
-//! `docs/next-version/STEP3-PLAN.md` section 9.2): which rows are read, how a project is tied to its
+//! `docs/archive/STEP3-PLAN.md` section 9.2): which rows are read, how a project is tied to its
 //! coordinate, how the index is signed and when it is signed again. Ignored without infrastructure; run with
 //! `cargo test -p buzz-relay --lib chain_reader::explore -- --include-ignored --test-threads=1`.
 

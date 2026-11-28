@@ -1,5 +1,5 @@
 //! The held-for-a-window query against real Postgres (the H4, H8, H9 and H10 tests of
-//! `docs/next-version/STEP3-PLAN.md` section 9.2). Ignored without a database; run with
+//! `docs/archive/STEP3-PLAN.md` section 9.2). Ignored without a database; run with
 //! `cargo test -p buzz-relay --lib chain_reader::held_postgres_tests -- --include-ignored --test-threads=1`.
 //!
 //! Each test makes a scratch database holding only the two tables the query reads, created from the
