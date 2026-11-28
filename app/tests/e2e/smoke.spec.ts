@@ -165,7 +165,7 @@ test("Home shows projects, never sorted by money, at phone width", async ({
   expect(font).toContain("Geist");
 });
 
-test("a project shows its stage, its updates and its people; Tasks is marked as coming and Money is absent without investing", async ({
+test("a project shows its updates and its people, and Money is absent without investing", async ({
   page,
 }) => {
   const relay = createMockRelay();
@@ -185,13 +185,8 @@ test("a project shows its stage, its updates and its people; Tasks is marked as 
   await page.getByTestId("tab-people").click();
   await expect(page.getByTestId("project-people")).toContainText("Fay Founder");
   await expect(page.getByTestId("project-people")).toContainText("Max Mate");
-  await page.getByTestId("tab-tasks").click();
-  await expect(page.getByTestId("tasks-none")).toBeVisible();
   // Nothing set on the server, nothing shown: no Money tab at all.
   await expect(page.getByTestId("tab-money")).toHaveCount(0);
-  await expect(
-    page.getByRole("tab", { name: "Tasks", exact: true }),
-  ).toBeVisible();
   await expect(page.getByTestId("tab-link-home")).toHaveAttribute(
     "aria-current",
     "page",
@@ -199,7 +194,7 @@ test("a project shows its stage, its updates and its people; Tasks is marked as 
   await expectNoSidewaysScroll(page, "Project");
 });
 
-test("with investing on, the four tabs fit at 360, and a project that is not on the network says so and carries the legal line", async ({
+test("with investing on, the three tabs fit at 360, and a project that is not on the network says so and carries the legal line", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 360, height: 740 });
@@ -210,11 +205,11 @@ test("with investing on, the four tabs fit at 360, and a project that is not on 
   await expect(page.getByTestId("project-name")).toHaveText("Lantern", {
     timeout: 20_000,
   });
-  // Nothing says the team raised or holds money: the page has no stage line, only the four tabs.
+  // Nothing says the team raised or holds money: the page has no stage line, only the three tabs.
   await expect(page.getByTestId("stage-line")).toHaveCount(0);
   const rail = page.getByRole("tablist");
   const fits = await rail.evaluate((el) => el.scrollWidth <= el.clientWidth);
-  expect(fits, "the four tabs fit without scrolling at 360").toBe(true);
+  expect(fits, "the three tabs fit without scrolling at 360").toBe(true);
   await page.getByTestId("tab-money").click();
   await expect(page.getByTestId("money-none")).toContainText(
     "Not open to backers yet",

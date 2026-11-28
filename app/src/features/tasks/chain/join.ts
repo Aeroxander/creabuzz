@@ -4,7 +4,7 @@
  * row of a record, the record of a row, and whether they tie (`tieOf`), so one rule decides it everywhere.
  *
  * `joinTasks` is pure. `useTaskJoin` is the one hook that reads the project's task records (one read per project, shared
- * through the app's query cache with the Tasks tab) and joins them to the signed record's rows.
+ * through the app's query cache) and joins them to the signed record's rows.
  */
 import { useMemo } from "react";
 import type { ProjectNumbers } from "../../money/numbers";
@@ -35,7 +35,7 @@ interface JoinedTask {
 export interface TaskJoin {
   /** Every row of the queue, in the record's order (open first), with its record and tie. */
   rows: JoinedRow[];
-  /** Every team record, newest first as the Tasks tab reads them, with its plan. */
+  /** Every team record, newest first, with its plan. */
   tasks: JoinedTask[];
   /** The rows no team record names: "a planned task with no matching task here". */
   unmatched: JoinedRow[];

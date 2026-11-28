@@ -1,5 +1,5 @@
 // The project page shows a strip above its tabs for each task that is planned or running, before anything else about money
-// and whichever tab is open; "and n more" goes to the Tasks tab.
+// and whichever tab is open; "and n more" goes to the Money tab.
 import { applyServerSettings } from "@creaton/core/client/server-settings.ts";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -90,7 +90,7 @@ describe("the strips on the project page", () => {
     expect(screen.queryByTestId("planned-strips")).toBeNull();
   });
 
-  it('show at most three, and "and n more" opens the Tasks tab', async () => {
+  it('show at most three, and "and n more" opens the Money tab', async () => {
     await page((tasks) => {
       const list = tasks.list as Record<string, unknown>[];
       const template = taskRow(tasks, 7);
@@ -114,7 +114,7 @@ describe("the strips on the project page", () => {
     await waitFor(() =>
       expect(
         screen
-          .getByRole("tab", { name: "Tasks" })
+          .getByRole("tab", { name: "Money" })
           .getAttribute("aria-selected"),
       ).toBe("true"),
     );

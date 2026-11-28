@@ -350,18 +350,6 @@ export async function publishSigned(
 }
 
 /**
- * Post an event signed by `key` and say what the server answered, without judging it: a journey that wants a refusal reads the
- * server's own words from `text` (the status is 200 for a refusal too; the words say which).
- */
-export async function tryPublish(
-  event: ReturnType<typeof finalizeEvent>,
-  key: Uint8Array,
-): Promise<{ accepted: boolean; text: string }> {
-  const { text } = await post("/events", JSON.stringify(event), key);
-  return { accepted: /"accepted"\s*:\s*true/.test(text), text };
-}
-
-/**
  * The founder's own project record again, naming its launch in a `chain-key` tag (every other tag and the content kept), signed
  * by the founder's key and posted to the server as a signed request: what the app's "put it on the network" step writes.
  */

@@ -4,8 +4,7 @@
  * own call builders, readers and wallet: the door shut by the founder, the door shut because the team stopped checking in,
  * the project wound down by anyone after a long quiet, and a project wound down by its runner by choice. Each time the
  * backer's cash lands and is no less than the guard the sheet would have sent, a Back is refused in words, and the
- * contracts' own views (door, box, wind-down kind) say what the screens say. A Pair's call is refused for its own proposer
- * and runs when the other signer confirms. Run by `scripts/pot-app-loop.sh`; skipped without `M7_ANVIL_RPC`.
+ * contracts' own views (door, box, wind-down kind) say what the screens say. Run by `scripts/pot-app-loop.sh`; skipped without `M7_ANVIL_RPC`.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -29,7 +28,7 @@ import * as reads from "../../../packages/creaton-core/src/pot/pot-reads.ts";
 import { potProblem } from "../../src/features/money/pot-copy";
 import { WalletStepError } from "../../src/features/money/wallet";
 import { deployPot, walletOf } from "./pot-chain";
-import { accounts, call, passTime, RPC, rpc } from "./rpc";
+import { accounts, call, passTime, RPC } from "./rpc";
 
 const run = RPC ? describe : describe.skip;
 const DOLLAR = 1_000_000n;
@@ -333,87 +332,5 @@ run("Take out in every state, on the real contracts", () => {
     await takeOut(chain, project, b2, held2 / 2n);
     await takeOut(chain, project, b2, held2 - held2 / 2n);
     expect(await reads.balanceOf(read, project.shares, b2)).toBe(0n);
-  });
-
-  it("a Pair's call is refused for the signer who proposed it and runs when the other signer confirms", async () => {
-    const [admin, founder, second, payee] = await accounts();
-    const chain = await deployPot(admin);
-    for (const who of [founder, second, payee])
-      await walletOf(who).sendCalls([pot.faucetCall(chain.dollar)], CHAIN);
-    const project = await launchProject(chain, founder, "paired");
-    const tr = project.treasury;
-    await back(chain, project, payee, 200n * DOLLAR);
-    const [pairAddress] = (await view(
-      LAUNCHER_ABI,
-      chain.launcher,
-      "pairAddress",
-      [project.key, founder, second],
-    )) as [string];
-    const pair = pairAddress.toLowerCase();
-    await walletOf(founder).sendCalls(
-      [pot.handOverCall({ treasury: tr, next: pair, founderLeaves: false })],
-      CHAIN,
-    );
-    await walletOf(second).sendCalls(
-      [pot.makePairCall(chain.launcher, project.key, founder)],
-      CHAIN,
-    );
-    expect(
-      ((await view(TREASURY_ABI, tr, "runner"))[0] as string).toLowerCase(),
-    ).toBe(pair);
-
-    // Some time passes, then a check-in by either signer settles; the box has something in it.
-    await passTime(1200);
-    await walletOf(second).sendCalls(
-      [pot.pairCheckInCall(pair, `0x${"44".repeat(32)}`)],
-      CHAIN,
-    );
-    const draw = pot.drawCall({ treasury: tr, to: payee, amount: 1_000n });
-    // A draw straight from one signer is not the runner's: refused in words.
-    await expect(
-      walletOf(founder).sendCalls([draw], CHAIN),
-    ).rejects.toBeInstanceOf(WalletStepError);
-    await walletOf(founder).sendCalls(
-      [pot.pairProposeCall(pair, draw.to, draw.data)],
-      CHAIN,
-    );
-    const logs = await rpc<{ topics: string[]; data: string }[]>(
-      "eth_getLogs",
-      [{ address: pair, fromBlock: "0x0", toBlock: "latest" }],
-    );
-    expect(logs.length).toBeGreaterThan(0);
-    const { proposalOf } = await import(
-      "../../src/features/pot/use-pair-waiting"
-    );
-    const { topicOf } = await import(
-      "../../../packages/creaton-core/src/launchpad/work.ts"
-    );
-    const wallet2 = walletOf(second);
-    const found = await wallet2.getLogs({
-      address: pair,
-      topics: [topicOf("Proposed(bytes32,address,address,bytes,uint256)")],
-      from: 0,
-      to: await wallet2.blockNumber(),
-    });
-    const proposal = proposalOf(found[0]!, pair)!;
-    const confirm = pot.pairConfirmCall(
-      pair,
-      proposal.target,
-      proposal.data,
-      proposal.nonce,
-    );
-    // The proposer's own confirmation does not count as the other signer's.
-    await expect(
-      walletOf(founder).sendCalls([confirm], CHAIN),
-    ).rejects.toBeInstanceOf(WalletStepError);
-    const before = await reads.balanceOf(read, chain.dollar, payee);
-    await wallet2.sendCalls([confirm], CHAIN);
-    expect((await reads.balanceOf(read, chain.dollar, payee)) - before).toBe(
-      1_000n,
-    );
-    // The same call cannot be confirmed twice.
-    await expect(wallet2.sendCalls([confirm], CHAIN)).rejects.toBeInstanceOf(
-      WalletStepError,
-    );
   });
 });

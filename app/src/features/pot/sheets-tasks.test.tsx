@@ -273,7 +273,6 @@ describe("Take out on a strip", () => {
         address={address}
         numbers={numbers}
         onOpenMoney={() => {}}
-        onOpenTasks={() => {}}
         project={project}
       />,
     );

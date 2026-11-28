@@ -1,19 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  acceptRecord,
-  agreeRecord,
-  checksOwnWork,
-  nextFor,
-  payOwed,
-  payRecord,
-  postTaskRecord,
-  type ProjectTask,
-  projectTasks,
-  readUsd,
-  type TaskRecordEvent,
-  takeRecord,
-  type WorkerLinks,
-} from "./task-record";
+import { projectTasks, readUsd, type TaskRecordEvent } from "./task-record";
 
 const FOUNDER = "f".repeat(64);
 const MATE = "e".repeat(64);
@@ -75,9 +61,6 @@ describe("a project's tasks", () => {
       openToAnyone: true,
       worker: null,
     });
-    expect(nextFor(t, STRANGER, TEAM)).toBe("take");
-    expect(nextFor(t, MATE, TEAM)).toBeNull();
-    expect(nextFor(t, null, TEAM)).toBe("take");
   });
 
   it("reads dollars only as whole numbers in bounds, as the server holds them", () => {
@@ -98,7 +81,6 @@ describe("a project's tasks", () => {
     expect(t.worker).toBe(STRANGER);
     expect(t.payTo).toBe(PAY_TO);
     expect(t.state).toBe("working");
-    expect(nextFor(t, STRANGER, TEAM)).toBe("hand-in");
     // Given up: the next take has it, and the one who gave up is out.
     const gaveUp = step(STRANGER, task, "give-up");
     [t] = read([task, first, late, gaveUp]);
@@ -164,10 +146,6 @@ describe("a project's tasks", () => {
     // It is not a second wallet either: the real one beside it still reads.
     const real = step(STRANGER, open, "accept", [["task-pay-to", PAY_TO]], 20);
     expect(read([open, zero, real])[0]?.payTo).toBe(PAY_TO);
-    // And no record is ever written that names it.
-    expect(
-      takeRecord(COORD, read([open])[0] as ProjectTask, ZERO).tags,
-    ).not.toContainEqual(["task-pay-to", ZERO]);
   });
 
   it("is accepted only by someone on the team who is not the worker nor an agent, and keeps the payment", () => {
@@ -177,8 +155,6 @@ describe("a project's tasks", () => {
     let [t] = read([task, take, piece]);
     expect(t.state).toBe("submitted");
     expect(t.handIn?.id).toBe(piece.id);
-    expect(nextFor(t, FOUNDER, TEAM)).toBe("accept");
-    expect(nextFor(t, STRANGER, TEAM)).toBeNull();
     const own = step(STRANGER, task, "confirm", [["task-evidence", piece.id]]);
     const byAgent = step(AGENT, task, "confirm", [["task-evidence", piece.id]]);
     const team = new Set([...TEAM, AGENT]);
@@ -218,23 +194,17 @@ describe("a project's tasks", () => {
       paidTx: null,
       acceptedAt: 1_800_000_200,
     });
-    expect(payOwed(t)).toBe(40);
-    // The team may pay it; the worker and strangers may not.
-    expect(nextFor(t, FOUNDER, TEAM)).toBe("pay");
-    expect(nextFor(t, MATE, TEAM)).toBe("pay");
-    expect(nextFor(t, STRANGER, TEAM)).toBeNull();
-    expect(nextFor(t, null, TEAM)).toBeNull();
     // The payment's record is a second confirmation of the same piece.
-    const pay = {
-      ...record(
-        FOUNDER,
-        payRecord(COORD, t, piece.id, TX).tags.filter(
-          (tag) => tag[0] !== "a" && tag[0] !== "l",
-        ),
-        "{}",
-        1_800_000_900,
-      ),
-    };
+    const pay = step(
+      FOUNDER,
+      task,
+      "confirm",
+      [
+        ["task-evidence", piece.id],
+        ["task-paid", TX],
+      ],
+      1_800_000_900,
+    );
     [t] = read([task, take, piece, accept, pay]);
     expect(t).toMatchObject({
       state: "accepted",
@@ -242,8 +212,6 @@ describe("a project's tasks", () => {
       acceptedBy: FOUNDER,
       acceptedAt: 1_800_000_200,
     });
-    expect(payOwed(t)).toBeNull();
-    expect(nextFor(t, FOUNDER, TEAM)).toBeNull();
     // A payment named for another piece, or by the worker, never makes the accepted piece paid.
     const other = step(FOUNDER, task, "confirm", [
       ["task-evidence", "9".repeat(64)],
@@ -265,132 +233,5 @@ describe("a project's tasks", () => {
     const ok = step(FOUNDER, free, "confirm", [["task-evidence", done.id]]);
     const [f] = read([free, done, ok]);
     expect(f.state).toBe("accepted");
-    expect(payOwed(f)).toBeNull();
-  });
-
-  it("writes the tags the server and the command line read", () => {
-    const post = postTaskRecord(COORD, "  Translate the guide ", 40);
-    expect(post.kind).toBe(47003);
-    expect(post.tags).toContainEqual(["task-usd", "40"]);
-    expect(post.tags).toContainEqual(["task-what", "Translate the guide"]);
-    expect(post.tags).toContainEqual(["task-size", "small"]);
-    expect(post.tags.some((t) => t[0] === "task-helper")).toBe(false);
-    const task = read([openTask()])[0] as ProjectTask;
-    expect(takeRecord(COORD, task, PAY_TO).tags).toContainEqual([
-      "task-pay-to",
-      PAY_TO,
-    ]);
-    expect(
-      takeRecord(COORD, task, "0xnope").tags.some(
-        (t) => t[0] === "task-pay-to",
-      ),
-    ).toBe(false);
-    const accept = acceptRecord(COORD, task, "9".repeat(64), TX);
-    expect(accept.tags).toContainEqual(["task-paid", TX]);
-    expect(accept.tags).toContainEqual(["task-part", "confirm"]);
-    expect(
-      acceptRecord(COORD, task, "9".repeat(64), null).tags.some(
-        (t) => t[0] === "task-paid",
-      ),
-    ).toBe(false);
-  });
-});
-
-describe("checking one's own work, asked before any money moves", () => {
-  // A teammate who is not an agent, and an agent the founder runs that is on the team's side of the table.
-  const submittedBy = (worker: string) => {
-    const task = openTask();
-    const take = step(worker, task, "take");
-    const piece = step(worker, task, "evidence");
-    const [t] = projectTasks(
-      [task, take, piece],
-      COORD,
-      new Set([FOUNDER, MATE]),
-      new Set([worker]),
-    );
-    return t as ProjectTask;
-  };
-  const links = (over: Partial<WorkerLinks> = {}): WorkerLinks => ({
-    founder: FOUNDER,
-    agents: new Set([AGENT]),
-    operators: new Map([[AGENT, MATE]]),
-    ...over,
-  });
-
-  it("is refused for the person who runs the worker agent when the project lists someone else", () => {
-    const t = submittedBy(AGENT);
-    const team = new Set([FOUNDER, MATE]);
-    // MATE runs the agent: the server refuses their confirmation, so the press must not be offered.
-    expect(checksOwnWork(t, MATE, team, links())).toBe(true);
-    expect(nextFor(t, MATE, team, links())).toBe("own-work");
-    // The founder did not run it: they may accept.
-    expect(checksOwnWork(t, FOUNDER, team, links())).toBe(false);
-    expect(nextFor(t, FOUNDER, team, links())).toBe("accept");
-    // Without the links nothing is known, as before.
-    expect(nextFor(t, MATE, team)).toBe("accept");
-  });
-
-  it("lets the founder check their own agent's work only while no other person is listed", () => {
-    const own = links({ operators: new Map([[AGENT, FOUNDER]]) });
-    const t = submittedBy(AGENT);
-    expect(checksOwnWork(t, FOUNDER, new Set([FOUNDER, MATE]), own)).toBe(true);
-    expect(nextFor(t, FOUNDER, new Set([FOUNDER, MATE]), own)).toBe("own-work");
-    // Alone, or with only another agent listed, the server lets them.
-    expect(checksOwnWork(t, FOUNDER, new Set([FOUNDER]), own)).toBe(false);
-    const withAgentMate = links({
-      operators: new Map([[AGENT, FOUNDER]]),
-      agents: new Set([AGENT, MATE]),
-    });
-    expect(
-      checksOwnWork(t, FOUNDER, new Set([FOUNDER, MATE]), withAgentMate),
-    ).toBe(false);
-  });
-});
-
-describe("the helper's yes, with the wallet they will be paid at", () => {
-  /** A task naming `STRANGER` as its helper, paying 40 dollars. */
-  const namedTask = () =>
-    record(FOUNDER, [
-      ["task-part", "task"],
-      ["task-what", "Translate the guide"],
-      ["task-usd", "40"],
-      ["task-helper", STRANGER],
-    ]);
-  const asEvent = (who: string, template: ReturnType<typeof agreeRecord>) =>
-    record(
-      who,
-      template.tags.filter((t) => t[0] !== "a" && t[0] !== "l"),
-      template.content,
-    );
-
-  it("is an accept step carrying the wallet, and the task then reads that wallet as the one to be paid at", () => {
-    const task = namedTask();
-    const [before] = read([task]);
-    expect(before?.state).toBe("offered");
-    expect(before?.payTo).toBeNull();
-    const [t] = read([task]);
-    if (!t) throw new Error("no task");
-    const yes = agreeRecord(COORD, t, PAY_TO);
-    expect(yes.tags).toEqual(
-      expect.arrayContaining([
-        ["task-part", "accept"],
-        ["task-pay-to", PAY_TO],
-        ["task", task.id],
-      ]),
-    );
-    const [after] = read([task, asEvent(STRANGER, yes)]);
-    expect(after?.payTo).toBe(PAY_TO);
-    expect(after?.state).toBe("working");
-  });
-
-  it("names no wallet when someone else signs it, and refuses what is not an address", () => {
-    const task = namedTask();
-    const [t] = read([task]);
-    if (!t) throw new Error("no task");
-    const yes = agreeRecord(COORD, t, PAY_TO);
-    expect(read([task, asEvent(MATE, yes)])[0]?.payTo).toBeNull();
-    expect(read([task, asEvent(OTHER, yes)])[0]?.payTo).toBeNull();
-    expect(() => agreeRecord(COORD, t, "0xnot")).toThrow(/address/);
-    expect(() => agreeRecord(COORD, t, "")).toThrow(/address/);
   });
 });

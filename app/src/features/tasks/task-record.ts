@@ -1,5 +1,5 @@
 /**
- * A project's tasks, read from its records, and the records the Tasks tab writes. Pure, so `task-record.test.ts` holds
+ * A project's tasks, read from its records. Pure, so `task-record.test.ts` holds
  * it to the server's rules (`crates/buzz-relay/src/handlers/launch_update_authority.rs`) and the command line's
  * (`buzz launchpad tasks`):
  *
@@ -13,15 +13,11 @@
  *
  * A step counts only from the party allowed to sign it, whatever else is stored.
  */
-import { KIND_LAUNCH_UPDATE } from "@creaton/core/kinds.ts";
-
 export const TASK_LABEL = "creaton-task";
 /** The most a task may pay, in whole dollars (the server's bound). */
 const TASK_USD_MAX = 100_000;
-/** The longest "what" a task may say. */
-export const TASK_WHAT_MAX = 280;
 
-export type TaskState =
+type TaskState =
   | "open"
   | "offered"
   | "working"
@@ -78,7 +74,7 @@ const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const NO_WALLET = /^0x0{40}$/i;
 
 /** Whether `value` is a wallet a pay can go to: an address that is not the zero address. */
-export function isWallet(value: string | null): value is string {
+function isWallet(value: string | null): value is string {
   return value !== null && ADDRESS.test(value) && !NO_WALLET.test(value);
 }
 const TX = /^0x[0-9a-fA-F]{64}$/;
@@ -301,228 +297,4 @@ function readTask(
     acceptedAt: accepted?.created_at ?? null,
     paidTx: paid,
   };
-}
-
-/** A record the app signs: kind, words and tags. */
-export interface RecordTemplate {
-  kind: number;
-  content: string;
-  tags: string[][];
-  created_at: number;
-}
-
-const nowSeconds = () => Math.floor(Date.now() / 1000);
-
-/** The size the command line and the web app read, from what the task pays. */
-function sizeFor(usd: number): "small" | "medium" | "large" {
-  return usd <= 100 ? "small" : usd <= 1_000 ? "medium" : "large";
-}
-
-/** A task open to anyone that pays `usd` whole dollars. The finish line is what it says. */
-export function postTaskRecord(
-  coordinate: string,
-  what: string,
-  usd: number,
-): RecordTemplate {
-  const words = what.trim().slice(0, TASK_WHAT_MAX);
-  return {
-    kind: KIND_LAUNCH_UPDATE,
-    content: JSON.stringify({ title: "Task", body: words }),
-    tags: [
-      ["a", coordinate],
-      ["l", TASK_LABEL],
-      ["task-part", "task"],
-      ["task-what", words],
-      ["task-done", words],
-      ["task-size", sizeFor(usd)],
-      ["task-usd", String(usd)],
-    ],
-    created_at: nowSeconds(),
-  };
-}
-
-function stepRecord(
-  coordinate: string,
-  task: ProjectTask,
-  part: string,
-  title: string,
-  extra: string[][],
-  note = "",
-): RecordTemplate {
-  return {
-    kind: KIND_LAUNCH_UPDATE,
-    content: JSON.stringify(
-      note ? { title, body: note, note } : { title, body: "" },
-    ),
-    tags: [
-      ["a", coordinate],
-      ["l", TASK_LABEL],
-      ["task-part", part],
-      ["e", task.id],
-      ["task", task.id],
-      ["p", task.author],
-      ...extra,
-    ],
-    created_at: nowSeconds(),
-  };
-}
-
-/** Take an open task, naming the wallet to be paid at when there is one. */
-export function takeRecord(
-  coordinate: string,
-  task: ProjectTask,
-  payTo: string | null,
-): RecordTemplate {
-  return stepRecord(
-    coordinate,
-    task,
-    "take",
-    "Task taken",
-    isWallet(payTo) ? [["task-pay-to", payTo]] : [],
-  );
-}
-
-/**
- * The yes of the helper a task names, with the wallet they connected: their own `accept` step carrying `task-pay-to` (the
- * server allows that tag on an `accept` as well as on a `take`). The wallet is refused here unless it is an address.
- */
-export function agreeRecord(
-  coordinate: string,
-  task: ProjectTask,
-  payTo: string,
-): RecordTemplate {
-  if (!isWallet(payTo))
-    throw new Error("A wallet to be paid at is an address.");
-  return stepRecord(coordinate, task, "accept", "Agreed to the task", [
-    ["task-pay-to", payTo],
-  ]);
-}
-
-/** Hand work in on a task, with a few words of what was done and where to look. */
-export function handInRecord(
-  coordinate: string,
-  task: ProjectTask,
-  note: string,
-): RecordTemplate {
-  return stepRecord(
-    coordinate,
-    task,
-    "evidence",
-    "Work handed in",
-    [],
-    note.trim().slice(0, 1_000),
-  );
-}
-
-/** Accept a piece of handed-in work, with the payment's transaction when money moved. */
-export function acceptRecord(
-  coordinate: string,
-  task: ProjectTask,
-  handIn: string,
-  paidTx: string | null,
-): RecordTemplate {
-  const extra: string[][] = [["task-evidence", handIn]];
-  // The server counts one payment named in two spellings as two, so the transaction is always written in lower case.
-  if (paidTx && TX.test(paidTx))
-    extra.push(["task-paid", paidTx.toLowerCase()]);
-  return stepRecord(coordinate, task, "confirm", "Work accepted", extra);
-}
-
-/**
- * The record of a payment made after the work was accepted: a second confirmation of the same piece, naming the payment's
- * transaction. The reader takes the first payment recorded for the accepted piece, so the task then reads as paid.
- */
-export function payRecord(
-  coordinate: string,
-  task: ProjectTask,
-  handIn: string,
-  paidTx: string,
-): RecordTemplate {
-  return stepRecord(coordinate, task, "confirm", "Pay recorded", [
-    ["task-evidence", handIn],
-    ["task-paid", paidTx.toLowerCase()],
-  ]);
-}
-
-/** Stop a task on the team's list (the plan for it was withdrawn on the network): the words say why, as the server requires. */
-export function cancelRecord(
-  coordinate: string,
-  task: ProjectTask,
-  note: string,
-): RecordTemplate {
-  return stepRecord(
-    coordinate,
-    task,
-    "cancel",
-    "Task stopped",
-    [],
-    note.trim().slice(0, 1_000),
-  );
-}
-
-/** What the app knows about who runs whom, so it can tell when accepting would be checking one's own work. */
-export interface WorkerLinks {
-  /** The project's founder. */
-  founder: string;
-  /** Accounts labelled as agents. */
-  agents: ReadonlySet<string>;
-  /** Each agent account and the person who runs it, from the agent's own profile. */
-  operators: ReadonlyMap<string, string>;
-}
-
-/**
- * Whether `me` accepting this task's work would be checking their own work or their agent's, which the server refuses.
- * It lets the founder do it only while the project lists no other person who could (the server's `founder_alone`). The
- * app asks before any money moves: a payment sent for a confirmation the server then refuses cannot be taken back.
- */
-export function checksOwnWork(
-  task: ProjectTask,
-  me: string,
-  team: ReadonlySet<string>,
-  links: WorkerLinks,
-): boolean {
-  const worker = task.worker;
-  if (worker === null) return false;
-  if (worker !== me && links.operators.get(worker) !== me) return false;
-  const another = [...team].some(
-    (member) =>
-      member !== links.founder &&
-      member !== worker &&
-      !links.agents.has(member),
-  );
-  return !(me === links.founder && !another);
-}
-
-/** What the person can do on a task, from where they stand. */
-export function nextFor(
-  task: ProjectTask,
-  me: string | null,
-  team: ReadonlySet<string>,
-  links?: WorkerLinks,
-): "take" | "hand-in" | "accept" | "own-work" | "pay" | null {
-  if (!me) return task.state === "open" ? "take" : null;
-  if (task.state === "open" && !team.has(me)) return "take";
-  if (
-    task.worker === me &&
-    (task.state === "working" || task.state === "offered")
-  )
-    return "hand-in";
-  if (task.state === "submitted" && team.has(me) && task.worker !== me)
-    return links && checksOwnWork(task, me, team, links)
-      ? "own-work"
-      : "accept";
-  // Accepted work whose pay is still owed: the team may pay it (the same people who may accept it).
-  if (payOwed(task) !== null && team.has(me) && task.worker !== me)
-    return links && checksOwnWork(task, me, team, links) ? null : "pay";
-  return null;
-}
-
-/**
- * What an accepted task still owes its worker, in whole dollars, or null: the work is accepted, it names a pay, and no payment
- * is recorded for it. A task is never shown as paid unless its payment's transaction is on record.
- */
-export function payOwed(task: ProjectTask): number | null {
-  return task.state === "accepted" && task.usd !== null && task.paidTx === null
-    ? task.usd
-    : null;
 }

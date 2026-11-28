@@ -22,8 +22,7 @@ import { smallDollarsText } from "../../../pot/pot-words";
 import type { Project } from "../../../project/project-record";
 import type { ProjectTask } from "../../task-record";
 import { chainRowOf, nowOf } from "../state";
-import type { TaskSlotProps } from "../slot-props";
-import { HolderLines } from "./HolderLines";
+import type { ChainTask } from "../types";
 import { PlannedLines } from "./PlannedLines";
 import { PlannedSection } from "./PlannedSection";
 import { PlannedStrips } from "./PlannedStrips";
@@ -75,27 +74,35 @@ afterEach(() => {
 
 const dollars = (raw: bigint) => `${smallDollarsText(raw)} dollars`;
 
-function props(
-  numbers: ProjectNumbers,
-  task: ProjectTask,
-  over: Partial<TaskSlotProps> = {},
-): TaskSlotProps {
-  const queue = queueOf(numbers);
+interface LinesProps {
+  task: ProjectTask;
+  chain: ChainTask | null;
+  numbers: ProjectNumbers;
+  now: number;
+}
+
+function props(numbers: ProjectNumbers, task: ProjectTask): LinesProps {
   return {
-    project,
     task,
-    chain: chainRowOf(queue, task.id),
-    tasks: queue,
+    chain: chainRowOf(queueOf(numbers), task.id),
     numbers,
-    me: null,
-    address: null,
-    team: new Set(),
-    agents: new Set(),
-    operators: new Map(),
-    profiles: { [WORKER]: { name: "Pat" } },
     now: nowOf(numbers.asOf.time),
-    ...over,
   };
+}
+
+/** The two lines of a plan on a task's own row: nothing for a task that was taken or has ended. */
+function HolderLines({ chain, task, numbers, now }: LinesProps) {
+  if (chain?.state !== "announced") return null;
+  return (
+    <PlannedLines
+      now={now}
+      numbers={numbers}
+      profiles={{ [WORKER]: { name: "Pat" } }}
+      row={chain}
+      task={task}
+      withAge={false}
+    />
+  );
 }
 
 describe("a planned task in two lines, on its card", () => {
@@ -202,16 +209,13 @@ function strips(
   over: { address?: string | null; tasks?: ProjectTask[] } = {},
 ) {
   records = over.tasks ?? [];
-  const calls = { tasks: 0, money: 0 };
+  const calls = { money: 0 };
   wrap(
     <PlannedStrips
       address={over.address ?? null}
       numbers={numbers}
       onOpenMoney={() => {
         calls.money += 1;
-      }}
-      onOpenTasks={() => {
-        calls.tasks += 1;
       }}
       project={project}
     />,
@@ -275,7 +279,7 @@ describe("the strips above a project's tabs", () => {
     }
   });
 
-  it('shows at most three, and "and 2 more" opens the Tasks tab', () => {
+  it('shows at most three, and "and 2 more" opens the Money tab', () => {
     const numbers = crowded(2);
     expect(
       queueOf(numbers).list.filter(
@@ -286,7 +290,7 @@ describe("the strips above a project's tabs", () => {
     expect(screen.getAllByTestId("planned-strip")).toHaveLength(3);
     const more = screen.getByRole("button", { name: /^and \d+ more$/ });
     fireEvent.click(more);
-    expect(calls.tasks).toBe(1);
+    expect(calls.money).toBe(1);
   });
 
   it("draws nothing without a queue, with no planned or running task, or with a queue that could not be read", () => {

@@ -2,12 +2,10 @@
 /**
  * What the money screens read and send, against the real contracts on a local chain: the Back sheet's reader and its
  * plan, the Take out sheet's reader, the allowance state, a grant and what a member keeps on their own exit, a project's
- * parts from the Launcher, and a Pair's whole round (propose, read the waiting call from the log, say it in words,
- * confirm exactly what was proposed). Run by `scripts/pot-app-loop.sh`; skipped without `M7_ANVIL_RPC`.
+ * parts from the Launcher. Run by `scripts/pot-app-loop.sh`; skipped without `M7_ANVIL_RPC`.
  */
 import { describe, expect, it } from "vitest";
 import {
-  decodeCall,
   decodeReturn,
   encodeCall,
 } from "../../../packages/creaton-core/src/pot/abi-codec.ts";
@@ -23,15 +21,12 @@ import {
   chainKeyOf,
   projectIdOf,
 } from "../../../packages/creaton-core/src/launchpad/project-chain.ts";
-import { topicOf } from "../../../packages/creaton-core/src/launchpad/work.ts";
 import { readBack } from "../../src/features/pot/back-read";
-import { describePotCall } from "../../src/features/pot/pair-terms";
 import { readTakeOut } from "../../src/features/pot/takeout-read";
-import { proposalOf } from "../../src/features/pot/use-pair-waiting";
 import type { ProjectNumbers } from "../../src/features/money/numbers";
 import type { MoneyTarget } from "../../src/features/pot/target";
 import { deployPot, walletOf } from "./pot-chain";
-import { accounts, call, passTime, RPC } from "./rpc";
+import { accounts, call, RPC } from "./rpc";
 
 const run = RPC ? describe : describe.skip;
 const DOLLAR = 1_000_000n;
@@ -54,7 +49,7 @@ async function view(
 }
 
 run("the money screens against the real contracts", () => {
-  it("reads and sends what the sheets show, through a Pair's round", async () => {
+  it("reads and sends what the sheets show", async () => {
     const [admin, founder, backer, second] = await accounts();
     const chain = await deployPot(admin);
     const wallets = Object.fromEntries(
@@ -182,144 +177,5 @@ run("the money screens against the real contracts", () => {
     expect(
       await state.accruedOf(read, parts.vester, ids[0]!),
     ).toBeLessThanOrEqual(grant.total);
-
-    // A Pair: the founder offers the seat to the Pair of (founder, second); the second signer makes it and it runs the project.
-    const [pairAddress] = (await view(
-      LAUNCHER_ABI,
-      chain.launcher,
-      "pairAddress",
-      [key, founder, second],
-    )) as [string];
-    await wallets[founder].sendCalls(
-      [
-        pot.handOverCall({
-          treasury: parts.treasury,
-          next: pairAddress,
-          founderLeaves: false,
-        }),
-      ],
-      CHAIN,
-    );
-    await wallets[second].sendCalls(
-      [pot.makePairCall(chain.launcher, key, founder)],
-      CHAIN,
-    );
-    const pair = pairAddress.toLowerCase();
-    expect(
-      (
-        (await view(TREASURY_ABI, parts.treasury, "runner"))[0] as string
-      ).toLowerCase(),
-    ).toBe(pair);
-
-    // Some time passes and the Pair's founder checks in (which settles): the box has filled a little. The Treasury keeps the
-    // box as of its last settle, which is why the screens also read the server's reading of it.
-    await passTime(800);
-    await wallets[founder].sendCalls(
-      [pot.pairCheckInCall(pairAddress, `0x${"5a".repeat(32)}`)],
-      CHAIN,
-    );
-    expect(
-      (await view(TREASURY_ABI, parts.treasury, "box"))[0] as bigint,
-    ).toBeGreaterThan(5_000n);
-    // The founder proposes a draw through the Pair. The waiting call is read from the Pair's own log, said in words with the
-    // account and amount, and is still waiting on the chain.
-    const draw = pot.drawCall({
-      treasury: parts.treasury,
-      to: backer,
-      amount: 5_000n,
-    });
-    await wallets[founder].sendCalls(
-      [pot.pairProposeCall(pair, draw.to, draw.data)],
-      CHAIN,
-    );
-    const topic = topicOf("Proposed(bytes32,address,address,bytes,uint256)");
-    const logs = await wallets[second].getLogs({
-      address: pair,
-      topics: [topic],
-      from: 0,
-      to: await wallets[second].blockNumber(),
-    });
-    expect(logs).toHaveLength(1);
-    const proposal = proposalOf(logs[0]!, pair)!;
-    expect(proposal.by).toBe(founder);
-    expect(proposal.target).toBe(draw.to);
-    expect(proposal.data).toBe(draw.data);
-    const terms = describePotCall(
-      numbers,
-      proposal.target,
-      proposal.data,
-      (a) => a,
-    );
-    expect(terms.kind).toBe("draw");
-    expect(terms.words).toBe(
-      `Draw 0.005 dollars from the allowance box to ${backer} (${backer}).`,
-    );
-    const waiting = await state.readProposal(read, pair, proposal.id);
-    expect(waiting?.proposer).toBe(founder);
-    // The proposer cannot confirm their own call; the second signer confirms exactly what was proposed.
-    const mine = pot.pairConfirmCall(
-      pair,
-      proposal.target,
-      proposal.data,
-      proposal.nonce,
-    );
-    expect(
-      decodeCall(
-        (
-          await import(
-            "../../../packages/creaton-core/src/pot/abis.generated.ts"
-          )
-        ).PAIR_ABI,
-        mine.data,
-      )?.name,
-    ).toBe("confirm");
-    const dollarsBefore = await reads.balanceOf(read, chain.dollar, backer);
-    await wallets[second].sendCalls([mine], CHAIN);
-    expect(
-      (await reads.balanceOf(read, chain.dollar, backer)) - dollarsBefore,
-    ).toBe(5_000n);
-    // Once it ran, it is no longer waiting.
-    expect(await state.readProposal(read, pair, proposal.id)).toBeNull();
-
-    // The Pair forfeits the second signer's grant without their say: the call a Pair can hold is the Treasury's own, it reads
-    // as a forfeit (never "unknown"), and both signers' round announces the burn on the Vester.
-    const forfeit = pot.runnerForfeitCall(parts.treasury, ids[0]!);
-    await wallets[founder].sendCalls(
-      [pot.pairProposeCall(pair, forfeit.to, forfeit.data)],
-      CHAIN,
-    );
-    const later = await wallets[second].getLogs({
-      address: pair,
-      topics: [topic],
-      from: 0,
-      to: await wallets[second].blockNumber(),
-    });
-    const forfeitProposals = later
-      .map((log) => proposalOf(log, pair)!)
-      .filter((p) => p.data === forfeit.data);
-    expect(forfeitProposals).toHaveLength(1);
-    const forfeitTerms = describePotCall(
-      numbers,
-      forfeitProposals[0]!.target,
-      forfeitProposals[0]!.data,
-      (a) => a,
-    );
-    expect(forfeitTerms.kind).toBe("forfeit");
-    const days = Math.max(1, Math.round(chain.unit / 86_400));
-    expect(forfeitTerms.words).toBe(
-      `Announce that the part of Team Share grant number ${ids[0]} that has not unlocked is removed after a public notice of ${days} ${days === 1 ? "day" : "days"}. The person keeps what has unlocked.`,
-    );
-    await wallets[second].sendCalls(
-      [
-        pot.pairConfirmCall(
-          pair,
-          forfeitProposals[0]!.target,
-          forfeitProposals[0]!.data,
-          forfeitProposals[0]!.nonce,
-        ),
-      ],
-      CHAIN,
-    );
-    expect((await state.readGrant(read, parts.vester, ids[0]!)).state).toBe(1);
   });
 });

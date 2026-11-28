@@ -26,8 +26,3 @@ export function durationWords(secs: number): string {
   }
   return parts.join(" ");
 }
-
-/** A notice in words: the same units as every other length of time here. */
-export function noticeWords(secs: number): string {
-  return durationWords(secs);
-}

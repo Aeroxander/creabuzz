@@ -1,14 +1,13 @@
-// Whether a network task ties to the team's record of it, and whether Accept may be offered: each refusal, in order, on the
+// Whether a network task ties to the team's record of it: each refusal, in order, on the
 // example's own rows and on the two-plans fixture the relay and the server also use (one record planned twice).
 import { describe, expect, it } from "vitest";
 import { parsedExample } from "../../../../tests/helpers/numbers-v2-parse";
-import type { ProjectTask, WorkerLinks } from "../task-record";
-import { acceptGate, chainRowOf, recordWordsOf, tieOf } from "./state";
-import type { ChainTask, ChainTaskNow, ChainTasks } from "./types";
+import type { ProjectTask } from "../task-record";
+import { chainRowOf, tieOf } from "./state";
+import type { ChainTask, ChainTasks } from "./types";
 
 const example = parsedExample();
 const queue = example.tasks as ChainTasks;
-const at = example.asOf.time;
 /** The team's own record of a network task, as the app would read it once the worker took it and named the same wallet. */
 function recordOf(
   chain: ChainTask,
@@ -136,27 +135,6 @@ describe("tieOf", () => {
   });
 });
 
-describe("recordWordsOf: the team's words for a plan made for that very record", () => {
-  it("is the record's words when its id is the plan's `what`, even after the task was paid or stopped", () => {
-    expect(recordWordsOf(taken, recordOf(taken))).toBe("Translate the guide");
-    const paid = recordOf(taken, {
-      state: "accepted",
-      paidTx: `0x${"1".repeat(64)}`,
-    });
-    expect(tieOf(taken, paid)).toEqual({ ok: false, why: "already-paid" });
-    expect(recordWordsOf(taken, paid)).toBe("Translate the guide");
-    expect(recordWordsOf(taken, recordOf(taken, { state: "cancelled" }))).toBe(
-      "Translate the guide",
-    );
-  });
-  it("is nothing with no record, or a record that is another task's", () => {
-    expect(recordWordsOf(taken, null)).toBeNull();
-    expect(
-      recordWordsOf(taken, recordOf(taken, { id: "e".repeat(64) })),
-    ).toBeNull();
-  });
-});
-
 describe("one plan per task record: the lowest-serial live plan binds, a later one is a repeat", () => {
   it("the example plans one task twice; the first binds and the second never ties", () => {
     expect(repeat.repeatOf).toBe(first.serial);
@@ -167,189 +145,5 @@ describe("one plan per task record: the lowest-serial live plan binds, a later o
       ok: false,
       why: "repeat",
     });
-  });
-});
-
-describe("acceptGate: Accept is offered only when the network and the record agree", () => {
-  const founder = example.runner.address;
-  const links: WorkerLinks = {
-    founder: "a".repeat(64),
-    agents: new Set(),
-    operators: new Map(),
-  };
-  const team = new Set(["a".repeat(64), "c".repeat(64)]);
-  const record = recordOf(taken, { state: "submitted" });
-  const inputs = (over: Partial<Parameters<typeof acceptGate>[0]> = {}) => ({
-    fresh: taken as ChainTaskNow,
-    shown: taken,
-    relay: record,
-    now: at,
-    me: "c".repeat(64),
-    address: founder,
-    runner: example.runner,
-    team,
-    links,
-    ...over,
-  });
-  const refused = (over: Partial<Parameters<typeof acceptGate>[0]>) => {
-    const gate = acceptGate(inputs(over));
-    if (gate.ok) throw new Error("the gate was open");
-    return gate;
-  };
-
-  it("is open when the task is taken, ties, is not near its deadline and the sender runs the project", () => {
-    expect(acceptGate(inputs())).toEqual({ ok: true });
-  });
-
-  it("refuses when the network no longer says taken, and says what it says", () => {
-    for (const state of [
-      "paid",
-      "rejected",
-      "returned",
-      "cancelled",
-      "lapsed",
-      "announced",
-    ] as const) {
-      const gate = refused({ fresh: { ...taken, state } });
-      expect(gate.sentence).toContain("not waiting for payment on the network");
-      expect(gate.sentence).toMatch(/Nothing can be paid\.$/);
-    }
-    expect(refused({ fresh: { ...taken, state: "paid" } }).sentence).toContain(
-      "already paid",
-    );
-  });
-
-  it("refuses when the deadline passed, or is within a minute (and offers no send-back after it)", () => {
-    const deadline = taken.deadline ?? 0;
-    const late = refused({ now: deadline });
-    expect(late.sentence).toMatch(/^The deadline passed on /);
-    expect(late.sendBackOffered).toBe(false);
-    expect(refused({ now: deadline + 5_000 }).sentence).toMatch(
-      /^The deadline passed on /,
-    );
-    const near = refused({ now: deadline - 30 });
-    expect(near.sentence).toMatch(/too close to pay this safely/);
-    expect(near.sendBackOffered).toBe(true);
-    expect(acceptGate(inputs({ now: deadline - 61 }))).toEqual({ ok: true });
-    expect(refused({ now: deadline - 60 }).sentence).toMatch(/too close/);
-  });
-
-  it("refuses when the taker on the network is not the wallet the record names, and offers to send the money back", () => {
-    const named = "0x00000000000000000000000000000000000000a1";
-    const gate = refused({
-      relay: recordOf(taken, { payTo: named, state: "submitted" }),
-    });
-    // the wallet the plan names must be the one named too, so this fails at the payee; a changed taker fails at the taker
-    expect(gate.sentence).toMatch(/not for this task as it was written here/);
-    const swapped = refused({
-      fresh: { ...taken, takenBy: named },
-      shown: { ...taken, takenBy: named },
-    });
-    expect(swapped.sentence).toContain(`taken by ${named}`);
-    expect(swapped.sentence).toContain(`named ${record.payTo} to be paid`);
-    expect(swapped.sendBackOffered).toBe(true);
-  });
-
-  it("refuses when the plan is for another record, another amount, or a closed or already paid task", () => {
-    const sentence = (r: ProjectTask) => refused({ relay: r }).sentence;
-    expect(
-      sentence(recordOf(taken, { id: "e".repeat(64), state: "submitted" })),
-    ).toContain("names another task");
-    expect(sentence(recordOf(taken, { usd: 1, state: "submitted" }))).toContain(
-      "the pay is not the same",
-    );
-    expect(sentence(recordOf(taken, { state: "cancelled" }))).toContain(
-      "stopped or given up",
-    );
-    expect(
-      sentence(
-        recordOf(taken, { state: "accepted", paidTx: `0x${"1".repeat(64)}` }),
-      ),
-    ).toContain("already paid here");
-    expect(refused({ relay: null }).sentence).toContain(
-      "not on this project's task list",
-    );
-  });
-
-  it("refuses a repeat, and says which plan came first", () => {
-    const gate = refused({
-      fresh: {
-        ...repeat,
-        state: "taken",
-        takenBy: repeat.payee,
-        takenAt: 1,
-        deadline: at + 99_999,
-        setAside: 5n,
-      },
-      shown: { ...repeat, state: "taken", takenBy: repeat.payee },
-      relay: recordOf(repeat, { state: "submitted" }),
-    });
-    expect(gate.sentence).toContain(`task ${repeat.repeatOf} came first`);
-    expect(gate.sendBackOffered).toBe(true);
-  });
-
-  it("refuses when the sender is not the runner, and when the sender did the work", () => {
-    expect(refused({ address: null }).sentence).toMatch(
-      /Only the account that runs this project/,
-    );
-    expect(
-      refused({ address: "0x00000000000000000000000000000000000000a1" })
-        .sentence,
-    ).toMatch(/Only the account that runs this project/);
-    // with a Pair, either signer may
-    const signers = [
-      "0x00000000000000000000000000000000000000a1",
-      "0x00000000000000000000000000000000000000a2",
-    ] as [string, string];
-    const pair = {
-      address: "0x00000000000000000000000000000000000000f0",
-      isPair: true,
-      signers,
-    };
-    expect(acceptGate(inputs({ runner: pair, address: signers[1] }))).toEqual({
-      ok: true,
-    });
-    expect(refused({ me: record.worker ?? "" }).sentence).toMatch(
-      /done by you or by an agent you run/,
-    );
-  });
-
-  it("refuses when nothing is set aside", () => {
-    expect(refused({ fresh: { ...taken, setAside: 0n } }).sentence).toBe(
-      "Nothing is set aside for this task, so nothing can be paid.",
-    );
-  });
-
-  it("reads the fresh task, never the shown row, for what is on the network now", () => {
-    // the card showed a taken task; the chain now says it was paid
-    const gate = refused({
-      fresh: {
-        ...taken,
-        state: "paid",
-        setAside: taken.setAside,
-        returned: 0n,
-      },
-    });
-    expect(gate.sentence).toContain("already paid");
-    // the card showed a plan with the wrong taker, the chain has the right one: open
-    expect(
-      acceptGate(
-        inputs({
-          shown: {
-            ...taken,
-            takenBy: "0x00000000000000000000000000000000000000a1",
-          },
-        }),
-      ),
-    ).toEqual({ ok: true });
-  });
-
-  it("never offers 'Send the money back' on a refusal where nothing is set aside, or after the deadline", () => {
-    expect(refused({ fresh: { ...taken, setAside: 0n } }).sendBackOffered).toBe(
-      false,
-    );
-    expect(refused({ now: (taken.deadline ?? 0) + 1 }).sendBackOffered).toBe(
-      false,
-    );
   });
 });

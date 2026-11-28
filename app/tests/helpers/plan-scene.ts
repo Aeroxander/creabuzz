@@ -1,6 +1,6 @@
 /**
  * A project with a task queue and a team task that has a worker with a wallet, for the team side's screens: the parsed
- * example (moved to now, with its task queue), a task record in the shape the Tasks tab reads, and what the chain answers.
+ * example (moved to now, with its task queue), a task record in the shape the project page reads, and what the chain answers.
  * Nothing here is retyped from the example: a test reads a number from `numbers`, and changes a row through `withTasks`.
  */
 import { act } from "@testing-library/react";
@@ -60,16 +60,6 @@ export function queueOf(numbers: ProjectNumbers): ChainTasks {
   return numbers.tasks;
 }
 
-/** The plan of the scene's task, as the chain would hold it after it was planned: the record's row 7, made to name `TASK_ID`. */
-export function planRow(
-  numbers: ProjectNumbers,
-  patch: Partial<ChainTask> = {},
-): ChainTask {
-  const open = queueOf(numbers).list.find((r) => r.state === "announced");
-  if (!open) throw new Error("the example has no announced row");
-  return { ...open, what: `0x${TASK_ID}`, repeatOf: null, ...patch };
-}
-
 /**
  * What the chain answers for the team's sheets: the book's and the Treasury's task views (from the record's queue, or from
  * `rows` where the chain says something else), the check-in, and the allowance box as the record has it.
@@ -110,7 +100,7 @@ export function pointRow(
 }
 
 /** The serial of the example's taken row: the one the scenes of a task in progress are made from. */
-export const TAKEN_SERIAL = 6;
+const TAKEN_SERIAL = 6;
 
 /**
  * The scene of a task in progress: the example's taken row made to name the team's task record and the worker's wallet (it
@@ -134,23 +124,6 @@ export function takenRowOf(numbers: ProjectNumbers): ChainTask {
   );
   if (!row) throw new Error("the scene has no taken row");
   return row;
-}
-
-/** The team's task record for the taken row: it pays what the row's most is, and work has been handed in. */
-export function handedInTask(
-  numbers: ProjectNumbers,
-  over: Partial<ProjectTask> = {},
-): ProjectTask {
-  return planTask({
-    usd: Number(takenRowOf(numbers).maxDollars / 1_000_000n),
-    state: "submitted",
-    handIn: {
-      id: "ab".repeat(32),
-      at: NOW - 600,
-      note: "The guide in Spanish",
-    },
-    ...over,
-  });
 }
 
 /** The serial of the example's announced row that is not a repeat: the one the scenes of a plan nobody has taken are made from. */

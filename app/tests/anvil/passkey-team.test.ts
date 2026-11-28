@@ -1,7 +1,7 @@
 // biome-ignore-all lint/style/noNonNullAssertion: each read is asserted non-null on the line before it is used
 /**
  * The founder's and the team's presses from a passkey account, on the real pot contracts: launch, check in, draw from the
- * allowance box, plan a task, accept and pay it (set-aside money and from the box), grant Team Shares. The passkey account is the founder and the runner; the people on the other side (backers, a
+ * allowance box, grant Team Shares. The passkey account is the founder and the runner; the people on the other side (backers, a
  * worker, a teammate) are plain accounts. Every press goes through the app's own call builders and gates, the sender the
  * app builds (one operation, one passkey prompt, the fee paid by a paymaster) and the app's words for a refusal. Run by
  * `scripts/phone-loop.sh`; skipped without `M7_ANVIL_RPC`.
@@ -30,8 +30,6 @@ import { potProblem } from "../../src/features/money/pot-copy";
 import { checkInFor } from "../../src/features/money/runner";
 import { runnerSend } from "../../src/features/pot/runner-calls";
 import { WalletStepError } from "../../src/features/money/wallet";
-import { drawForTaskCall } from "../../src/features/tasks/task-calls";
-import { readPlan } from "../../src/features/tasks/chain/team/plan-read";
 import { pass, phoneWorld } from "./phone-world";
 import { deployPot, walletOf } from "./pot-chain";
 import { accounts, call, passTime, RPC } from "./rpc";
@@ -60,7 +58,7 @@ async function stoppedWith(
 run(
   "founder and team presses from a passkey account, on the real contracts",
   () => {
-    it("launches, checks in, draws, plans and pays a task, and grants Team Shares: one operation and one prompt each", async () => {
+    it("launches, checks in, draws and grants Team Shares: one operation and one prompt each", async () => {
       const [admin, backer, worker, member] = await accounts();
       const chain = await deployPot(admin);
       const world = await phoneWorld(admin);
@@ -176,7 +174,7 @@ run(
         const drawn = runnerSend(
           asFounder,
           founder,
-          drawForTaskCall(treasury, worker, 1),
+          pot.drawCall({ treasury, to: worker, amount: DOLLAR }),
         );
         expect(drawn?.through).toBe("alone");
         await press(drawn!.calls);
@@ -195,51 +193,6 @@ run(
         ).toMatch(/another person's account/);
         pass(
           "a passkey runner draws from the allowance box to a worker, and a draw to the project's own contract is refused in the app's words",
-        );
-
-        // ---- Plan a task for the worker, who takes it after the notice; the runner accepts and pays ------------------
-        const pending = await readPlan(
-          { read, wallet: sender },
-          treasury,
-          100,
-          0,
-        );
-        expect(pending.notice).not.toBeNull();
-        const what = `0x${"a1".repeat(32)}`;
-        await press([
-          pot.announceTaskCall({
-            treasury,
-            what,
-            payee: worker,
-            maxDollars: 3n * DOLLAR,
-            shareBps: 100,
-          }),
-        ]);
-        await passTime(pending.notice!.noticeSecs + 5);
-        await press([pot.checkInCall(treasury, `0x${"5b".repeat(32)}`)]);
-        await walletOf(worker).sendCalls(
-          [pot.takeTaskCall({ treasury, serial: 1n, minAmount: 3n * DOLLAR })],
-          CHAIN,
-        );
-        const paidBefore = await reads.balanceOf(read, chain.dollar, worker);
-        await press([
-          pot.acceptTaskCall({ treasury, serial: 1n, payDollars: 2n * DOLLAR }),
-        ]);
-        expect(await reads.balanceOf(read, chain.dollar, worker)).toBe(
-          paidBefore + 2n * DOLLAR,
-        );
-        pass(
-          "a passkey runner plans a task, accepts the worker's work and pays part of it from the set-aside money, each in one operation and one prompt",
-        );
-        // A second task is paid from the box by a draw (the "pay from the box" press).
-        const boxPay = runnerSend(
-          asFounder,
-          founder,
-          drawForTaskCall(treasury, worker, 1),
-        );
-        await press(boxPay!.calls);
-        pass(
-          "a passkey runner pays a task from the allowance box, in one operation and one prompt",
         );
 
         // ---- Grant Team Shares to a teammate -------------------------------------------------------------------------

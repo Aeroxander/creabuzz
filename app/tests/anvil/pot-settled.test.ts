@@ -10,7 +10,6 @@ import { encodeCall } from "../../../packages/creaton-core/src/pot/abi-codec.ts"
 import { TREASURY_ABI } from "../../../packages/creaton-core/src/pot/abis.generated.ts";
 import * as pot from "../../../packages/creaton-core/src/pot/pot-calls.ts";
 import * as reads from "../../../packages/creaton-core/src/pot/pot-reads.ts";
-import { shareFor } from "../../src/features/tasks/chain/door";
 import { readStored, rollForward } from "../e2e/helpers/live-settled";
 import { deployPot, walletOf } from "./pot-chain";
 import { accounts, chainTime, passTime, rpc } from "./rpc";
@@ -126,7 +125,8 @@ run("the settled money of the record builder", () => {
     const potNow = reads.asBigint(
       (await reads.ask(read, TREASURY_ABI, T, "pot", []))[0],
     );
-    const share = shareFor(2n * DOLLAR, potNow, 500)!;
+    // The share of the pot the plan asks for: a tenth more than the pay's own share, rounded up.
+    const share = Number((2n * DOLLAR * 11_000n + potNow - 1n) / potNow);
     await send(
       founder,
       pot.announceTaskCall({

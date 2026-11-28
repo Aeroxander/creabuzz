@@ -23,11 +23,6 @@ import { ProjectTop } from "./ProjectTop";
 import { UpdatesTab } from "./UpdatesTab";
 import { projectPeople, useProject, useProjectActivity } from "./use-project";
 
-// The Tasks tab carries the money calls (paying a task, an agent's limits) and their contract ABIs: it loads when the tab
-// is opened, so the first download stays small.
-const TasksTab = lazy(() =>
-  import("../tasks/TasksTab").then((m) => ({ default: m.TasksTab })),
-);
 // The Money tab carries the money calls and their contract ABIs: it loads when the page does not need it yet.
 const ProjectMoney = lazy(() =>
   import("../pot/ProjectMoney").then((m) => ({ default: m.ProjectMoney })),
@@ -37,7 +32,7 @@ const LaunchCard = lazy(() =>
   import("../launch/LaunchCard").then((m) => ({ default: m.LaunchCard })),
 );
 
-/** The project page: its top (what it is, its money, Back, Share), Ask to join, then Updates, Tasks, People and Money. */
+/** The project page: its top (what it is, its money, Back, Share), Ask to join, then Updates, People and Money. */
 export function ProjectPage({
   projectRef,
   initialTab,
@@ -152,7 +147,6 @@ function ProjectView({
           address={walletAddress}
           numbers={numbers}
           onOpenMoney={() => setTab("money")}
-          onOpenTasks={() => setTab("tasks")}
           project={project}
         />
       ) : null}
@@ -171,22 +165,6 @@ function ProjectView({
                 profiles={profiles}
                 project={project}
               />
-            ),
-          },
-          {
-            value: "tasks",
-            label: "Tasks",
-            content: (
-              <ChunkBoundary>
-                <Suspense fallback={<Card className="h-24 animate-pulse" />}>
-                  <TasksTab
-                    address={walletAddress}
-                    numbers={numbers}
-                    profiles={profiles}
-                    project={project}
-                  />
-                </Suspense>
-              </ChunkBoundary>
             ),
           },
           {

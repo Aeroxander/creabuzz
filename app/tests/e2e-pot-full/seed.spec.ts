@@ -11,11 +11,6 @@ import {
   projectRecordTemplate,
 } from "../../src/features/start/start-record";
 import * as pot from "../../../packages/creaton-core/src/pot/pot-calls.ts";
-import {
-  postTaskRecord,
-  takeRecord,
-  type ProjectTask,
-} from "../../src/features/tasks/task-record";
 import { walletOf } from "../anvil/pot-chain";
 import { backFor, checkIn, launchProject } from "../e2e/helpers/live-chain";
 import {
@@ -79,43 +74,15 @@ test("leave a demo project for a person to try", async () => {
   );
   ok("a demo project is on the chain and the server shows its numbers");
 
-  // One planned task, so a phone has something to read about the task queue: the team (the throwaway founder) posted it, a
-  // worker (a throwaway key) took it and named anvil's account number 5 as the wallet to be paid at, and the team planned its
-  // pay on the chain. The notice is long: the chain's clock has to be moved to try the worker's side (see the script's words).
-  const coordinate = `37001:${pub}:${id}`;
-  const taskWhat = "Paint the lamp shades";
-  const taskEvent = finalizeEvent(postTaskRecord(coordinate, taskWhat, 2), key);
-  await publishSigned(taskEvent, key);
-  const workerKey = generateSecretKey();
-  await publishSigned(
-    finalizeEvent(
-      {
-        kind: 0,
-        tags: [],
-        content: JSON.stringify({ name: "Demo worker" }),
-        created_at: now,
-      },
-      workerKey,
-    ),
-    workerKey,
-  );
-  await publishSigned(
-    finalizeEvent(
-      takeRecord(
-        coordinate,
-        { id: taskEvent.id, author: pub } as ProjectTask,
-        w.who.stranger,
-      ),
-      workerKey,
-    ),
-    workerKey,
-  );
+  // One planned task, so a phone has something to read about the task queue: the team (the throwaway founder) planned its pay
+  // on the chain for anvil's account number 5. The notice is long: the chain's clock has to be moved to try the worker's side
+  // (see the script's words). The plan names no record here, so the page reads it as "a task".
   await checkIn(w, project);
   await walletOf(w.who.founder).sendCalls(
     [
       pot.announceTaskCall({
         treasury: project.treasury,
-        what: `0x${taskEvent.id}`,
+        what: `0x${"7a".repeat(32)}`,
         payee: w.who.stranger,
         maxDollars: 2_000_000n,
         shareBps: 449,

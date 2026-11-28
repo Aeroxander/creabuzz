@@ -5,14 +5,13 @@ import { describe, expect, it } from "vitest";
 import { numbersFor } from "../../../../../tests/helpers/pot-harness";
 import { withTasks } from "../../../../../tests/helpers/numbers-v2-fixture";
 import { plannedBackLine } from "../../../pot/back-tasks";
-import { claimableNow, nowOf, phaseOf, stateWords } from "../state";
+import { claimableNow, nowOf, phaseOf } from "../state";
 import { atMostNowLine, endedLine, plannedLines } from "../words";
 import { claimFigure } from "./claim-read";
 import { claimLine, claimHeadline } from "./notes-words";
 import { noteCandidates } from "./notes-read";
 import { setAsideAndRoom } from "./holder-words";
 import { stripRows } from "./PlannedStrips";
-import { takeBlock } from "./take-gate";
 
 type Json = Record<string, unknown>;
 let seed = 12345;
@@ -71,7 +70,6 @@ describe("parser-valid extremes never throw in the holder functions", () => {
       });
       for (const row of queue.list) {
         const phase = phaseOf(row, now, null);
-        stateWords(row, now);
         plannedLines({
           max: row.maxDollars,
           name: null,
@@ -85,19 +83,6 @@ describe("parser-valid extremes never throw in the holder functions", () => {
         claimFigure({ task: row, face: 123456n, view: 0n }, now);
         claimLine({ phase, face: 5n, claimable: 5n, paidInFull: false });
         claimHeadline({ what: null, setAside: row.setAside, running: false });
-        takeBlock({
-          read: {
-            task: row,
-            book: "0x",
-            time: now,
-            activeEnd: now + 10,
-            roomBps: pick(SHARES),
-          } as never,
-          numbers,
-          queue,
-          address: "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
-          now,
-        });
       }
     }
     expect(JSON.stringify({ parsed, kinds })).toMatch(/parsed":([6-9]|\d\d+)/);

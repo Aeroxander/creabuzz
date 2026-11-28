@@ -28,7 +28,7 @@ import { PlannedLines } from "./PlannedLines";
 // The Take out sheet carries the money calls and their contract ABIs: it loads when a holder's button is drawn.
 const PlannedTakeOut = lazy(() => import("./PlannedTakeOut"));
 
-/** The most strips the page shows; the rest are one press away on the Tasks tab. */
+/** The most strips the page shows; the rest are one press away on the Money tab. */
 const MOST_STRIPS = 3;
 
 /** The tasks the strips are about: announced and still to be taken, or taken and not yet over, in the record's order. */
@@ -56,15 +56,12 @@ export function PlannedStrips({
   project,
   numbers,
   address,
-  onOpenTasks,
   onOpenMoney,
 }: {
   project: Project;
   numbers: ProjectNumbers;
   /** The connected wallet's account, when there is one. */
   address: string | null;
-  /** Goes to the Tasks tab. */
-  onOpenTasks: () => void;
   /** Goes to the Money tab (where a person claims what they are owed). */
   onOpenMoney: () => void;
 }) {
@@ -108,7 +105,7 @@ export function PlannedStrips({
         );
       })}
       {rows.length > MOST_STRIPS ? (
-        <Button onClick={onOpenTasks} variant="secondary">
+        <Button onClick={onOpenMoney} variant="secondary">
           {andMore(rows.length - MOST_STRIPS)}
         </Button>
       ) : null}

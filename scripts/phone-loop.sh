@@ -6,7 +6,7 @@
 # production way. Prints one PASS line per claim proven, then a count. Cleans up after itself whatever happens.
 #
 # Claims by file: passkey-sender (the sender and the stand-in bundler and sponsor), passkey-back (a real Back from a passkey account),
-# passkey-team (the founder's and the team's presses on the real contracts: launch, check in, draw, plan, accept and pay, grant
+# passkey-team (the founder's and the team's presses on the real contracts: launch, check in, draw, grant
 # Team Shares, each one operation and one prompt), passkey-address (the account address worked out
 # on the phone equals the real factory's, and a node that lies about it is refused), sender-contract (wallet
 # and passkey senders meet one set of expectations).

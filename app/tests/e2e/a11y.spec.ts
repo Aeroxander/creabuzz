@@ -89,7 +89,7 @@ for (const size of WIDTHS)
       await page.goto(PROJECT);
       await page.getByTestId("project-name").waitFor({ timeout: 20_000 });
       await check(page, `Project, Updates, ${label}`);
-      for (const tab of ["tasks", "people", "money"]) {
+      for (const tab of ["people", "money"]) {
         await page.getByTestId(`tab-${tab}`).click();
         await check(page, `Project, ${tab}, ${label}`);
       }

@@ -167,8 +167,6 @@ describe("the banner on every sheet that shows money", () => {
     "features/account/RecoveryKeySheet.tsx": "a secret key, no money",
     "features/account/TermsAgainHost.tsx": "the terms, no money",
     "features/posts/Composer.tsx": "a post, no money",
-    "features/tasks/PostTaskSheet.tsx": "the old task board: not mounted",
-    "features/tasks/TaskCard.tsx": "the old task board: not mounted",
     "features/week/WeeklySheet.tsx": "the weekly note, no money",
     "features/you/YouPage.tsx": "account and notes, no money figure",
   };

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# pot-full-loop.sh: the join-and-leave design, all three parts joined up, in a real browser: step 1 (a project from its start to a
-# Take out) and step 2 (the task queue and exit notes).
+# pot-full-loop.sh: the join-and-leave design in a real browser: a project from its start to a Take out.
 #
 # Starts a local chain (anvil), deploys contracts/pot with its own deploy script (play dollars), starts Postgres and Redis when
 # they are not running, starts the real relay with its chain reader pointed at that chain (and its helper on, record version 2),
@@ -11,15 +10,6 @@
 # checks in from This week and draws from the allowance; outside money arrives; the backer Takes out; and every number on the
 # page equals the record the server signed, which equals the contracts' own views at the record's block
 # (scripts/chain-loop-pot-check.py, called by the journey).
-#
-# Step 2's journey (app/tests/e2e-pot-full/pot-tasks.spec.ts) runs in a world of its own, started after the first is stopped: a
-# founder posts a task in the app and a worker takes it; the team plans its pay from the Tasks tab; a holder on another profile
-# reads the two lines on the project page and the alert on You; the chain's clock moves past the notice; the worker sets the
-# money aside; the holder takes out and is left a note; the team pays part of it and the app saves that the task was paid (the
-# server ties the record to the payment on the network); the holder claims; a second task runs out and is returned by someone
-# else; and the record equals the contracts' own views at each step (scripts/chain-loop-pot-check.py, called by the journey).
-# The two journeys do not share a world because the first moves the chain's clock by days (a record is dated by the server's own
-# clock, so a chain that is days ahead of it reads as an old record for the rest of that world).
 #
 # Prints one `ok` line per check from the journey and, at the end, "pot-full-loop: N checks passed." Stops everything it started
 # (anvil, the relay, a Redis or Postgres it had to start), drops its scratch database and removes its temporary files, whatever
@@ -32,13 +22,13 @@
 # Linux and macOS (`timeout` and `hostname -I` are not needed). Uses anvil's well-known development accounts only; every amount
 # is play money.
 #
-# Usage:  scripts/pot-full-loop.sh [playwright args]     with no arguments: all three journeys, each in a world of its own;
-#                                                          with arguments (a file name such as pot-tasks.spec, a --grep): one world, those only
+# Usage:  scripts/pot-full-loop.sh [playwright args]     with no arguments: the journey in a world of its own;
+#                                                          with arguments (a file name such as pot-full.spec, a --grep): one world, those only
 #         scripts/pot-full-loop.sh --serve       the same world, left running for a person to try on a phone (see below)
 #         scripts/pot-full-loop.sh --hold        one world, left running for an engineer: it writes the environment a journey needs to
 #                                                HOLD_ENV (default: a file in the temporary folder, printed) and waits for Ctrl-C. Run a
 #                                                journey by hand with: set -a; . "$HOLD_ENV"; set +a; cd app;
-#                                                node_modules/.bin/playwright test --config=playwright.pot-full.config.ts --trace off pot-tasks.spec
+#                                                node_modules/.bin/playwright test --config=playwright.pot-full.config.ts --trace off pot-full.spec
 #
 # --serve: instead of the journey, leaves one project ("Lantern", 50 play dollars in it) on the chain and the server, mines a
 #   block every two seconds (as a live chain does, so the server reads each block), binds the chain, the server and the app to
@@ -389,13 +379,11 @@ elif [[ $# -gt 0 ]]; then
   run_journey "$@"
   world_down
 else
-  # Step 1's journey and step 2's task queue, each in a world of its own (the chain's clock is moved by days in
-  # most of them, and a world that is days ahead of the server's clock cannot be reused).
-  for journey in pot-full.spec pot-tasks.spec; do
-    world_up
-    run_journey "$journey"
-    world_down
-  done
+  # The journey runs in a world of its own (the chain's clock is moved by days, and a world that is days ahead of the
+  # server's clock cannot be reused).
+  world_up
+  run_journey pot-full.spec
+  world_down
 fi
 CHECKS="$(grep -c '^ok' "$CHECKS_FILE" 2>/dev/null || true)"; CHECKS="${CHECKS:-0}"
 EXTRA="$(awk '/^plus /{s+=$2} END{print s+0}' "$CHECKS_FILE" 2>/dev/null)"

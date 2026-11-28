@@ -1,7 +1,7 @@
 /**
  * The sentences of the task queue that more than one screen says (plan section 5, 1.6 and 4.7): the words about a record that
- * is old or missing, the two lines a planned task carries for everyone, the line for a task that was taken or ended, why a
- * task does not tie to the team's record, what stops an accept, and the four sentences a Pair's second signer reads. Pure.
+ * is old or missing, the two lines a planned task carries for everyone, the line for a task that was taken or ended, and the
+ * sentences a Pair's second signer reads. Pure.
  * The words of every contract refusal live in `money/pot-copy.ts`, not here; a sentence that only one screen says is in
  * that screen's own words file.
  *
@@ -18,8 +18,7 @@ import {
 } from "../../money/numbers";
 import { dollarsPhrase, percentOfBps } from "../../money/pot-copy-tasks";
 import { exactDollarsText } from "../../pot/pot-words";
-import { TASK_PROBLEM } from "../tasks-copy";
-import type { Phase, Tie } from "./state";
+import type { Phase } from "./state";
 import type { ChainTask } from "./types";
 
 // --- Amounts and the team's own words -----------------------------------------------------------------------------
@@ -50,32 +49,13 @@ export function quotedWhat(words: string | null | undefined): string {
 
 // --- A record that is missing, unreadable or old (1.6) -------------------------------------------------------------
 
-/** The Tasks tab when the server wrote no queue (an older server, or a project with no task book), once. */
-export const TASKS_NOT_TOLD =
-  "This server has not told us about this project's tasks yet.";
-
-/** The Tasks tab when the queue is there and could not be read. */
+/** The Money tab's list of tasks when the queue is there and could not be read. */
 export const TASKS_UNREADABLE =
   "The task list could not be read. Your money is not affected: you can take it out any time.";
-
-/**
- * Why the queue screens are hidden, or null when they show: no queue at all (absent or null) reads "not told us yet"; a
- * queue that did not parse reads "could not be read". Either way leaving is not in question.
- */
-export function queueLine(tasks: ProjectNumbers["tasks"]): string | null {
-  if (tasks === undefined || tasks === null) return TASKS_NOT_TOLD;
-  if (tasks === "unreadable") return TASKS_UNREADABLE;
-  return null;
-}
 
 /** "as of 18 Nov, 14:05": the time of the record, for a date or state on a list. */
 export function asOfWords(asOf: number): string {
   return `as of ${timeText(asOf)}`;
-}
-
-/** The Tasks tab when the record is over a day old: what is missing and that money is not affected. */
-export function tasksStaleWords(asOf: number): string {
-  return `We have not been able to refresh this project's tasks since ${dayText(asOf)}. Your money is not affected: you can take it out any time.`;
 }
 
 /**
@@ -118,11 +98,6 @@ export function phaseWord(phase: Phase): string {
 /** After the press was read again: the task is not what the sheet showed. */
 export function changedWhileLooking(phase: Phase): string {
   return `This task changed while you were looking: it is now ${phaseWord(phase)}. Nothing was sent. Close this and open it again.`;
-}
-
-/** A sheet that needs a task holding money, shown one that is not. */
-export function notHoldingMoney(phase: Phase): string {
-  return `This task is not holding money: ${phaseWord(phase)}.`;
 }
 
 // --- A planned task, in two lines, and one line for the rest (5.3) ----------------------------------------------
@@ -191,62 +166,6 @@ export function endedLine(input: {
 }
 
 // --- Why a plan does not tie to the team's record, and what stops an accept (4.4, 5.5) ----------------------------
-
-type TieWhy = Extract<Tie, { ok: false }>["why"];
-
-/** Each failed tie in a few words, for "(… )" inside a sentence. */
-const TIE_REASON: Record<TieWhy, string> = {
-  "no-record": "it is not on this project's task list",
-  what: "it names another task",
-  closed: "the task was stopped or given up here",
-  "already-paid": "it was already paid here",
-  amount: "the pay is not the same",
-  payee: "the account it names is not the one the worker named",
-  taker: "the account that took it is not the one the worker named",
-  repeat: "it was planned more than once",
-  "worker-left": "the person who took it gave it up",
-  "not-taken": "nobody has agreed to do it here yet",
-};
-
-/** The reason a plan does not tie, in a few plain words. */
-export function tieReason(why: TieWhy): string {
-  return TIE_REASON[why];
-}
-
-/** The network has the task in another state than "taken". */
-export function notWaitingForPay(phase: Phase): string {
-  return `This task is not waiting for payment on the network: ${phaseWord(phase)}. Nothing can be paid.`;
-}
-
-/** The deadline passed (or is within the room a press needs): the money goes back and nothing can be paid. */
-export function deadlinePassed(deadline: number, now: number): string {
-  return now >= deadline
-    ? `The deadline passed on ${timeText(deadline)}. The money goes back to the project and cannot be paid now.`
-    : `The deadline, ${timeText(deadline)}, is too close to pay this safely: if it passes first, the money goes back to the project and nothing is paid. You can send the money back.`;
-}
-
-/** The wallet that took the task on the network is not the one the worker named here. */
-export function takerDiffers(onNetwork: string, named: string | null): string {
-  return `The network says this task was taken by ${onNetwork}, but the person who took it here named ${named ?? "no account"} to be paid. Nothing can be paid until they match. You can send the money back.`;
-}
-
-/** A plan that does not tie in some other way. */
-export function notThisTask(why: TieWhy): string {
-  return `This plan on the network is not for this task as it was written here (${tieReason(why)}), so it cannot be paid from here. You can send the money back.`;
-}
-
-/** The same task record was planned more than once: only the first can be paid. */
-export function plannedMoreThanOnce(first: bigint): string {
-  return `This task was planned more than once on the network (task ${first} came first), so only the first can be paid. You can send this money back.`;
-}
-
-/** Nothing is set aside, so nothing can be paid. */
-export const NOTHING_SET_ASIDE =
-  "Nothing is set aside for this task, so nothing can be paid.";
-
-/** The sender may not accept this work (their own, or an agent they run) or does not run the project. */
-export const OWN_WORK = TASK_PROBLEM.ownWork;
-export const NOT_RUNNER = TASK_PROBLEM.notRunner;
 
 // --- A Pair's second signer reads these four (4.7) --------------------------------------------------------------
 

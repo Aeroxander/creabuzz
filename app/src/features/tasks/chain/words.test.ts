@@ -18,20 +18,13 @@ import {
   changedWhileLooking,
   dollarsPhrase,
   endedLine,
-  NOT_RUNNER,
-  notHoldingMoney,
-  OWN_WORK,
   percentOfBps,
   phaseWord,
   plannedLines,
-  queueLine,
   quotedWhat,
   rejectTaskWords,
-  TASKS_NOT_TOLD,
   theTaskWords,
   TASKS_UNREADABLE,
-  tasksStaleWords,
-  tieReason,
   UNKNOWN_TASK_WORDS,
   WORDS_MAX,
 } from "./words";
@@ -74,14 +67,7 @@ describe("amounts and the team's own words", () => {
 });
 
 describe("a record that is missing, unreadable or old (1.6)", () => {
-  it("says one plain line when the queue is missing or unreadable, and nothing when it reads", () => {
-    expect(queueLine(undefined)).toBe(TASKS_NOT_TOLD);
-    expect(queueLine(null)).toBe(TASKS_NOT_TOLD);
-    expect(queueLine("unreadable")).toBe(TASKS_UNREADABLE);
-    expect(queueLine(queue)).toBeNull();
-    expect(TASKS_NOT_TOLD).toBe(
-      "This server has not told us about this project's tasks yet.",
-    );
+  it("says one plain line when the queue could not be read", () => {
     expect(TASKS_UNREADABLE).toBe(
       "The task list could not be read. Your money is not affected: you can take it out any time.",
     );
@@ -102,12 +88,6 @@ describe("a record that is missing, unreadable or old (1.6)", () => {
       "This may be out of date: the server has not refreshed this project since.",
     );
     expect(ageNote({ level: "fresh", ageSecs: 0 }, 5)).toBeNull();
-  });
-
-  it("the Tasks tab line for a record over a day old says money is not affected", () => {
-    expect(tasksStaleWords(example.asOf.time)).toBe(
-      `We have not been able to refresh this project's tasks since ${dayText(example.asOf.time)}. Your money is not affected: you can take it out any time.`,
-    );
   });
 });
 
@@ -241,28 +221,6 @@ describe("what a task is doing, in a few words, for a sentence about a change", 
     expect(changedWhileLooking("paid")).toBe(
       "This task changed while you were looking: it is now already paid. Nothing was sent. Close this and open it again.",
     );
-    expect(notHoldingMoney("withdrawn")).toBe(
-      "This task is not holding money: withdrawn.",
-    );
-  });
-  it("each tie failure has a reason that fits inside the sentence", () => {
-    for (const why of [
-      "no-record",
-      "what",
-      "closed",
-      "already-paid",
-      "amount",
-      "payee",
-      "taker",
-      "repeat",
-      "worker-left",
-      "not-taken",
-    ] as const)
-      expect(tieReason(why)).toMatch(/^[a-z]/);
-  });
-  it("the step 1 refusals are the ones the Tasks tab already says", () => {
-    expect(OWN_WORK).toMatch(/done by you or by an agent you run/);
-    expect(NOT_RUNNER).toMatch(/Only the account that runs this project/);
   });
 });
 
