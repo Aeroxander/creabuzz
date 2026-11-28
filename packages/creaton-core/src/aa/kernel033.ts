@@ -700,7 +700,7 @@ export function createKernel033ChainRpc(options: {
         } else {
           let payload: {
             result?: T;
-            error?: { message?: string };
+            error?: { message?: string; data?: unknown };
           };
           try {
             payload = JSON.parse(text) as typeof payload;
@@ -711,9 +711,16 @@ export function createKernel033ChainRpc(options: {
             );
           }
           if (payload.error !== undefined) {
+            // A node puts a contract's custom error in `data` and only its decoded junk in `message`; keep both, so a
+            // caller can still tell the refusal (the Launcher's `UnknownProject`) from a node that did not answer.
+            const { message, data } = payload.error;
             throw new Kernel033ChainRpcError(
               method,
-              payload.error.message ?? JSON.stringify(payload.error),
+              message === undefined
+                ? JSON.stringify(payload.error)
+                : typeof data === "string"
+                  ? `${message} ${data}`
+                  : message,
             );
           }
           return payload.result as T;

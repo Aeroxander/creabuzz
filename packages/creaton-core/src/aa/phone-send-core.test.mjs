@@ -460,3 +460,23 @@ test("the stored passkey credential id is read without the rest of the registrat
   store.set("buzz.passkey.credentialId", "");
   assert.equal(passkeyCredentialId(), null);
 });
+
+test("a node's refusal keeps its error data beside the message, so a contract's custom error is not lost", async () => {
+  const rpc = createKernel033ChainRpc({
+    url: "http://rpc.invalid",
+    maxAttempts: 1,
+    fetchImpl: async () => ({
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          error: { message: "execution reverted: f1A", data: "0x6631410f" },
+        }),
+    }),
+  });
+  await assert.rejects(
+    () => rpc.ethCall({ to: CALL_A.to, data: "0x" }),
+    (error) =>
+      error.serverMessage === "execution reverted: f1A 0x6631410f" &&
+      error.message.includes("0x6631410f"),
+  );
+});
