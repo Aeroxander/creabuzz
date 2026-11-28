@@ -14,7 +14,7 @@ import * as reads from "../../../packages/creaton-core/src/pot/pot-reads.ts";
 import * as state from "../../../packages/creaton-core/src/pot/pot-state.ts";
 import { expectAccessible } from "../helpers/a11y";
 import { expectNoSidewaysScroll } from "../helpers/layout";
-import { PressCounter } from "../helpers/press-counter";
+import { PLAN_V2_BUDGETS, PressCounter } from "../helpers/press-counter";
 import { walletOf } from "../anvil/pot-chain";
 import { call, send } from "../anvil/rpc";
 import { launchedProject, NO_CHAIN_WHY } from "./helpers/live-chain";
@@ -28,7 +28,8 @@ import {
 } from "./helpers/live-browser";
 import { installAnvilWallet } from "./helpers/live-wallet";
 import { createMockRelay } from "./mock-relay";
-import { DAY, now, profile, projectRecord } from "./helpers/world";
+import { DAY, install, now, profile, projectRecord } from "./helpers/world";
+import { RELAY } from "./helpers/money-world";
 
 test.skip(NO_CHAIN_WHY !== null, NO_CHAIN_WHY ?? "");
 
@@ -162,6 +163,63 @@ test("a founder starts a project, launches it with no field and one signature, a
   console.log(
     `MEASURED Launch, from the project's page: ${path.presses - before} presses, no field typed, ${wallet.prompts} wallet prompt`,
   );
+});
+
+test("a founder with no account goes from Home to launched in the founder budget: Start survives the sign-up, no recovery-key sheet, nothing typed to launch", async ({
+  page,
+}) => {
+  const w = world.get();
+  const relay = createMockRelay();
+  await install(page, relay, null, {
+    investing: true,
+    relaySelf: RELAY,
+    keepSignUp: true,
+  });
+  const wallet = await installAnvilWallet(page, w.who.founder);
+  const path = new PressCounter();
+
+  await page.goto("/");
+  await path.press(page.getByTestId("tab-link-start"), "Start tab");
+  await path.type(page.getByTestId("start-name"), "Night Sky", "Name");
+  await path.type(
+    page.getByTestId("start-goal"),
+    "A map of the night sky that ten people use.",
+    "What will you make?",
+  );
+  await path.type(
+    page.getByTestId("start-how"),
+    "Ten people use it every week.",
+    "How",
+  );
+  await path.press(page.getByTestId("start-submit"), "Start");
+
+  // No account: sign-up, with no recovery-key sheet to get past after it.
+  await path.type(page.getByTestId("onboarding-name"), "Fay Founder", "Name");
+  await path.press(page.getByTestId("onboarding-create"), "Create");
+
+  // Back on Start, the press is not asked for again: the project is sent and its page is open with the launch card.
+  await expect(page.getByTestId("project-name")).toHaveText("Night Sky", {
+    timeout: 20_000,
+  });
+  await expect(page.getByTestId("backup-sheet")).toHaveCount(0);
+  await expect(page.getByTestId("launch-card")).toBeVisible({
+    timeout: 20_000,
+  });
+  await path.press(page.getByTestId("launch-open"), "Launch");
+  await expect(
+    page.getByTestId("launch-sheet").getByRole("textbox"),
+  ).toHaveCount(0);
+  await path.press(page.getByTestId("sheet-confirm"), "Launch Night Sky");
+  await expect(page.getByTestId("launch-sheet")).toBeHidden({
+    timeout: 30_000,
+  });
+  expect(wallet.prompts).toBe(1);
+  const decoded = decodeCall(LAUNCHER_ABI, wallet.sent[0]?.data ?? "");
+  expect(decoded?.name).toBe("launch");
+  expect(decoded?.args[3]).toEqual([1000n, 10_000_000n * SHARE]);
+  console.log(path.summary("Founder, Home to launched"));
+  expect(path.presses).toBeLessThanOrEqual(PLAN_V2_BUDGETS.founder.presses);
+  expect(path.fields).toBeLessThanOrEqual(PLAN_V2_BUDGETS.founder.fields);
 });
 
 test("the platform's settings change between the sheet and the signature: nothing is sent, the words say why, and the next press launches under the new settings", async ({

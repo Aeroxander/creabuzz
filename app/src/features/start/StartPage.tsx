@@ -4,12 +4,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { ScreenHeader } from "../../app/BackHeader";
+import { useAccount } from "../../lib/account";
 import { publishAsUser, read } from "../../lib/relay";
 import { useRequireAccount } from "../../lib/use-require-account";
 import { Button } from "../../ui/button";
 import { Field, TextArea } from "../../ui/field";
 import { useToast } from "../../ui/toast";
 import { projectRef } from "../project/project-record";
+import {
+  markStartAfterSignUp,
+  takeStartAfterSignUp,
+} from "./start-after-sign-up";
 import {
   EMPTY_START,
   GOAL_LIMITS,
@@ -53,15 +58,25 @@ function saveDraft(draft: StartDraft | null) {
   }
 }
 
+function sessionStore(): Storage | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Start a project with three answers and one press: its name, what it will make, and how people will know it worked.
- * Nothing else is asked; everything else has a default or is set up later from the project page.
+ * Nothing else is asked; everything else has a default or is set up later from the project page. A press with no account
+ * goes to sign-up and back, and the project is then sent by itself: the one press survives the sign-up.
  */
 export function StartPage() {
   const [draft, setDraft] = useState<StartDraft>(loadDraft);
   const [sending, setSending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const requireAccount = useRequireAccount();
+  const { pubkey } = useAccount();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -132,6 +147,18 @@ export function StartPage() {
     }
   };
 
+  // Back from sign-up with the press kept and the answers still there: send them. A press kept by someone who did not sign up
+  // ("Not now") is dropped here, so it cannot send later.
+  const resumed = useRef(false);
+  const startNow = useRef(start);
+  startNow.current = start;
+  useEffect(() => {
+    if (resumed.current) return;
+    resumed.current = true;
+    const kept = takeStartAfterSignUp(sessionStore());
+    if (kept && pubkey && startReady(draft)) void startNow.current();
+  }, [pubkey, draft]);
+
   return (
     <main className="screen mx-auto flex max-w-lg flex-col gap-6">
       <ScreenHeader title="Start a project" />
@@ -150,6 +177,7 @@ export function StartPage() {
             setTried((n) => n + 1);
             return;
           }
+          if (!pubkey) markStartAfterSignUp(sessionStore());
           requireAccount(() => void start());
         }}
       >

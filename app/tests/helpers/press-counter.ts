@@ -40,6 +40,12 @@ export const PLAN_V2_BUDGETS = {
   start: { presses: 2, fields: 3 },
   /** From the page to backed: the amount, Back, and the sheet's press. */
   back: { presses: 2, fields: 1 },
+  /**
+   * A founder with no account, from Home to launched: the Start tab, Start (its press survives the sign-up, so it is not
+   * pressed twice), Create on the sign-up, Launch, and the sheet's press. Four typed boxes: the three answers and the name.
+   * No recovery-key sheet and no launch field come between. The hosted settings add the age and terms ticks on the sign-up.
+   */
+  founder: { presses: 5, fields: 4 },
   /** Play dollars on a test network: one press on the page, no sheet in between. */
   faucet: { presses: 1, fields: 0 },
   takeMoneyBack: { presses: 2, fields: 0 },
