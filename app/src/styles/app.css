@@ -357,6 +357,14 @@ body {
     backdrop-filter: blur(18px) saturate(1.4);
     box-shadow: 0 -20px 48px -24px hsl(266 70% 4% / 0.8);
   }
+  /* The press of a long sheet stays on screen while the words above it scroll. */
+  .sheet-press {
+    position: sticky;
+    bottom: 0;
+    margin-inline: -1rem;
+    padding: 0.5rem 1rem calc(var(--safe-bottom) + 0.5rem);
+    background: hsl(266 60% 13%);
+  }
   @media (prefers-reduced-motion: no-preference) {
     .sheet[data-state="open"] {
       animation: sheet-up 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);

@@ -9,6 +9,8 @@ import { nameTheNetwork, numbersFor } from "../../../tests/helpers/pot-harness";
 import type { MoneyWallet } from "../money/wallet";
 import { markBackAfterSignUp, takeBackAfterSignUp } from "./back-after-sign-up";
 import { BackCard } from "./BackCard";
+import { targetOf } from "./target";
+import { YourShares } from "./YourShares";
 
 const ACCOUNT = `0x${"11".repeat(20)}`;
 const navigate = vi.fn();
@@ -112,6 +114,28 @@ describe("Back with no account", () => {
       /does not hold the passkey/,
     );
     expect(screen.queryByTestId("backing-review")).toBeNull();
+  });
+
+  it("draws no Your Shares card for them: it would only send a stranger to a phone they never used", async () => {
+    current = phone(false);
+    wrap(
+      <>
+        <BackCard now={NOW} numbers={numbers} projectName="Lantern" />
+        <YourShares projectName="Lantern" target={targetOf(numbers)} />
+      </>,
+    );
+    await screen.findByTestId("backing-review");
+    expect(screen.queryByTestId("your-shares")).toBeNull();
+    expect(screen.queryByTestId("pot-no-wallet")).toBeNull();
+  });
+
+  it("still draws Your Shares for a signed-in person on a phone without the passkey, with the sentence", async () => {
+    pubkey = "b".repeat(64);
+    current = phone(false);
+    wrap(<YourShares projectName="Lantern" target={targetOf(numbers)} />);
+    expect((await screen.findByTestId("pot-no-wallet")).textContent).toMatch(
+      /does not hold the passkey/,
+    );
   });
 
   it("leaves a wallet browser on its own way: connect, with nothing kept", async () => {

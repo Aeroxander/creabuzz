@@ -121,6 +121,24 @@ export function useQuietReady(chainId: number): Ready | null {
   return { address: pot.address, read: pot.read, wallet: pot.wallet };
 }
 
+/** Whether this is a phone that signs up with a passkey and has no account here yet: it holds nothing to show or take out. */
+function isSignedOutPhone(wallet: PotWallet["wallet"], pubkey: string | null) {
+  const now = senderAvailability(wallet);
+  return (
+    !pubkey &&
+    senderKind(wallet) === "passkey" &&
+    !now.ok &&
+    now.reason === "no-passkey"
+  );
+}
+
+/** The same, as a hook for a card that has nothing to say to such a visitor. */
+export function useSignedOutPhone(chainId: number): boolean {
+  const pot = usePotWallet(chainId);
+  const { pubkey } = useAccount();
+  return isSignedOutPhone(pot.wallet, pubkey);
+}
+
 /**
  * Children when the sender is ready (a sender that can send, an account it shows, on the project's network); otherwise the
  * one thing missing and the press that fixes it.
@@ -154,14 +172,7 @@ export function WalletGate({
         {BUILD_WORDS[fits]}
       </p>
     );
-  const now = senderAvailability(pot.wallet);
-  if (
-    signedOut &&
-    !pubkey &&
-    senderKind(pot.wallet) === "passkey" &&
-    !now.ok &&
-    now.reason === "no-passkey"
-  )
+  if (signedOut && isSignedOutPhone(pot.wallet, pubkey))
     return <>{signedOut}</>;
   if (!pot.wallet.isAvailable())
     return (

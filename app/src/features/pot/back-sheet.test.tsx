@@ -2,6 +2,7 @@
 // call and two on one that cannot, and every state that stops a Back says what to do instead.
 import { applyServerSettings } from "@creaton/core/client/server-settings.ts";
 import { decodeCall } from "@creaton/core/pot/abi-codec.ts";
+import { faucetCall } from "@creaton/core/pot/pot-calls.ts";
 import {
   PLAY_DOLLAR_ABI,
   TREASURY_ABI,
@@ -220,6 +221,16 @@ describe("what stops a Back says what to do", () => {
     expect(
       (screen.getByTestId("sheet-confirm") as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+
+  it("too few play dollars puts the way to get them in the sheet, and the press sends the faucet call", async () => {
+    setup({ answers: backerAnswers(numbers, { dollars: 0n }) });
+    await openSheet("10");
+    await screen.findByTestId("back-short");
+    const sheet = screen.getByTestId("back-sheet");
+    fireEvent.click(await within(sheet).findByTestId("faucet-open"));
+    await waitFor(() => expect(chain.sent.length).toBe(1));
+    expect(chain.sent[0].data).toBe(faucetCall(numbers.contracts.dollar).data);
   });
 
   it("a price that could not be read says nothing was taken and offers to try again", async () => {

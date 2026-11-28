@@ -11,8 +11,10 @@ import { Card } from "../../ui/card";
 import type { ProjectNumbers } from "../money/numbers";
 import { type BackRead, readBack } from "./back-read";
 import { plannedBackLine } from "./back-tasks";
+import { FaucetCard } from "./FaucetCard";
 import { rememberStep } from "./own-history";
 import { PotSheet } from "./PotSheet";
+import { targetOf } from "./target";
 import type { Ready } from "./use-pot";
 import {
   NOT_A_RETURN,
@@ -140,9 +142,11 @@ export function BackSheet({
             role="alert"
           >
             You hold {smallDollarsText(good.dollars)} play dollars, less than{" "}
-            {exactDollarsText(amount)}. Get play dollars first.
+            {exactDollarsText(amount)}.
           </p>
         ) : null}
+        {/* The way out of a shortfall is in the sheet itself: the press is drawn only while the faucet is unused. */}
+        {short ? <FaucetCard ready={ready} target={targetOf(numbers)} /> : null}
       </>
     );
   else body = null;

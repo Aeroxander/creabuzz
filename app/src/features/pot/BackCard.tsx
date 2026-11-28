@@ -195,7 +195,7 @@ export function BackCard({
         </p>
       ) : shut ? (
         <p className="text-sm" data-testid="back-door-shut">
-          {shut}
+          {shut} You can still take your money out from the Money tab.
         </p>
       ) : (
         <WalletGate

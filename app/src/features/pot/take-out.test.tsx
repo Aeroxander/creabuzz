@@ -4,7 +4,14 @@
 import { applyServerSettings } from "@creaton/core/client/server-settings.ts";
 import { decodeCall } from "@creaton/core/pot/abi-codec.ts";
 import { TREASURY_ABI } from "@creaton/core/pot/abis.generated.ts";
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SERVER, wrap } from "../../../tests/helpers/money-harness";
@@ -20,6 +27,7 @@ import {
   numbersFor,
   S,
 } from "../../../tests/helpers/pot-harness";
+import { ToastProvider } from "../../ui/toast";
 import { ownSteps } from "./own-history";
 import { targetOf } from "./target";
 import { HoldingTop } from "./HoldingTop";
@@ -130,6 +138,43 @@ describe("the Take out sheet", () => {
     );
     // The step is in this account's own history.
     expect(ownSteps(BACKER_EVM, numbers.key)[0]?.kind).toBe("take-out");
+  });
+
+  it("when the last Shares leave the page after the sheet has closed, focus goes to the page's heading, not to nothing", async () => {
+    // The refresh that shows nothing held lands after the sheet gave focus back to Take out, which it then takes off the page.
+    let gone = false;
+    setup(
+      { shares: 1_000n * S },
+      {
+        balanceOf: (_args: readonly unknown[], to: string) =>
+          to === numbers.contracts.shares ? [gone ? 0n : 1_000n * S] : [0n],
+      },
+    );
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <ToastProvider>
+          <h1>Lantern</h1>
+          {holdingTop()}
+        </ToastProvider>
+      </QueryClientProvider>,
+    );
+    fireEvent.click(await screen.findByTestId("holding-take-out"));
+    await screen.findByTestId("takeout-cash");
+    fireEvent.click(screen.getByTestId("sheet-confirm"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("takeout-sheet")).toBeNull(),
+    );
+    // A browser gives focus back to the press the sheet came from; the press is what the next refresh takes away.
+    screen.getByTestId("holding-take-out").focus();
+    gone = true;
+    await client.invalidateQueries({ queryKey: ["pot"] });
+    await waitFor(() => expect(screen.queryByTestId("top-holding")).toBeNull());
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("heading")),
+    );
   });
 
   it("says that outside money still arriving is not paid now", async () => {

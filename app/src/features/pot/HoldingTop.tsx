@@ -3,9 +3,10 @@
  * read from the chain), the fixed not-a-return sentence beside it, and Take out. It says nothing until the account is ready
  * and holds Shares: a visitor sees Back instead.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
+import { focusThePage } from "../../ui/focus-page";
 import { potProblem } from "../money/problems";
 import { goToClaims } from "../tasks/chain/holder/claims-anchor";
 import { NOT_A_RETURN, sharesWords, smallDollarsText } from "../money/copy";
@@ -60,6 +61,18 @@ function Holds({
 }) {
   const [open, setOpen] = useState(false);
   const reading = useHolding(ready, target);
+  // The last Shares taken out take this card off the page, and the Take out press that had focus with it: focus goes to the
+  // page's heading, not to nothing.
+  const held = (reading.data?.shares ?? 0n) > 0n;
+  const hadShares = useRef(false);
+  useEffect(() => {
+    if (held) hadShares.current = true;
+    else if (hadShares.current) {
+      hadShares.current = false;
+      if (document.activeElement === document.body || !document.activeElement)
+        focusThePage();
+    }
+  }, [held]);
   if (reading.isError)
     return (
       <Card

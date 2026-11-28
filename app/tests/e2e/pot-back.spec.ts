@@ -26,6 +26,8 @@ const read = (to: string, data: string) => call(to, data);
 test(`Back with the wallet: ${PLAN_V2_BUDGETS.back.presses} presses, ${PLAN_V2_BUDGETS.back.fields} box, one wallet prompt, and the Shares are the quote`, async ({
   page,
 }) => {
+  // A small phone: the press is still on screen with the sheet's long sentences above it.
+  await page.setViewportSize({ width: 360, height: 640 });
   const w = world.get();
   const project = await launchProject(w, "backone", FOUNDER_NOSTR);
   await giveDollars(w, w.who.backer);
@@ -48,6 +50,9 @@ test(`Back with the wallet: ${PLAN_V2_BUDGETS.back.presses} presses, ${PLAN_V2_B
   await expect(sheet).toBeVisible();
   await expect(page.getByTestId("back-shares")).toContainText("2,450 Shares");
   await path.read(page, "the Back sheet");
+  const press = await page.getByTestId("sheet-confirm").boundingBox();
+  expect(press).not.toBeNull();
+  expect((press?.y ?? 0) + (press?.height ?? 0)).toBeLessThanOrEqual(640);
   await path.press(page.getByTestId("sheet-confirm"), "Back with 25 dollars");
   await expect(sheet).toBeHidden({ timeout: 30_000 });
   await expect(page.getByTestId("holding-shares")).toContainText("2,450", {

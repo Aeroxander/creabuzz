@@ -18,7 +18,7 @@ import { exactDollarsText, sharesWords, smallDollarsText } from "../money/copy";
 import { TakeOutSheet } from "./TakeOutSheet";
 import type { MoneyTarget } from "./target";
 import { useHeldSince } from "./use-held-since";
-import { type Ready, WalletGate } from "./use-pot";
+import { type Ready, useSignedOutPhone, WalletGate } from "./use-pot";
 
 /**
  * What an account holds in a project, with what taking all of it out would give now. Only the Shares balance is needed to
@@ -68,6 +68,9 @@ export function YourShares({
   projectName: string;
 }) {
   const titleId = useId();
+  // Someone with no account yet holds nothing here, and the card would only tell them to sign in on a phone they never used.
+  const signedOut = useSignedOutPhone(target.chainId);
+  if (signedOut) return null;
   return (
     <Card
       aria-labelledby={titleId}

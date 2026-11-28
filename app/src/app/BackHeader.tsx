@@ -20,6 +20,7 @@ export function BackHeader({
   return (
     <header className="flex min-h-12 items-center justify-between gap-2">
       <button
+        aria-label="Go back"
         className="btn btn-ghost btn-sm -ml-2 text-ink"
         data-testid="back"
         onClick={() => {

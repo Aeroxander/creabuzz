@@ -193,20 +193,22 @@ export function PotSheet(props: PotSheetProps) {
           {problem}
         </p>
       ) : null}
-      <Button
-        block
-        data-testid="sheet-confirm"
-        disabled={
-          send.isPending ||
-          checking ||
-          props.blocked ||
-          !calls ||
-          calls.length === 0
-        }
-        onClick={() => void press()}
-      >
-        {label}
-      </Button>
+      <div className="sheet-press">
+        <Button
+          block
+          data-testid="sheet-confirm"
+          disabled={
+            send.isPending ||
+            checking ||
+            props.blocked ||
+            !calls ||
+            calls.length === 0
+          }
+          onClick={() => void press()}
+        >
+          {label}
+        </Button>
+      </div>
     </Sheet>
   );
 }
