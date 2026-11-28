@@ -185,6 +185,11 @@ function browserProvider(): Eip1193Provider | undefined {
     : undefined;
 }
 
+/** Whether this browser has a wallet of its own to send from (an injected provider). */
+export function walletInBrowser(): boolean {
+  return browserProvider() !== undefined;
+}
+
 /** Whether a wallet's refusal to switch says "I do not know this network" (EIP-3085's code, bare or inside what a wallet wraps it in). */
 function unknownNetwork(error: unknown): boolean {
   const code = (value: unknown): unknown =>

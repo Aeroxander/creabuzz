@@ -32,6 +32,7 @@ import { Button } from "../../ui/button";
 import { Field } from "../../ui/field";
 import { useToast } from "../../ui/toast";
 import { Mark } from "../../app/Mark";
+import { walletInBrowser } from "../money/wallet";
 import { PolicyBoxes } from "./PolicyBoxes";
 import { useJoinPolicy } from "./use-join-policy";
 
@@ -114,14 +115,17 @@ function CreateView({
     };
   }, []);
   const allowed = mayCreateAccount(policy, { agreement: agreed, age: ageOk });
-  const ready = name.trim().length > 0 && allowed && !saving;
+  const ready = allowed && !saving;
   // The way more likely to work gets the green: a passkey when this device can make one, unless it just failed.
   const passkeyLeads =
     failedWay !== null ? failedWay === "plain" : platform === true;
-  const untickedBoxes =
-    name.trim().length > 0 && policy.status === "ready" && !allowed;
+  const untickedBoxes = policy.status === "ready" && !allowed;
+  // A plain account cannot send money from a phone with no wallet app, so it is offered only where it can: with a wallet in
+  // this browser, or on a device that cannot make a passkey at all.
+  const plainOffered = platform === false || walletInBrowser();
 
   const saveName = async (pubkey: string) => {
+    if (name.trim().length === 0) return;
     try {
       await saveProfile(pubkey, { name });
     } catch {
@@ -186,7 +190,7 @@ function CreateView({
       <Field
         autoComplete="nickname"
         data-testid="onboarding-name"
-        label="Name"
+        label="Your name"
         onChange={(e) => setName(e.target.value)}
         value={name}
       />
@@ -225,18 +229,22 @@ function CreateView({
           <Fingerprint aria-hidden="true" size={18} />
           Create with a passkey
         </Button>
-        <Button
-          block
-          data-testid="onboarding-create"
-          disabled={!ready}
-          onClick={() => void createPlain()}
-          variant={passkeyLeads ? "secondary" : "primary"}
-        >
-          Create without a passkey
-        </Button>
-        <p className="-mt-1 text-center text-xs text-muted">
-          Without a passkey, clearing this browser's data loses the account.
-        </p>
+        {plainOffered ? (
+          <>
+            <Button
+              block
+              data-testid="onboarding-create"
+              disabled={!ready}
+              onClick={() => void createPlain()}
+              variant={passkeyLeads ? "secondary" : "primary"}
+            >
+              Create without a passkey
+            </Button>
+            <p className="-mt-1 text-center text-xs text-muted">
+              Without a passkey, clearing this browser's data loses the account.
+            </p>
+          </>
+        ) : null}
       </div>
       <div className="plain flex items-center justify-between gap-2 rounded-2xl px-3 text-sm">
         <button

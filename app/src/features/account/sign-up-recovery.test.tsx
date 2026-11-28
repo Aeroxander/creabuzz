@@ -8,6 +8,11 @@ import { wrap } from "../../../tests/helpers/money-harness";
 import { SignUpPage } from "./SignUpPage";
 
 const arrived: unknown[] = [];
+const device = vi.hoisted(() => ({ passkeys: false }));
+
+vi.mock("@creaton/core/account/platform-passkey", () => ({
+  platformPasskeyAvailable: async () => device.passkeys,
+}));
 
 vi.mock(
   "../../lib/relay",
@@ -40,12 +45,14 @@ vi.mock("@tanstack/react-router", async (actual) => ({
 afterEach(() => {
   cleanup();
   arrived.length = 0;
+  device.passkeys = false;
+  delete (window as { ethereum?: unknown }).ethereum;
 });
 
 describe("making an account", () => {
-  it("says what an account without a passkey risks, before the press", () => {
+  it("says what an account without a passkey risks, before the press", async () => {
     wrap(<SignUpPage />);
-    expect(screen.getByTestId("onboarding-create")).toBeTruthy();
+    expect(await screen.findByTestId("onboarding-create")).toBeTruthy();
     expect(
       screen.getByText(/clearing this browser's data loses the account/),
     ).toBeTruthy();
@@ -53,13 +60,26 @@ describe("making an account", () => {
 
   it("goes straight on after the plain press: no recovery-key sheet, and no key drawn", async () => {
     wrap(<SignUpPage next="/start" />);
-    // The press stays disabled until a name is typed: without this the click did nothing and the test proved nothing.
-    fireEvent.change(screen.getByLabelText("Name"), {
-      target: { value: "Sam" },
-    });
-    fireEvent.click(screen.getByTestId("onboarding-create"));
+    // The press needs no name: only the boxes, and this policy has none.
+    fireEvent.click(await screen.findByTestId("onboarding-create"));
     await waitFor(() => expect(arrived).toEqual([{ to: "/start" }]));
     expect(screen.queryByTestId("backup-sheet")).toBeNull();
     expect(screen.queryByTestId("backup-key")).toBeNull();
+  });
+
+  it("offers no plain account on a phone that makes passkeys and has no wallet, which could never send from it", async () => {
+    device.passkeys = true;
+    wrap(<SignUpPage />);
+    await screen.findByTestId("onboarding-passkey");
+    await waitFor(() =>
+      expect(screen.queryByTestId("onboarding-create")).toBeNull(),
+    );
+  });
+
+  it("offers the plain account again when this browser has a wallet", async () => {
+    device.passkeys = true;
+    (window as { ethereum?: unknown }).ethereum = { request: async () => null };
+    wrap(<SignUpPage />);
+    expect(await screen.findByTestId("onboarding-create")).toBeTruthy();
   });
 });
