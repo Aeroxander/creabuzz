@@ -198,7 +198,7 @@ test("the platform's settings change between the sheet and the signature: nothin
   await page.getByTestId("sheet-confirm").click();
   const problem = page.getByTestId("sheet-problem");
   await expect(problem).toContainText(
-    "The platform's settings changed while you were deciding. Nothing was sent.",
+    "Creaton's settings changed while you were deciding. Nothing was sent.",
   );
   await expect(problem).not.toContainText(/0x|revert|SettingsMoved/);
   expect(wallet.prompts).toBe(0);

@@ -68,14 +68,13 @@ turned on for that deployment.
 
 | Setting | Default | What it does |
 |---|---|---|
-| `HOLDER_PAUSE` | `0` (off) | `1` also deploys the holder pause and binds it to the Launcher, so every project launched from then on has it. Holders park Shares; when parked Shares reach a third of the Shares backers hold, the team's draws from the allowance box and new task plans pause from one warning day later, for as long as a third stays parked. It never pays anyone, never moves money, and never stops or slows Take out. The founder is told so on the launch sheet, and it cannot be turned off for a project. The script prints the pause code's hash: publish it with your terms. |
+| `HOLDER_PAUSE` | `0` (off) | `1` also deploys the holder pause and binds it to the Launcher, so every project launched from then on has it. Leave it at 0: the app no longer has any screen for parking Shares, so turning it on gives holders no way to use it, and Shares parked on an older deployment are not counted or taken back by the app. It cannot be turned off for a project once on. The script prints the pause code's hash: publish it with your terms. |
 | `EARLIER_ROOT`, `EARLIER_TEXT_HASH`, `EARLIER_TOTAL`, `EARLIER_ROWS`, `EARLIER_FOUNDER`, `EARLIER_PROJECT_ID` | none of the six set (nothing is claimable) | **All six or none** (one set without the rest stops the script). They deploy the earlier backers' claim contract and bind it to the Launcher before any project can be launched; the project named by `EARLIER_FOUNDER` and `EARLIER_PROJECT_ID` (project zero) is born with a reserve of Team Shares for the list. `EARLIER_ROOT` is the list's one fingerprint (a Merkle root over rows of account and amount: the rows are never written down by this repository or the server), `EARLIER_TEXT_HASH` the fingerprint of the text a claimant accepts in the same call, `EARLIER_TOTAL` the pool in Team Share wei (the sum of the rows), `EARLIER_ROWS` the number of rows. The text, the consent words, the list and the pool's size are counsel's and the owner's: none is decided here. |
 | `EARLIER_ALLOW_LARGE` | `0` | A pool above the founder's own Team pool limit (100,000,000 Shares) is refused unless this is `1`. The pool dilutes backers (and keeps diluting them after a wind-down: unclaimed rows never expire), so set it on purpose. |
 
 The server needs **no setting** for either: it finds the pause and the claim contract from the Launcher's own events and writes
 what it reads into the signed numbers (null where a project has neither). To check: `cast call <Launcher> "holderPauseImpl()(address)"`
 is not the zero address with the first switch on; `cast call <Launcher> "earlier()(address)"` is not the zero address with the second.
-`scripts/pot-full-loop.sh pot-pause.spec` runs the first on a local chain end to end.
 
 **What the script prints, and where to publish it.** The run writes each code hash into `deployments/pot-<chain id>.json`
 (`holderPauseCodehash` and `earlierCodehash`, each only when its switch was on). Check each one against your own build before you
