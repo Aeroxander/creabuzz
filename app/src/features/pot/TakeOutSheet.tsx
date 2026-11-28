@@ -9,13 +9,6 @@ import { useRef, useState } from "react";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { potProblem } from "../money/pot-copy";
-import { useSenderWords } from "../money/use-money";
-import { readParked } from "../pause/parked-read";
-import {
-  holdingWithParked,
-  TAKE_OUT_TWICE,
-  TAKE_OUT_UNPARKS,
-} from "../pause/pause-words";
 import { rememberStep } from "./own-history";
 import { PotSheet } from "./PotSheet";
 import { trackNotes } from "./take-out-notes";
@@ -90,7 +83,6 @@ export function TakeOutSheet({
   taskInfo?: TakeOutTaskInfo;
 }) {
   const [portion, setPortion] = useState<Portion>("all");
-  const words = useSenderWords();
   const team = kind === "team";
   const reading = useQuery({
     queryKey: [
@@ -194,11 +186,7 @@ export function TakeOutSheet({
           <Line
             label={`You hold`}
             testId="takeout-held"
-            value={
-              good.parked > 0n
-                ? holdingWithParked(good.held, good.parked)
-                : `${sharesWords(good.held)} ${word}`
-            }
+            value={`${sharesWords(good.held)} ${word}`}
           />
           <Line
             label={`You take out`}
@@ -218,12 +206,6 @@ export function TakeOutSheet({
           />
         </dl>
         <p className="text-sm text-muted">{NOT_A_RETURN}</p>
-        {good.calls.length > 1 ? (
-          <p className="text-sm" data-testid="takeout-unparks">
-            {TAKE_OUT_UNPARKS}
-            {words.kind === "wallet" ? ` ${TAKE_OUT_TWICE}` : ""}
-          </p>
-        ) : null}
         {team ? (
           <p className="text-sm text-muted" data-testid="takeout-team-words">
             Team Shares pay only the project's money above what backers put in.
@@ -280,7 +262,7 @@ export function TakeOutSheet({
     <PotSheet
       account={ready.address}
       action={`${team ? "take-out-team" : "take-out"}:${target.chainId}:${target.treasury}`}
-      calls={good ? good.calls : null}
+      calls={good ? [good.call] : null}
       chainId={target.chainId}
       confirmLabel={
         good ? `Take out ${sharesWords(good.shares)} ${word}` : "Take out"
@@ -293,16 +275,12 @@ export function TakeOutSheet({
         const [shares, before] = (earlier.detail ?? "").split(":");
         if (!shares || !before || !/^\d+$/.test(before)) return false;
         const readNow = (to: string, data: string) => wallet.readCall(to, data);
-        // What is parked is still held: the Shares now are the wallet's and the pause's.
-        const inWallet = await balanceOf(
+        const held = await balanceOf(
           readNow,
           team ? target.team : target.shares,
           from,
         );
-        const parked = team
-          ? 0n
-          : (await readParked(readNow, target, from)).parked;
-        return inWallet + parked < BigInt(before);
+        return held < BigInt(before);
       }}
       lookLabel="Look for your take-out"
       onLanded={(txHash, landed) => {

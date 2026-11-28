@@ -14,7 +14,6 @@ import type { Project } from "../project/project-record";
 import { PotSheet } from "../pot/PotSheet";
 import type { Ready } from "../pot/use-pot";
 import { isLaunched } from "./launch-read";
-import { launchSentence } from "../pause/pause-words";
 import { launchIdentity, sharesName, sharesSymbol } from "./launch-ids";
 import { launchCallFor } from "./launch-plan";
 import {
@@ -172,11 +171,6 @@ export function LaunchSheet({
               ))}
             </ul>
           </section>
-          {shown.holderPause ? (
-            <p className="text-sm" data-testid="launch-pause">
-              {launchSentence(shown.holderPause.lineDivisor)}
-            </p>
-          ) : null}
           <section
             aria-labelledby="launch-later-title"
             className="flex flex-col gap-1.5"

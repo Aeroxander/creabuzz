@@ -11,7 +11,7 @@
 import { signatureOf } from "@creaton/core/pot/abi-codec.ts";
 import { SHARE_TOKEN_ABI } from "@creaton/core/pot/abis.generated.ts";
 import { topicOf } from "@creaton/core/launchpad/work.ts";
-import { balanceOf, parkedOf, readUnit } from "@creaton/core/pot/pot-reads.ts";
+import { balanceOf, readUnit } from "@creaton/core/pot/pot-reads.ts";
 import { dayText } from "../money/numbers";
 import type { MoneyWallet } from "../money/wallet";
 
@@ -56,11 +56,8 @@ async function movesIn(
   account: string,
   from: number,
   to: number,
-  pause: string | null = null,
 ): Promise<Move[]> {
   const me = word(account);
-  // Parking is not a sale and taking back is not a purchase: a move to or from the project's pause contract changes nothing.
-  const park = pause ? word(pause) : null;
   const [sent, received] = await Promise.all([
     source.getLogs({ address: token, topics: [TRANSFER, me], from, to }),
     source.getLogs({ address: token, topics: [TRANSFER, null, me], from, to }),
@@ -83,7 +80,6 @@ async function movesIn(
       const toWord = log.topics[2]?.toLowerCase();
       // The account's own side of the log. A move to itself is in both lists and nets to nothing in its block.
       if (outgoing ? fromWord !== me : toWord !== me) continue;
-      if (park && (outgoing ? toWord : fromWord) === park) continue;
       const value = BigInt(log.data);
       out.push({
         block: Number(BigInt(log.blockNumber)),
@@ -161,20 +157,15 @@ export async function readHeldSince(
     account: string;
     shares: string;
     treasury: string;
-    /** The project's pause contract: Shares parked there are still the account's, and parking moves nothing. */
-    pause?: string | null;
   },
 ): Promise<HeldSince | null> {
   try {
     if (!source.blockTime) return null;
-    const pause = input.pause ?? null;
-    const balance =
-      (await balanceOf(read, input.shares, input.account)) +
-      (pause ? await parkedOf(read, pause, input.account) : 0n);
+    const balance = await balanceOf(read, input.shares, input.account);
     if (balance <= 0n) return null;
     const head = await source.blockNumber();
     const block = await holdingBlock(balance, head, (from, to) =>
-      movesIn(source, input.shares, input.account, from, to, pause),
+      movesIn(source, input.shares, input.account, from, to),
     );
     if (block === null) return null;
     const [since, now, unit] = await Promise.all([

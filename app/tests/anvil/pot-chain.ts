@@ -34,8 +34,6 @@ export interface PotChain {
   launcher: string;
   /** The time unit in seconds (a multiple of 168 on a test chain). */
   unit: number;
-  /** The holder pause's code the Launcher gives every new project, when the deployment's switch was on. */
-  holderPause?: string;
   /** The earlier backers' claim contract, when the deployment was given its settings. */
   earlier?: string;
 }
@@ -58,7 +56,7 @@ export const walletOf = (account: string): MoneyWallet =>
 export async function deployPot(
   admin: string,
   unit = 1680,
-  options: { pause?: boolean; earlier?: EarlierSettings } = {},
+  options: { earlier?: EarlierSettings } = {},
 ): Promise<PotChain> {
   const deployFrom = async (
     name: string,
@@ -82,15 +80,7 @@ export async function deployPot(
     [admin, [dollar, admin, 200n, BigInt(unit), 25_000_000n], parts],
   );
   const chain: PotChain = { dollar, parts, launcher, unit };
-  // The two switches of step 4, as `DeployPot.s.sol` does them: each deployed and bound before any project is launched.
-  if (options.pause) {
-    chain.holderPause = await deployFrom("HolderPause");
-    await send(
-      admin,
-      launcher,
-      encodeCall(LAUNCHER_ABI, "bindPause", [chain.holderPause]),
-    );
-  }
+  // The earlier backers' claim switch, as `DeployPot.s.sol` does it: deployed and bound before any project is launched.
   if (options.earlier) {
     const e = options.earlier;
     chain.earlier = await deployFrom(

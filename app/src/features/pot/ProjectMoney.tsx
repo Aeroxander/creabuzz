@@ -20,12 +20,10 @@ import { Card } from "../../ui/card";
 import { EmptyState } from "../../ui/empty-state";
 import {
   freshnessOf,
-  holdingHint,
   type ProjectNumbers,
   type RemovedNumbers,
 } from "../money/numbers";
 import { OwnershipLine } from "../money/OwnershipLine";
-import { PauseCard } from "../pause/PauseCard";
 import { AllowanceSection } from "./AllowanceSection";
 import { ChainOnlyShares } from "./ChainOnlyShares";
 import type { GrantMember } from "./GrantSheet";
@@ -159,24 +157,7 @@ export function ProjectMoney({
       ) : (
         <MoneyFacts now={now} numbers={numbers} />
       )}
-      {/* Step 4: only a record with a readable stop draws the card; an older one or none draws nothing about it. */}
-      {numbers.pause ? (
-        <PauseCard
-          holds={
-            wallet.address
-              ? holdingHint(numbers, [wallet.address]).listed
-              : false
-          }
-          now={now}
-          numbers={numbers}
-          pause={numbers.pause}
-        />
-      ) : null}
       <YourShares
-        pauseInfo={{
-          contract: numbers.contracts.pause ?? null,
-          record: numbers.pause,
-        }}
         projectName={projectName}
         target={target}
         taskInfo={taskInfo}

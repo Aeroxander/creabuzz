@@ -6,8 +6,6 @@
  */
 import { Link } from "@tanstack/react-router";
 import { useId, useState } from "react";
-import { TeamPauseLine } from "../pause/TeamPauseLine";
-import { useTeamPause } from "../pause/use-team-pause";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { useQueryClient } from "@tanstack/react-query";
@@ -154,9 +152,6 @@ function Inner({
   const [sheet, setSheet] = useState<Sheet | null>(null);
   // The state is read when the card shows, so the sentence beside each button is the chain's own.
   const state = useAllowanceState(numbers, ready, true);
-  const pause = useTeamPause(numbers, ready.read);
-  const pauseId = useId();
-  const paused = pause?.stage === "paused";
   const role = runnerRole(numbers, ready.address);
   if (role.kind === "none") return null;
   if (state.isPending) return <Card className="h-24 animate-pulse" />;
@@ -228,12 +223,10 @@ function Inner({
         </p>
       ) : (
         <div className="flex flex-col gap-2">
-          <TeamPauseLine id={pauseId} pause={pause} />
           <Button
-            aria-describedby={paused ? pauseId : undefined}
             block
             data-testid="allowance-draw"
-            disabled={box === 0n || paused}
+            disabled={box === 0n}
             onClick={() => setSheet("draw")}
           >
             Draw from the box

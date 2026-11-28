@@ -19,11 +19,6 @@ export interface MoneyTarget {
   dollar: string | null;
   /** The dollars here are play money (always, until real money is switched on). */
   playMoney: boolean;
-  /**
-   * The pause contract the project's record names, or null/absent. Only a hint: where Shares are approved to is always what
-   * the Treasury itself says (`pauseGateOf`). A hint makes a failed read of the pause a stop instead of a "none".
-   */
-  pauseHint?: string | null;
 }
 
 export function targetOf(numbers: ProjectNumbers): MoneyTarget {
@@ -37,6 +32,5 @@ export function targetOf(numbers: ProjectNumbers): MoneyTarget {
     // A dollar this build does not know is not offered a faucet or a balance line.
     dollar: recordFitsBuild(numbers) ? numbers.contracts.dollar : null,
     playMoney: mustSayPlayMoney(numbers.playMoney),
-    pauseHint: numbers.contracts.pause ?? null,
   };
 }

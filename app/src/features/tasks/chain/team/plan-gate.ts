@@ -8,7 +8,6 @@ import { isWallet, type ProjectTask } from "../../task-record";
 import type { Door } from "../door";
 import { openCountAt, tieOf } from "../state";
 import type { ChainTasks } from "../types";
-import { teamPaused } from "../../../pause/pause-words";
 import { alreadyPlanned, cannotPlan, PLAN_BLOCK } from "./plan-words";
 import { hypotheticalRow, plannedAlready, type PlanRead } from "./plan-read";
 
@@ -27,8 +26,6 @@ export interface PlanGateInput {
   now: number;
   /** The worker's name, for the sentence about a wallet they did not name. */
   workerName: string;
-  /** Holders have paused the team's spending (the chain's own answer, or the record's): a new plan is refused. */
-  paused?: { divisor: number; since: number | null } | null;
   /** A payment of this task from the box that landed without its record is waiting in the journal: the task is paid already. */
   boxPaid?: boolean;
 }
@@ -50,8 +47,6 @@ export function planBlock(input: PlanGateInput): PlanBlock | null {
     return stop(PLAN_BLOCK.stale);
   if (runnerRole(numbers, input.address).kind === "none")
     return stop(PLAN_BLOCK.notRunner);
-  if (input.paused)
-    return stop(teamPaused(input.paused.divisor, input.paused.since));
   if (input.boxPaid) return stop(PLAN_BLOCK.boxPaid);
   if (input.door.door === "box-only") return stop(input.door.sentence);
   const same = plannedAlready(read, task.id);

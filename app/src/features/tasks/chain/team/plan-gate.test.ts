@@ -89,26 +89,6 @@ describe("what stops a plan", () => {
     expect(planBlock(input(numbers, { boxPaid: false }))).toBeNull();
   });
 
-  it("a pause that holders have put on the team's spending refuses a new plan, in the pause's own words", () => {
-    const numbers = scene();
-    const block = planBlock(
-      input(numbers, { paused: { divisor: 3, since: 1_800_000_000 } }),
-    );
-    expect(block?.sentence).toMatch(
-      /^Paused by holders since .*\. You cannot draw the allowance or plan a new task until fewer than a third of Shares are parked\./,
-    );
-    expect(planBlock(input(numbers, { paused: null }))).toBeNull();
-    // a project that is not a runner's still reads the runner sentence first
-    expect(
-      planBlock(
-        input(numbers, {
-          address: "0x9965507d1a55bcc2695c58ba16fb37d819b0a4dc",
-          paused: { divisor: 3, since: null },
-        }),
-      )?.sentence,
-    ).toBe(PLAN_BLOCK.notRunner);
-  });
-
   it("a pay-to of the zero address (open to anyone on the network) is no account, so nothing is planned", () => {
     const numbers = scene();
     const task = planTask({ payTo: `0x${"0".repeat(40)}` });

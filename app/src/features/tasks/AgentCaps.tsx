@@ -5,8 +5,6 @@ import { Field } from "../../ui/field";
 import { useToast } from "../../ui/toast";
 import { DOLLAR, type ProjectNumbers } from "../money/numbers";
 import { useMoneySend } from "../money/use-money";
-import { HELPERS_PAUSED } from "../pause/pause-words";
-import { useTeamPause } from "../pause/use-team-pause";
 import {
   AGENT_DOLLARS_MAX,
   AGENT_SHARES_MAX,
@@ -36,8 +34,6 @@ export function AgentCaps({ numbers }: { numbers: ProjectNumbers }) {
   const [tried, setTried] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const treasury = numbers.contracts.treasury;
-  // From the record alone: this card reads nothing from the network.
-  const paused = useTeamPause(numbers, null)?.stage === "paused";
   const send = useMoneySend(`agent:${numbers.chainId}:${treasury}`);
   const toast = useToast();
   const addressProblem = ADDRESS.test(agent.trim())
@@ -116,11 +112,6 @@ export function AgentCaps({ numbers }: { numbers: ProjectNumbers }) {
         }
         value={shares}
       />
-      {paused ? (
-        <p className="text-sm" data-testid="agent-paused">
-          {HELPERS_PAUSED}
-        </p>
-      ) : null}
       {problem ? (
         <p className="text-sm text-danger" role="alert">
           {problem}

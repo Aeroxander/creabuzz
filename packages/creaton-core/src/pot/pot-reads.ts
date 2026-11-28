@@ -8,7 +8,6 @@ import { keccak_256 } from "@noble/hashes/sha3.js";
 import { decodeParameters, selectorOf } from "../launchpad/evmAbi.ts";
 import {
   EARLIER_GRANTS_ABI,
-  HOLDER_PAUSE_ABI,
   PLAY_DOLLAR_ABI,
   SHARE_TOKEN_ABI,
   TASK_BOOK_ABI,
@@ -605,65 +604,7 @@ export async function scanNotes(
   return { serials, reachedBlock: reached, done: high < bookBlock };
 }
 
-// --- The holder pause and the earlier backers' claim (step 4) ------------------------------------------------------------
-
-/** How many Shares `holder` has parked in the project's pause contract. */
-export async function parkedOf(
-  read: ReadCall,
-  pause: string,
-  holder: string,
-): Promise<bigint> {
-  const [parked] = await ask(read, HOLDER_PAUSE_ABI, pause, "parkedOf", [
-    holder,
-  ]);
-  return asBigint(parked);
-}
-
-/** What the project's pause contract says now, in one read (`HolderPause.state`). */
-export interface PauseNow {
-  /** Shares parked in all. */
-  parked: bigint;
-  /** The backers' Shares (parked ones included). */
-  backerShares: bigint;
-  /** The parked Shares that reach the line now. */
-  line: bigint;
-  /** When the line was first seen reached in an unbroken run; 0 when it is not. */
-  armedAt: number;
-  /** When the pause starts if the line stays reached; 0 when not armed. */
-  pausesFrom: number;
-  /** Whether the team's draws and new task plans are refused now. */
-  paused: boolean;
-}
-
-/** `HolderPause.state()` at the chain's latest block. Throws when the answer is not readable; never guesses. */
-export async function pauseState(
-  read: ReadCall,
-  pause: string,
-): Promise<PauseNow> {
-  const [parked, backerShares, line, armed, pausesAt, isPaused] = await ask(
-    read,
-    HOLDER_PAUSE_ABI,
-    pause,
-    "state",
-    [],
-  );
-  if (typeof isPaused !== "boolean")
-    throw new Error("The network gave an answer that is not readable.");
-  const secs = (value: unknown): number => {
-    const n = asBigint(value);
-    if (n > BigInt(Number.MAX_SAFE_INTEGER))
-      throw new Error("The network gave an answer that is not readable.");
-    return Number(n);
-  };
-  return {
-    parked: asBigint(parked),
-    backerShares: asBigint(backerShares),
-    line: asBigint(line),
-    armedAt: secs(armed),
-    pausesFrom: secs(pausesAt),
-    paused: isPaused,
-  };
-}
+// --- The earlier backers' claim (step 4) ------------------------------------------------------------
 
 /** Whether row `index` of the earlier backers' list was claimed (`EarlierGrants.isClaimed`). */
 export async function earlierRowClaimed(
@@ -697,34 +638,4 @@ export async function earlierIsBound(
 ): Promise<boolean> {
   const [vester] = await ask(read, EARLIER_GRANTS_ABI, contract, "vester", []);
   return typeof vester === "string" && !/^0x0{40}$/i.test(vester);
-}
-
-/**
- * The project's holder pause contract as the Treasury itself names it (`Treasury.pauseGate`), lower case, or null when the
- * project has none. The chain is the only source for where Shares are approved to: a record is never trusted for it.
- */
-export async function pauseGateOf(
-  read: ReadCall,
-  treasury: string,
-): Promise<string | null> {
-  const [gate] = await ask(read, TREASURY_ABI, treasury, "pauseGate", []);
-  if (typeof gate !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(gate))
-    throw new Error("The network gave an answer that is not readable.");
-  return /^0x0{40}$/.test(gate) ? null : gate.toLowerCase();
-}
-
-/** The pause contract's two fixed numbers: the warning period in seconds and the line's divisor (3: "a third"). */
-export async function pauseRules(
-  read: ReadCall,
-  pause: string,
-): Promise<{ dayLength: number; lineDivisor: number }> {
-  const [[day], [divisor]] = await Promise.all([
-    ask(read, HOLDER_PAUSE_ABI, pause, "day", []),
-    ask(read, HOLDER_PAUSE_ABI, pause, "LINE_DIVISOR", []),
-  ]);
-  const d = asBigint(day);
-  const v = asBigint(divisor);
-  if (d <= 0n || d > 365n * 86_400n || v < 2n || v > 100n)
-    throw new Error("The network gave an answer that is not readable.");
-  return { dayLength: Number(d), lineDivisor: Number(v) };
 }

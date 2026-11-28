@@ -21,14 +21,6 @@
 # The two journeys do not share a world because the first moves the chain's clock by days (a record is dated by the server's own
 # clock, so a chain that is days ahead of it reads as an old record for the rest of that world).
 #
-# Step 4's journey (app/tests/e2e-pot-full/pot-pause.spec.ts), in a world of its own, deployed with the setting step 4 adds (it is
-# off in every other world, as in a default deployment):
-#   pot-pause     the deploy script is run with HOLDER_PAUSE=1: a founder launches in the app (and is told, before signing, that holders
-#                 can pause the team's spending); two holders park their Shares in the app until the line is passed; the chain's clock
-#                 moves past the warning day; the team's Draw is off and a plan is refused in the app's own words; a holder who has
-#                 Shares parked takes out in one press (un-park, then leave); the pause ends and the team's Draw is back; the record
-#                 equals the contracts' own views at each step (scripts/chain-loop-pot-check.py).
-#
 # Prints one `ok` line per check from the journey and, at the end, "pot-full-loop: N checks passed." Stops everything it started
 # (anvil, the relay, a Redis or Postgres it had to start), drops its scratch database and removes its temporary files, whatever
 # the outcome. Never runs cargo: the relay must already be built (`cargo build -p buzz-relay`).
@@ -70,10 +62,6 @@ SERVE=""
 HOLD=""
 if [[ "${1:-}" == "--serve" ]]; then SERVE=1; shift; fi
 if [[ "${1:-}" == "--hold" ]]; then HOLD=1; shift; fi
-# With a journey named on the command line, the pause journey is the one that gets the pause world.
-for arg in "$@"; do
-  [[ "$arg" == *pot-pause* ]] && WORLD_KIND=pause
-done
 
 [[ -n "${FOUNDRY_BIN:-}" ]] && PATH="$FOUNDRY_BIN:$PATH"
 # Every tool this script needs, checked at once: each missing one is named in a plain sentence with how to get it.
@@ -121,8 +109,6 @@ SH
 fi
 APP_DIST="$STATE/app-dist"
 ANVIL_PID=""
-# What the deployment of a world is given: "default" (no switch) or "pause" (HOLDER_PAUSE=1).
-WORLD_KIND="${WORLD_KIND:-default}"
 RELAY_PID=""
 REDIS_PID=""
 PG_CLUSTER=""
@@ -237,12 +223,8 @@ world_up() {
   MNEMONIC="test test test test test test test test test test test junk"
   K_DEPLOYER="$(cast wallet private-key --mnemonic "$MNEMONIC" --mnemonic-index 0)"
   K_HELPER="$(cast wallet private-key --mnemonic "$MNEMONIC" --mnemonic-index 7)"
-  DEPLOY_ENV=()
-  if [[ "$WORLD_KIND" == "pause" ]]; then
-    DEPLOY_ENV=(HOLDER_PAUSE=1)
-  fi
-  step "deploying contracts/pot with its own deploy script (a real week as the time unit; world kind: $WORLD_KIND)"
-  (cd "$POT" && env ${DEPLOY_ENV[@]+"${DEPLOY_ENV[@]}"} forge script script/DeployPot.s.sol --rpc-url "$RPC" --broadcast --private-key "$K_DEPLOYER" >"$STATE/deploy.log" 2>&1) \
+  step "deploying contracts/pot with its own deploy script (a real week as the time unit)"
+  (cd "$POT" && forge script script/DeployPot.s.sol --rpc-url "$RPC" --broadcast --private-key "$K_DEPLOYER" >"$STATE/deploy.log" 2>&1) \
     || { tail -20 "$STATE/deploy.log" >&2; fail "the deploy script failed"; }
   # The file is shared by every run on this machine and is git-ignored: take our copy at once and read only that.
   cp "$POT/deployments/pot-31337.json" "$STATE/deployments.json" || fail "the deploy script wrote no deployments file"
@@ -251,9 +233,6 @@ world_up() {
   START_BLOCK="$(cast block-number --rpc-url "$RPC")"
   [[ "$(cast code --rpc-url "$RPC" "$LAUNCHER" | wc -c)" -gt 10 ]] || fail "no code at the Launcher $LAUNCHER"
   step "play dollar $USD, Launcher $LAUNCHER (block $START_BLOCK)"
-  if [[ "$WORLD_KIND" == "pause" ]]; then
-    [[ "$(jq -r .holderPause "$STATE/deployments.json")" != "0x0000000000000000000000000000000000000000" ]] || fail "HOLDER_PAUSE=1 gave no holder pause"
-  fi
   PORT="$(free_port)"; HEALTH="$(free_port)"; METRICS="$(free_port)"
 
   # ── the app, built for this chain: once, and again only if a later world's contracts landed elsewhere ────────────────────────
@@ -335,16 +314,10 @@ if [[ -n "$SERVE" ]]; then
   step "leaving a project on the chain for you to try"
   ( cd app && env BUZZ_REAL_RELAY_URL="$PUBLIC_BASE" POT_RPC_URL="$RPC" POT_DEPLOYMENTS_FILE="$STATE/deployments.json" \
       POT_STATE_DIR="$STATE" POT_CHECKS_FILE="$CHECKS_FILE" POT_REPO_ROOT="$REPO_ROOT" POT_DB_URL="$DB_URL" POT_SERVE=1 \
-      POT_WORLD_KIND="$WORLD_KIND" \
       "$BOUNDED" 300 node_modules/.bin/playwright test --config=playwright.pot-full.config.ts --reporter=line --trace off seed ) \
     || { tail -20 "$STATE/relay.log" >&2; fail "could not leave a project on the chain"; }
   LINK="$(jq -r .link "$STATE/serve.json")"
   [[ -n "${HOLD_ENV:-}" ]] && write_world_env "$HOLD_ENV"
-  STEP4_NOTE=""
-  if [[ "$WORLD_KIND" == "pause" ]]; then
-    STEP4_NOTE="  This world was deployed with HOLDER_PAUSE=1: the project has the holders' pause. The steps are in TRY-IT.md, part 4.8.
-"
-  fi
   cat <<EOF
 
 [pot-full-loop] READY. Everything here is a local test chain and play money. Leave this window open; press Ctrl-C to stop it all.
@@ -364,7 +337,7 @@ The page is plain http on this network, so a passkey and the Copy press cannot b
   The server and the page keep their own clocks, so after a jump the project's record reads as old and Back waits until the next
   record. Move the clock only when TRY-IT.md says.
 
-${STEP4_NOTE}  The numbered steps, with what working looks like, are in docs/next-version/TRY-IT.md.
+  The numbered steps, with what working looks like, are in docs/next-version/TRY-IT.md.
 
 EOF
   while kill -0 "$RELAY_PID" 2>/dev/null && kill -0 "$ANVIL_PID" 2>/dev/null; do sleep 2; done
@@ -380,7 +353,6 @@ run_journey() {
     env BUZZ_REAL_RELAY_URL="$BASE" POT_RPC_URL="$RPC" POT_DEPLOYMENTS_FILE="$STATE/deployments.json" \
       POT_STATE_DIR="$STATE" POT_CHECKS_FILE="$CHECKS_FILE" POT_REPO_ROOT="$REPO_ROOT" POT_DB_URL="$DB_URL" \
       POT_HELPER_ADDRESS="$(cast wallet address --private-key "$K_HELPER" | tr 'A-F' 'a-f')" \
-      POT_WORLD_KIND="$WORLD_KIND" \
       ${SHOTS_DIR:+POT_SHOTS_DIR="$SHOTS_DIR"} \
       "$BOUNDED" "$RUN_TIMEOUT" node_modules/.bin/playwright test --config=playwright.pot-full.config.ts \
       --reporter=list --trace off "$@" )
@@ -417,11 +389,9 @@ elif [[ $# -gt 0 ]]; then
   run_journey "$@"
   world_down
 else
-  # Step 1's journey, step 2's task queue and step 4's one, each in a world of its own (the chain's clock is moved by days in
+  # Step 1's journey and step 2's task queue, each in a world of its own (the chain's clock is moved by days in
   # most of them, and a world that is days ahead of the server's clock cannot be reused).
-  for journey in pot-full.spec pot-tasks.spec pot-pause.spec; do
-    WORLD_KIND=default
-    [[ "$journey" == pot-pause.spec ]] && WORLD_KIND=pause
+  for journey in pot-full.spec pot-tasks.spec; do
     world_up
     run_journey "$journey"
     world_down

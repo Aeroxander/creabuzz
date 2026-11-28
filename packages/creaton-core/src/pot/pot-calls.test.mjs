@@ -7,11 +7,9 @@ import { decodeParameters } from "../launchpad/evmAbi.ts";
 import { decodeCall } from "./abi-codec.ts";
 import {
   EARLIER_GRANTS_ABI,
-  HOLDER_PAUSE_ABI,
   LAUNCHER_ABI,
   PAIR_ABI,
   PLAY_DOLLAR_ABI,
-  SHARE_TOKEN_ABI,
   TREASURY_ABI,
   VESTER_ABI,
 } from "./abis.generated.ts";
@@ -612,81 +610,7 @@ test("a bad task argument never becomes calldata", () => {
 
 // --- Step 4: the holder pause and the earlier backers' claim ---------------------------------------------------------------
 
-const PAUSE = "0x61Ef99673A65bee0512b8D1eb1AA656866D24296";
-const SHARES = "0x5eb3Bc0a489C5A8288765d2336659EbCA68FCd00";
 const CLAIMS = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
-
-test("park is approve then park, in that order, to the Shares and then the pause", () => {
-  const list = calls.parkCalls({ shares: SHARES, pause: PAUSE, amount: 7n });
-  assert.equal(list.length, 2);
-  assert.equal(list[0].to, low(SHARES));
-  assert.equal(list[1].to, low(PAUSE));
-  // cast calldata "approve(address,uint256)" <pause> 7 ; cast calldata "park(uint256)" 7
-  assert.match(list[0].data, /^0x095ea7b3/);
-  assert.match(list[1].data, /^0x07afe492/); // cast sig "park(uint256)"
-  const approve = read(SHARE_TOKEN_ABI, list[0]);
-  assert.deepEqual(
-    [approve.name, approve.args[0], approve.args[1]],
-    ["approve", low(PAUSE), 7n],
-  );
-  const park = read(HOLDER_PAUSE_ABI, list[1]);
-  assert.deepEqual([park.name, park.args[0]], ["park", 7n]);
-});
-
-test("unpark is one call with the amount", () => {
-  const call = calls.unparkCall(PAUSE, 9n);
-  assert.equal(call.to, low(PAUSE));
-  assert.match(call.data, /^0xa32f1031/); // cast sig "unpark(uint256)"
-  const found = read(HOLDER_PAUSE_ABI, call);
-  assert.deepEqual([found.name, found.args[0]], ["unpark", 9n]);
-});
-
-test("poke is one call with no arguments, to the pause contract", () => {
-  const call = calls.pokeCall(PAUSE);
-  assert.equal(call.to, low(PAUSE));
-  assert.match(call.data, /^0x18178358$/); // cast sig "poke()"
-  assert.equal(read(HOLDER_PAUSE_ABI, call).name, "poke");
-});
-
-test("a take-out of parked Shares is unpark FIRST, then leave of wallet plus parked", () => {
-  const list = calls.takeOutWithParkedCalls({
-    treasury: TREASURY,
-    pause: PAUSE,
-    walletShares: 5n,
-    parkedShares: 3n,
-    minCash: 11n,
-    to: ME,
-  });
-  assert.equal(list.length, 2);
-  assert.equal(read(HOLDER_PAUSE_ABI, list[0]).name, "unpark");
-  assert.equal(read(HOLDER_PAUSE_ABI, list[0]).args[0], 3n);
-  const leave = read(TREASURY_ABI, list[1]);
-  assert.equal(leave.name, "leave");
-  assert.deepEqual(leave.args, [8n, 11n, low(ME)]);
-});
-
-test("nothing parked is the plain leave and nothing else; parked Shares without a pause are refused", () => {
-  const plain = calls.takeOutWithParkedCalls({
-    treasury: TREASURY,
-    pause: null,
-    walletShares: 5n,
-    parkedShares: 0n,
-    minCash: 1n,
-    to: ME,
-  });
-  assert.equal(plain.length, 1);
-  assert.equal(read(TREASURY_ABI, plain[0]).name, "leave");
-  assert.throws(() =>
-    calls.takeOutWithParkedCalls({
-      treasury: TREASURY,
-      pause: null,
-      walletShares: 5n,
-      parkedShares: 1n,
-      minCash: 1n,
-      to: ME,
-    }),
-  );
-});
 
 test("the earlier claim carries the row, the proof and the text fingerprint", () => {
   const proof = [`0x${"01".repeat(32)}`, `0x${"02".repeat(32)}`];
