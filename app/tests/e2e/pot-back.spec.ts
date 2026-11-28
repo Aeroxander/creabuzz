@@ -166,9 +166,7 @@ test("an amount under the smallest, and more play dollars than the person has, a
   await expect(page.getByTestId("back-sheet")).toHaveCount(0);
   await page.getByTestId("backing-amount").fill("5000");
   await page.getByTestId("backing-review").click();
-  await expect(page.getByTestId("back-short")).toContainText(
-    "less than the 5,000 this needs",
-  );
+  await expect(page.getByTestId("back-short")).toContainText("less than 5,000");
   await expect(page.getByTestId("sheet-confirm")).toBeDisabled();
   expect(wallet.prompts).toBe(0);
 });

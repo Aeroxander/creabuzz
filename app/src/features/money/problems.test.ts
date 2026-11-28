@@ -157,6 +157,16 @@ describe("the words for every refusal of the money contracts", () => {
     ).toMatch(/another network/);
   });
 
+  it("says a sponsor's refusal of the free network fee in words, and that nothing was sent", () => {
+    const denied = new WalletStepError("failed", 0, {
+      name: "PaymasterDeniedError",
+      message: "denied",
+    });
+    expect(potProblem(denied, "back")).toMatch(
+      /free network fee was refused.*Nothing was sent/,
+    );
+  });
+
   it("falls back to a plain line for what it does not know, naming the step and promising nothing changed", () => {
     expect(potProblem(new Error("socket hang up"), "take-out")).toBe(
       "Taking out your Shares did not go through. Nothing changed. Try again.",

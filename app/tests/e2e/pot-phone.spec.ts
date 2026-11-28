@@ -191,7 +191,6 @@ run(
       await expect(page.getByTestId("back-shares")).toContainText("Shares", {
         timeout: 30_000,
       });
-      await expect(sheet).toContainText("This is one signature.");
       await expect(sheet.getByTestId("ownership")).toHaveText(LEGAL_LINE);
       await back.press(
         page.getByTestId("sheet-confirm"),

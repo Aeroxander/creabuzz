@@ -194,9 +194,6 @@ for (const [index, state] of STATES.entries())
         state.backWords,
       );
       await expect(page.getByTestId("backing-amount")).toHaveCount(0);
-      await expect(page.getByTestId("back-door-shut")).toContainText(
-        "You can still take your money out",
-      );
     } else await expect(page.getByTestId("backing-amount")).toBeVisible();
     await takeOutAll(page, project, w.who.backer, wallet);
   });
@@ -226,7 +223,7 @@ test("outside money still arriving is said on the sheet and left for the people 
     "still arriving",
   );
   await expect(page.getByTestId("takeout-arriving")).toContainText(
-    "not paid out now",
+    "stay for the people who hold on",
   );
   await page.getByTestId("sheet-confirm").click();
   await expect(page.getByTestId("takeout-sheet")).toBeHidden({

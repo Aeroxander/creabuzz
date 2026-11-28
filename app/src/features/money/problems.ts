@@ -516,6 +516,8 @@ function potProblemOf(error: unknown, action: PotAction): string {
   if (error instanceof WalletStepError) {
     const stop = senderStopWords(error);
     if (stop) return stop;
+    if (errorNamed(error.cause, "PaymasterDeniedError"))
+      return "The free network fee was refused for this account, for example because today's free sends are used up. Nothing was sent. Try again tomorrow, or use a browser with a wallet.";
     if (
       isRejectionCode(error.cause) ||
       isUserRejection(textsOf(error.cause).join(" "))
