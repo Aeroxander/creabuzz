@@ -18,7 +18,10 @@ test("words and a project make one post that carries its topics and the project"
 });
 
 test("an empty post, or one over the limit, is turned away in words", () => {
-  assert.throws(() => buildComposedPost({ text: " " }), /Write something first/);
+  assert.throws(
+    () => buildComposedPost({ text: " " }),
+    /Write something first/,
+  );
   assert.throws(
     () => buildComposedPost({ text: "a".repeat(2001) }),
     /Keep it under 2000 characters/,

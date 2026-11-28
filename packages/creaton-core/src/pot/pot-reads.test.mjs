@@ -689,4 +689,3 @@ test("the earlier claim's reads", async () => {
   });
   assert.equal(await reads.earlierIsBound(unbound, CLAIMS), false);
 });
-
