@@ -1,5 +1,4 @@
 import { Outlet, useRouterState } from "@tanstack/react-router";
-import { RecoveryOfferHost } from "../features/account/RecoveryKeySheet";
 import { TermsAgainHost } from "../features/account/TermsAgainHost";
 import { UnlockBar } from "../features/account/UnlockBar";
 import { WithMoneyBanner } from "./MoneyBanner";
@@ -22,7 +21,6 @@ export function Shell() {
         <Outlet />
       </WithMoneyBanner>
       {signUp ? null : <TabBar />}
-      <RecoveryOfferHost />
     </>
   );
 }

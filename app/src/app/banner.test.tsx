@@ -33,9 +33,6 @@ vi.mock("../features/account/TermsAgainHost", () => ({
   TermsAgainHost: () => null,
 }));
 vi.mock("../features/account/UnlockBar", () => ({ UnlockBar: () => null }));
-vi.mock("../features/account/RecoveryKeySheet", () => ({
-  RecoveryOfferHost: () => null,
-}));
 
 const BANNER = "money-banner";
 const bannerCount = () => screen.queryAllByTestId(BANNER).length;
@@ -164,7 +161,6 @@ describe("the banner on every sheet that shows money", () => {
   const OWN_BANNER = "carries the banner itself";
   const OTHER_SHEETS: Record<string, string> = {
     "features/project/ShareSheet.tsx": OWN_BANNER,
-    "features/account/RecoveryKeySheet.tsx": "a secret key, no money",
     "features/account/TermsAgainHost.tsx": "the terms, no money",
     "features/posts/Composer.tsx": "a post, no money",
     "features/week/WeeklySheet.tsx": "the weekly note, no money",

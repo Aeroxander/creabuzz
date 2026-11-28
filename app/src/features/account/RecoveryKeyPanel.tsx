@@ -41,7 +41,7 @@ export const KEY_MASK = "•••• •••• •••• •••• •
  * Save `key` as a small text file named for the product and the account (never anything else), from a local address that is
  * dropped a moment later. Nothing is logged and nothing leaves the phone.
  */
-export function downloadRecoveryKey(key: string, account: string): void {
+function downloadRecoveryKey(key: string, account: string): void {
   const url = URL.createObjectURL(new Blob([key], { type: "text/plain" }));
   const link = document.createElement("a");
   link.href = url;

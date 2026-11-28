@@ -136,10 +136,6 @@ run(
         .getByTestId("onboarding-name")
         .fill("Mira Okafor", { timeout: 20_000 });
       await page.getByTestId("onboarding-passkey").click();
-      await expect(page.getByTestId("backup-sheet")).toBeVisible({
-        timeout: 20_000,
-      });
-      await page.keyboard.press("Escape");
       await page.waitForURL(`${ORIGIN}${pageOf(project.label)}`, {
         timeout: 20_000,
       });

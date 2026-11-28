@@ -15,7 +15,6 @@ import {
 } from "@creaton/core/account/passkey-problem.ts";
 import { platformPasskeyAvailable } from "@creaton/core/account/platform-passkey.ts";
 import { recordSignUpTerms } from "@creaton/core/account/policy-acceptance.ts";
-import { offerRecoveryKey } from "@creaton/core/account/recovery-offer.ts";
 import { parseRecoveryKey } from "@creaton/core/account/recovery-key.ts";
 import { APP_NAME } from "@creaton/core/brand.ts";
 import {
@@ -141,9 +140,6 @@ function CreateView({
     try {
       getOrCreateIdentity();
       recordTerms(policy);
-      // The account lives in this browser's site data only: offer the key that works everywhere while it is open,
-      // exactly as the passkey path does (without it, clearing the site data loses the account for good).
-      offerRecoveryKey({ account: userPubkey(), onClose: () => {} });
       announceAccountChange();
       pubkey = userPubkey();
     } catch {
@@ -168,8 +164,6 @@ function CreateView({
         name.trim() || `${APP_NAME} user`,
       );
       recordTerms(policy);
-      // A passkey signs in only in this browser: offer the key that works everywhere while it is unlocked.
-      offerRecoveryKey({ account: pubkey, onClose: () => {} });
       announceAccountChange();
       await saveName(pubkey);
       onDone();
@@ -238,7 +232,7 @@ function CreateView({
         </Button>
         <p className="-mt-1 text-center text-xs text-muted">
           Sign in here with your fingerprint, face or device PIN. On another
-          device you need your recovery key, which you can save next.
+          device you need your recovery key, which you can save from You.
         </p>
         <Button
           block
@@ -251,8 +245,7 @@ function CreateView({
         </Button>
         <p className="-mt-1 text-center text-xs text-muted">
           This account is kept in this browser only. If this browser's data is
-          cleared, only your recovery key can bring it back — save it when it is
-          offered.
+          cleared, only your recovery key can bring it back — save it from You.
         </p>
       </div>
       <div className="plain flex items-center justify-between gap-2 rounded-2xl px-3 text-sm">

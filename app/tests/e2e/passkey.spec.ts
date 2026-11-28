@@ -50,11 +50,18 @@ test("sign up with a passkey, reload, unlock to the same account; only public ma
   );
   await page.getByTestId("onboarding-passkey").click();
 
-  // The recovery key is offered once, while the account is unlocked.
-  await expect(page.getByTestId("backup-sheet")).toBeVisible({
+  // Signing up is not held up by the recovery key: no sheet, and the key is drawn only when it is asked for from You.
+  await page.waitForURL(`http://localhost:${PREVIEW_PORT}/`, {
     timeout: 20_000,
   });
-  await expect(page.getByTestId("backup-key")).toBeVisible();
+  await expect(page.getByTestId("backup-sheet")).toHaveCount(0);
+  await expect(page.getByTestId("backup-key")).toHaveCount(0);
+  await page.getByTestId("tab-link-you").click();
+  await page.getByRole("tab", { name: "Account" }).click();
+  await page.getByRole("button", { name: "Save your recovery key" }).click();
+  await expect(page.getByTestId("backup-key")).toBeVisible({
+    timeout: 20_000,
+  });
   await page.keyboard.press("Escape");
 
   const before = await page.evaluate(() => ({

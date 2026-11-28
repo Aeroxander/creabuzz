@@ -62,10 +62,7 @@ run(
       timeout: 20_000,
     });
     await page.getByTestId("onboarding-passkey").click();
-    await expect(page.getByTestId("backup-sheet")).toBeVisible({
-      timeout: 20_000,
-    });
-    await page.keyboard.press("Escape");
+    await page.waitForURL(`${ORIGIN}/`, { timeout: 20_000 });
 
     await page.goto(`${ORIGIN}/you`);
     const group = page.getByRole("group", { name: "Back from" });
