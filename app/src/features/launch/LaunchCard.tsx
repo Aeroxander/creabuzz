@@ -155,10 +155,6 @@ export function LaunchCard({
       <h2 className="headline text-xl" id={titleId}>
         Open {project.name} to backers
       </h2>
-      <p className="text-sm">
-        Right now this is a page. Launching it lets people back it and take
-        their money out any day.
-      </p>
       <p className="text-sm text-muted" data-testid="launch-play-money">
         {PLAY_MONEY_WORDS}
       </p>

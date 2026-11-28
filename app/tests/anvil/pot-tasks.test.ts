@@ -139,7 +139,7 @@ run(
         dollar: chain.dollar,
         playMoney: true,
       };
-      const out = await readTakeOut(read, target, "backer", "half", leaver);
+      const out = await readTakeOut(read, target, "backer", leaver);
       expect(out.ok).toBe(true);
       if (!out.ok) throw new Error("no take out");
       expect(out.note).toBeGreaterThan(0n);
@@ -286,7 +286,7 @@ run(
           minAmount: 2n * DOLLAR,
         }),
       );
-      const out2 = await readTakeOut(read, target, "backer", "half", backer2);
+      const out2 = await readTakeOut(read, target, "backer", backer2);
       if (!out2.ok) throw new Error("no take out");
       expect(out2.note).toBeGreaterThan(0n);
       const out2Tx = await send(backer2, out2.call);

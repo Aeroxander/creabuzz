@@ -46,9 +46,8 @@ describe("making an account", () => {
   it("says what an account without a passkey risks, before the press", () => {
     wrap(<SignUpPage />);
     expect(screen.getByTestId("onboarding-create")).toBeTruthy();
-    expect(screen.getByText(/kept in this browser only/)).toBeTruthy();
     expect(
-      screen.getByText(/only your recovery key can bring it back/),
+      screen.getByText(/clearing this browser's data loses the account/),
     ).toBeTruthy();
   });
 
@@ -62,13 +61,5 @@ describe("making an account", () => {
     await waitFor(() => expect(arrived).toEqual([{ to: "/start" }]));
     expect(screen.queryByTestId("backup-sheet")).toBeNull();
     expect(screen.queryByTestId("backup-key")).toBeNull();
-  });
-
-  it("says where the recovery key is saved, not that it is about to be offered", () => {
-    wrap(<SignUpPage />);
-    expect(screen.getAllByText(/save it from You|save from You/).length).toBe(
-      2,
-    );
-    expect(document.body.textContent).not.toMatch(/save it when it is offered/);
   });
 });

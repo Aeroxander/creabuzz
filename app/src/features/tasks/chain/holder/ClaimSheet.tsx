@@ -164,7 +164,6 @@ export function ClaimSheet({
       confirmLabel={
         figure && figure.claimable > 0n ? claimPress(figure.claimable) : "Claim"
       }
-      description="The money goes to your account"
       detail={detail}
       done={claimedWords}
       landed={async (wallet, from) => {

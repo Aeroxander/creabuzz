@@ -94,12 +94,12 @@ Each account can use the faucet once, so a second Back by the same account uses 
 3. Under "How many dollars?" is "Get play dollars" (until the account has used the faucet, once). Press it. **Working:** the wallet
    asks once; "You have your play dollars." and the press goes away. The **Money** tab's "Your Shares" then shows "Play dollars you
    hold".
-4. Type 25 in "How many dollars?" and press "Back" (the primary press for someone who holds nothing). **Working:** a sheet "Back Lantern" with "You pay", "Fee to the platform, part of
-   that", "You get" and "Taking out right now would give you". There is no box to tick. Press "Back with 25 dollars". The wallet asks
+4. Type 25 in "How many dollars?" and press "Back" (the primary press for someone who holds nothing). **Working:** a sheet "Back Lantern" with "You pay", "You get", "Taking out now would give",
+   the team's daily limit and, while the platform keeps a fee, "Creaton keeps 2% of what you pay." There is no box to tick. Press "Back with 25 dollars". The wallet asks
    once; "Backed. Your new Shares show on this page." The top of the page shows "You hold 2,450 Shares".
 5. At the top of the page, "You hold 2,450 Shares, worth" an amount, with "This can go up or down. It is not a return." and a press
    "Take out" (Back is then the second press). Press "Take out", then the sheet's button ("Take out 2,450 Shares"). **Working:** "Take
-   out of Lantern" with "All of it", "Half" and "A quarter", one wallet question, then "Taken out. The money is in your wallet." and
+   out of Lantern" with "You take out" and "You get" (one press takes all of it), one wallet question, then "Taken out. The money is in your wallet." and
    the line about what you hold goes away.
 6. Read the demo's planned task, above the tabs and again on the Money tab under "Planned and running tasks". **Working:** "A planned
    task", "The team plans to pay up to 2 dollars to" an address "for a task, from" a date about two weeks away, "You can take your
@@ -122,11 +122,11 @@ with bracketed items for counsel: that is expected on a test world. Never move t
 
 1. Open the app address, then `/welcome`, and sign up (name Fay, the two boxes "I am 18 years of age or older." and "I agree to the
    Terms of use and have read the Privacy note. Posts and votes are public.", then "Create without a passkey" on plain http).
-2. Press **Start**. **Working:** "Start a project" and "Three answers. You can change them later, and nothing costs anything." Name it
+2. Press **Start**. **Working:** "Start a project" and three boxes. Name it
    Beacon, answer "What will you make?" and "How will people know it worked?", press "Start".
 3. On Beacon's page, under "Open Beacon to backers", press "Connect your wallet" (account 2). The card then has the press "Launch".
-   **Working:** the sheet "Launch Beacon" with nothing to type: one sentence with a daily allowance of 0.10% and a Team pool of
-   10,000,000 Team Shares. Press its button "Launch Beacon"; the wallet asks once.
+   **Working:** the sheet "Launch Beacon" with nothing to type: "The team may take 0.10% of the project's money a day. Team pool:
+   10,000,000 Team Shares. You sign once." and, while the platform keeps a fee, "Creaton takes 2% of the money people put in." Press its button "Launch Beacon"; the wallet asks once.
    **Working:** "It is on the network. Tying your page to it now." and then "Your project is open to backers." For a few seconds, until
    the server has read the block, the Money tab can say "No numbers yet" and shows no figure.
 
@@ -138,21 +138,19 @@ The other profiles find Beacon on **Home** (or paste the address from Fay's addr
    faucet gives them once per account), Back 10. (Two presses are called "Back" on a project's page: the one with the arrow at the top left
    goes to the last page; the one you want sits under "How many dollars?".) **Working:** no box in the sheet; one wallet question.
 2. **Bea, profile 2:** sign up, open Beacon, connect account 6, press "Get play dollars" (one press), Back 100. **Working:** one wallet question for the
-   Back and no second one: Back does not link the account to the wallet. The page then says "2 people back it."
+   Back and no second one: Back does not link the account to the wallet.
 
 ### 4.3 This week, and the allowance (Fay)
 
-1. **This week**. **Working:** "Ten minutes a week: say what you did, and check in." with Beacon's card and the presses "Post this
+1. **This week**. **Working:** "This week" with Beacon's card and the presses "Post this
    week's update and check in" and "Check in only". Press the first, write a line under "What did you do this week?", press "Post and
    check in" and sign once. **Working:** "Posted and checked in. The allowance keeps running." and "Updated today".
-2. Beacon's **Money** tab, section "The allowance": "In the allowance box, about", "The box holds at most", "The rate, of the
-   project's money a day" (0.10%), "The most the rate can be" (0.20%), then "The weekly check-in" with the presses "Go to this week",
-   "Check in only", "Draw from the box", "Change the rate" and "Close the door". The box starts nearly empty: it fills at 0.10% a day
-   of the project's money.
+2. Beacon's **Money** tab, section "The allowance": "In the box" and "Daily rate" (0.10%), then the presses "Draw from the box" and
+   "Change the rate". The box starts nearly empty: it fills at 0.10% a day of the project's money. The check-in is on This week.
 3. Move the clock a day: `cast rpc --rpc-url <the chain address> evm_increaseTime 87000`, wait two seconds, wait up to a minute for
    the server and reload. **Working:** the box holds about 0.09 dollars (yours follows from the project's money).
-4. Press "Draw from the box". **Working:** the sheet "Draw from the allowance box": "The box holds about ... dollars now. You can draw
-   up to that, to an account of your choice.", "Draw to which account?" and "How many dollars?". Put your own address (account 2) and
+4. Press "Draw from the box". **Working:** the sheet "Draw from the allowance box": "The box holds about ... dollars now.",
+   "Draw to which account?" and "How many dollars?". Put your own address (account 2) and
    0.05, press "Draw" and sign once: "Drawn from the allowance box.", and "Play dollars you hold" shows 0.05 more. If you type more than
    the box holds, the sheet says "The box holds about ... dollars now. Draw that or less." and the press stays off.
 5. Grant Team Shares (section "Team Shares", press "Grant Team Shares") lists only people on the team and needs a teammate; it is not
@@ -161,11 +159,9 @@ The other profiles find Beacon on **Home** (or paste the address from Fay's addr
 ### 4.4 The project goes quiet
 
 1. Move the clock past the check-in window with no check-in: `cast rpc --rpc-url <the chain address> evm_increaseTime 1300000`, wait
-   two seconds and up to a minute, reload. **Working:** under the project's money, "Closed to new backers"; where the Back box was,
-   "The door to new backing is shut right now. Look again in a moment." and "You can still take your money out below, whatever the door
-   says."
-2. **Fay:** Money tab, "Check in only", sign once. **Working:** "Checked in." and the last check-in date; up to a minute later the page
-   says "Open to back" and the Back box is there again.
+   two seconds and up to a minute, reload. **Working:** where the Back box was, "The team has not checked in since" a date, "so new backing is paused until it does."
+2. **Fay:** This week, "Check in only", sign once. **Working:** "Checked in. The allowance keeps running."; up to a minute later
+   the Back box is there again.
 
 **Not tried by anyone:** this on a real phone with a passkey account (the loop proves the one-press batch with a software passkey,
 `scripts/phone-loop.sh`); the same with real people over days; any real money. **Walked at 360 x 640** (the narrowest phone the app
@@ -182,7 +178,7 @@ A passkey and the Copy and Share presses need a real certificate (the address of
   two seconds and signs a record about every half minute.
 - **"Your wallet is on another network.":** press "Switch network".
 - **The wallet is asked and says no, or you close it:** nothing was sent; press again.
-- **A press is missing after a clock move:** the team has to check in again ("Check in only") and the server needs up to a minute.
+- **A press is missing after a clock move:** the team has to check in again (This week, "Check in only") and the server needs up to a minute.
 - **Back says the door is shut:** same cause; check in, wait, reload.
 - **The script stopped or the chain restarted:** everything in that world is gone; start again from part 2 (browser profiles keep
   their old account: use fresh ones).

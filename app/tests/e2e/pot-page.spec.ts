@@ -82,10 +82,10 @@ for (const who of ["visitor", "holder"] as const)
     ).toHaveClass(/btn-primary/);
     await expect(page.getByTestId("top-money")).toContainText(NOT_A_RETURN);
     await expect(page.getByTestId("top-take-out-now")).toContainText(
-      "Taking out now would give",
+      "Taking out now gives",
     );
     await expect(page.getByTestId("top-take-out-now")).toContainText(
-      "for each Share.",
+      "per Share.",
     );
     await expect(page.getByTestId("top-banner")).toHaveText(BANNER);
     await expect(page.getByTestId("top-play-money")).toContainText(
@@ -113,7 +113,7 @@ test("the banner is on the page once, the Back box once, and Home has the shell'
   await expect(page.getByTestId("money-banner")).toHaveCount(1);
   await expect(page.getByTestId("shell-banner")).toHaveCount(0);
   await expect(
-    page.getByRole("heading", { name: "Back this project" }),
+    page.getByRole("region", { name: "Back this project" }),
   ).toHaveCount(1);
   // With the Money tab open there is still only one Back box.
   await page.getByTestId("tab-money").click();

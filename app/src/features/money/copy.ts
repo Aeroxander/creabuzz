@@ -119,77 +119,19 @@ export function spanOf(seconds: number): string {
 
 // --- Where a project stands ---------------------------------------------------------------------------------------------
 
-/** The share of anything above what backers put in that the Team's side gets, as a whole percent, or null with no Shares. */
-export function teamPartPercent(numbers: ProjectNumbers): number | null {
-  const total = numbers.shares.backers + numbers.shares.teamCounted;
-  if (total === 0n || numbers.shares.teamCounted === 0n) return null;
-  return Number((numbers.shares.teamCounted * 100n) / total);
-}
-
-/** What the allowance lets the team take in a day, and what it holds now, in one sentence. */
-export function allowanceWords(numbers: ProjectNumbers): string {
-  const { ratePpm, box } = numbers.allowance;
-  if (ratePpm === 0)
-    return "The team's daily allowance is switched off, so nothing goes into the allowance box.";
-  const perDay = (numbers.money.pot * BigInt(ratePpm)) / 1_000_000n;
-  return `The team can take up to ${rateWords(ratePpm)} of the project's money a day (about ${dollarsText(perDay)} dollars today). It holds ${dollarsText(box)} dollars now.`;
-}
-
-/**
- * How long the team may be quiet before anyone can wind the project down: this project's own wait (its wind-down units of
- * its time unit), "about half a year" on a real network and hours on a test network's short unit.
- */
-function quietWaitWords(numbers: ProjectNumbers): string {
-  const secs = numbers.limits.windDownUnits * numbers.unit;
-  const days = secs / 86_400;
-  return days >= 150 && days <= 220 ? "about half a year" : spanOf(secs);
-}
-
-export interface StateWords {
-  /** One word for a label: "Open", "Quiet", "Dormant", "Can be wound down", "Wound down". */
-  label: string;
-  /** What it means for a person, in a sentence or two. */
-  meaning: string;
-}
-
-/**
- * Where the project stands at `now` and what that means for a person. The state's word is the record's three fixed
- * times read at `now`; what the chain does is decided by the chain.
- */
-export function stateWords(numbers: ProjectNumbers, now: number): StateWords {
-  const state = quietStateAt(numbers, now);
-  const since = numbers.quiet.quietFrom;
-  switch (state) {
+/** Where the project stands at `now`, in one word: "Open", "Quiet", "Dormant", "Can be wound down", "Wound down". */
+export function standsWord(numbers: ProjectNumbers, now: number): string {
+  switch (quietStateAt(numbers, now)) {
     case "active":
-      return {
-        label: "Open",
-        meaning: `The team checked in on ${dayText(numbers.clock.lastCheckIn)}. ${
-          numbers.clock.activeUntil
-            ? `If it has not checked in again by ${dayText(numbers.clock.activeUntil)}, it goes quiet: new backing and the allowance stop. `
-            : ""
-        }You can take your money out any time.`,
-      };
+      return "Open";
     case "quiet":
-      return {
-        label: "Quiet",
-        meaning: `The team has not checked in since ${dayText(numbers.clock.lastCheckIn)}${since ? ` (quiet from ${dayText(since)})` : ""}. New backing and the allowance are stopped until it does. You can take your money out any time.`,
-      };
+      return "Quiet";
     case "dormant":
-      return {
-        label: "Dormant",
-        meaning: `The team has been quiet for months. New backing and the allowance are stopped. If it stays quiet${numbers.quiet.windableFrom ? ` until ${dayText(numbers.quiet.windableFrom)}` : ""}, anyone can wind the project down. You can take your money out any time.`,
-      };
+      return "Dormant";
     case "may_wind_down":
-      return {
-        label: "Can be wound down",
-        meaning: `The team has been quiet for ${quietWaitWords(numbers)}, so anyone can now wind the project down. New backing and the allowance are stopped. You can take your money out any time.`,
-      };
+      return "Can be wound down";
     case "wound_down":
-      return {
-        label: "Wound down",
-        meaning:
-          "This project has wound down for good. No one can back it or draw an allowance. What is left is for the people who hold Shares: take yours out.",
-      };
+      return "Wound down";
   }
 }
 
@@ -230,13 +172,11 @@ export function boxNow(
 // --- Money set aside for tasks, on the Back and Take out sheets ---------------------------------------------------------
 
 /**
- * On the Back sheet, the line about money set aside for tasks: "none" as ever, and with money set aside, what that means for
- * the price (the chain's own `locked` figure is what the quote counts at full value).
+ * On the Back sheet, when money is set aside for tasks: what that means for the price (the chain's own `locked` figure is what
+ * the quote counts at full value).
  */
 export function backLockedWords(locked: bigint): string {
-  return locked === 0n
-    ? "Money set aside for tasks: none."
-    : `Money set aside for tasks: ${dollarsPhrase(locked)}. You pay for it at full value now. If the task is paid, that cost is shared by everyone who holds; if it is not, the money comes back to the project.`;
+  return `Money set aside for tasks: ${dollarsPhrase(locked)}. You pay for it at full value now. If the task is paid, that cost is shared by everyone who holds; if it is not, the money comes back to the project.`;
 }
 
 /**

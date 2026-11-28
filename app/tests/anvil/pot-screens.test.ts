@@ -145,11 +145,11 @@ run("the money screens against the real contracts", () => {
     expect(allowance.maxRatePpm).toBe(2000);
     expect(allowance.pending).toBeNull();
 
-    // The Take out sheet's reader: half of what is held; the cash is no less than the guard.
-    const out = await readTakeOut(read, target, "backer", "half", backer);
+    // The Take out sheet's reader: all of what is held; the cash is no less than the guard.
+    const out = await readTakeOut(read, target, "backer", backer);
     expect(out.ok).toBe(true);
     if (!out.ok) throw new Error("not ok");
-    expect(out.shares).toBe(held / 2n);
+    expect(out.shares).toBe(held);
     const before = await reads.balanceOf(read, chain.dollar, backer);
     await wallets[backer].sendCalls([out.call], CHAIN);
     expect(

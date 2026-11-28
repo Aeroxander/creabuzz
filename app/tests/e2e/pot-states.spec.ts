@@ -138,7 +138,6 @@ test("the play-money notice is on the Money tab, on every sheet that moves money
     ["backing-review", "back-sheet", "back"],
     ["allowance-draw", "draw-sheet", "draw"],
     ["allowance-rate-open", "rate-sheet", "rate"],
-    ["allowance-door", "door-sheet", "door"],
   ];
   for (const [opener, sheet, name] of sheets) {
     if (opener === "backing-review") {

@@ -5,11 +5,9 @@
  */
 import { balanceOf } from "@creaton/core/pot/pot-reads.ts";
 import { useQuery } from "@tanstack/react-query";
-import { useRef, useState } from "react";
 import { Button } from "../../ui/button";
 import { Row } from "../../ui/row";
 import { Card } from "../../ui/card";
-import { potProblem } from "../money/problems";
 import { rememberStep } from "./own-history";
 import { PotSheet } from "./PotSheet";
 import { trackNotes } from "./take-out-notes";
@@ -20,16 +18,9 @@ import {
   takeOutTaskWords,
   WHERE_TO_CLAIM,
 } from "../money/copy";
-import {
-  PORTION_WORDS,
-  type Portion,
-  readTakeOut,
-  type TakeOutRead,
-} from "./takeout-read";
+import { readTakeOut, type TakeOutRead } from "./takeout-read";
 import type { MoneyTarget } from "./target";
 import type { Ready } from "./use-pot";
-
-const PORTIONS: Portion[] = ["all", "half", "quarter"];
 
 /**
  * What the project page already holds about tasks, handed to the sheet as plain values (never read by the sheet): how long a
@@ -59,81 +50,31 @@ export function TakeOutSheet({
   onClose: () => void;
   taskInfo?: TakeOutTaskInfo;
 }) {
-  const [portion, setPortion] = useState<Portion>("all");
   const team = kind === "team";
   const reading = useQuery({
-    queryKey: [
-      "pot",
-      "take-out",
-      target.treasury,
-      kind,
-      portion,
-      ready.address,
-    ],
+    queryKey: ["pot", "take-out", target.treasury, kind, ready.address],
     enabled: open,
     staleTime: 0,
     gcTime: 0,
     retry: false,
     refetchOnWindowFocus: false,
-    queryFn: () =>
-      readTakeOut(ready.read, target, kind, portion, ready.address),
+    queryFn: () => readTakeOut(ready.read, target, kind, ready.address),
   });
   const data: TakeOutRead | undefined = reading.data;
   const good = data?.ok ? data : null;
   const word = team ? "Team Shares" : "Shares";
-  const detail = good ? `${good.shares}:${good.held}`.slice(0, 80) : undefined;
-
-  // Once something was seen to be held, the choice stays on the sheet even while a new part is read (focus stays on it).
-  const sawHeld = useRef(false);
-  if (data && !(!data.ok && data.why === "none")) sawHeld.current = true;
-  // The choice stays on the sheet whenever something is held, so a part that gives nothing can be changed without closing it.
-  const portions = (
-    <fieldset className="flex flex-col gap-1">
-      <legend className="text-sm font-semibold">How much to take out</legend>
-      <div className="flex flex-wrap gap-2">
-        {PORTIONS.map((p) => (
-          <label
-            className="flex min-h-11 cursor-pointer items-center gap-2 text-sm"
-            key={p}
-          >
-            <input
-              checked={portion === p}
-              className="size-5 accent-current"
-              data-testid={`takeout-portion-${p}`}
-              name={`portion-${kind}`}
-              onChange={() => setPortion(p)}
-              type="radio"
-              value={p}
-            />
-            {PORTION_WORDS[p]}
-          </label>
-        ))}
-      </div>
-    </fieldset>
-  );
-
-  // Closing forgets the choice, so the next opening starts from "All of it".
-  const close = () => {
-    sawHeld.current = false;
-    setPortion("all");
-    onClose();
-  };
+  const detail = good ? good.shares.toString().slice(0, 80) : undefined;
 
   let body: React.ReactNode;
   if (reading.isPending)
     body = (
-      <>
-        {sawHeld.current ? portions : null}
-        <Card className="h-32 animate-pulse" data-testid="takeout-reading" />
-      </>
+      <Card className="h-32 animate-pulse" data-testid="takeout-reading" />
     );
   else if (reading.isError)
     body = (
       <div className="flex flex-col gap-3" data-testid="takeout-read-failed">
         <p className="text-sm">
-          What taking out gives could not be read from the network, so nothing
-          can be sent now. Nothing was taken.{" "}
-          {potProblem(reading.error, "take-out")}
+          What you would get could not be read, so nothing was taken.
         </p>
         <Button onClick={() => void reading.refetch()} variant="secondary">
           Try again
@@ -142,58 +83,35 @@ export function TakeOutSheet({
     );
   else if (data && !data.ok)
     body = (
-      <>
-        {data.why === "none" ? null : portions}
-        <p className="text-sm" data-testid={`takeout-${data.why}`}>
-          {data.why === "none"
-            ? `You hold no ${word} in this project, so there is nothing to take out.`
-            : data.why === "tiny"
-              ? "That part is too small to take out. Choose a bigger part."
-              : team
-                ? "Team Shares pay only what the project's money holds above what backers put in, and that is nothing now. Nothing was taken."
-                : "Taking these out would give nothing right now, so nothing was taken."}
-        </p>
-      </>
+      <p className="text-sm" data-testid={`takeout-${data.why}`}>
+        {data.why === "none"
+          ? `You hold no ${word} here.`
+          : team
+            ? "Team Shares pay only what is above what backers put in, and that is nothing now."
+            : "Taking out would give nothing right now, so nothing was taken."}
+      </p>
     );
   else if (good)
     body = (
       <>
-        {portions}
         <dl className="divide-y divide-white/10">
           <Row
-            label={`You hold`}
-            testId="takeout-held"
-            value={`${sharesWords(good.held)} ${word}`}
-          />
-          <Row
-            label={`You take out`}
+            label="You take out"
             testId="takeout-shares"
             value={`${sharesWords(good.shares)} ${word}`}
           />
           <Row
-            label={team ? "Taking out now gives about" : "Taking out now gives"}
+            label={team ? "You get about" : "You get"}
             strong
             testId="takeout-cash"
             value={`${smallDollarsText(good.cash)} dollars`}
           />
-          <Row
-            label="You keep"
-            testId="takeout-kept"
-            value={`${sharesWords(good.held - good.shares)} ${word}`}
-          />
         </dl>
         <p className="text-sm text-muted">{NOT_A_RETURN}</p>
-        {team ? (
-          <p className="text-sm text-muted" data-testid="takeout-team-words">
-            Team Shares pay only the project's money above what backers put in.
-            This figure is an estimate, and it can be nothing.
-          </p>
-        ) : null}
         {good.arrivingLeftBehind > 0n ? (
           <p className="text-sm" data-testid="takeout-arriving">
-            {smallDollarsText(good.arrivingLeftBehind)} dollars of outside money
-            is still arriving. It is not paid out now: taking out now leaves it
-            for the people who stay.
+            {smallDollarsText(good.arrivingLeftBehind)} dollars still arriving
+            stay for the people who hold on.
           </p>
         ) : null}
         {good.note > 0n ? (
@@ -210,7 +128,7 @@ export function TakeOutSheet({
                 className="-ml-[15px]"
                 data-testid="takeout-where-to-claim"
                 onClick={() => {
-                  close();
+                  onClose();
                   taskInfo.onWhereToClaim?.();
                 }}
                 size="sm"
@@ -221,16 +139,6 @@ export function TakeOutSheet({
             ) : null}
           </div>
         ) : null}
-        <details className="text-sm">
-          <summary className="min-h-11 cursor-pointer font-semibold">
-            Details
-          </summary>
-          <p className="mt-1 text-muted" data-testid="takeout-guard">
-            If what you are paid would be less than{" "}
-            {smallDollarsText(good.minCash)} dollars when this lands, nothing is
-            taken. There is no fee for taking out.
-          </p>
-        </details>
       </>
     );
   else body = null;
@@ -244,20 +152,18 @@ export function TakeOutSheet({
       confirmLabel={
         good ? `Take out ${sharesWords(good.shares)} ${word}` : "Take out"
       }
-      description={`Taking out of ${projectName}`}
       detail={detail}
       done={(own) => `Taken out. The money is in ${own}.`}
       landed={async (wallet, from, earlier) => {
-        // A call replaced in the wallet may have landed under another hash: fewer Shares held now say so.
-        const [shares, before] = (earlier.detail ?? "").split(":");
-        if (!shares || !before || !/^\d+$/.test(before)) return false;
+        // A call replaced in the wallet may have landed under another hash: fewer Shares held than were taken out say so.
+        if (!earlier.detail || !/^\d+$/.test(earlier.detail)) return false;
         const readNow = (to: string, data: string) => wallet.readCall(to, data);
         const held = await balanceOf(
           readNow,
           team ? target.team : target.shares,
           from,
         );
-        return held < BigInt(before);
+        return held < BigInt(earlier.detail);
       }}
       lookLabel="Look for your take-out"
       onLanded={(txHash, landed) => {
@@ -277,7 +183,7 @@ export function TakeOutSheet({
         }
       }}
       onOpenChange={(next) => {
-        if (!next) close();
+        if (!next) onClose();
       }}
       open={open}
       playMoney={target.playMoney}

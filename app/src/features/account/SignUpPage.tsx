@@ -180,14 +180,9 @@ function CreateView({
       className="flex flex-col gap-5"
       data-testid="onboarding-dialog"
     >
-      <div>
-        <h1 className="headline text-3xl" id="sign-up-title">
-          {CREATE_ACCOUNT}
-        </h1>
-        <p className="mt-2 text-muted">
-          Pick the name people will see. You can change it later.
-        </p>
-      </div>
+      <h1 className="headline text-3xl" id="sign-up-title">
+        {CREATE_ACCOUNT}
+      </h1>
       <Field
         autoComplete="nickname"
         data-testid="onboarding-name"
@@ -230,10 +225,6 @@ function CreateView({
           <Fingerprint aria-hidden="true" size={18} />
           Create with a passkey
         </Button>
-        <p className="-mt-1 text-center text-xs text-muted">
-          Sign in here with your fingerprint, face or device PIN. On another
-          device you need your recovery key, which you can save from You.
-        </p>
         <Button
           block
           data-testid="onboarding-create"
@@ -244,8 +235,7 @@ function CreateView({
           Create without a passkey
         </Button>
         <p className="-mt-1 text-center text-xs text-muted">
-          This account is kept in this browser only. If this browser's data is
-          cleared, only your recovery key can bring it back — save it from You.
+          Without a passkey, clearing this browser's data loses the account.
         </p>
       </div>
       <div className="plain flex items-center justify-between gap-2 rounded-2xl px-3 text-sm">

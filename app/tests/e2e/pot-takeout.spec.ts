@@ -93,9 +93,7 @@ test(`Take out: ${PLAN_V2_BUDGETS.takeMoneyBack.presses} presses from the page, 
   );
 });
 
-test("half and a quarter take out that part and keep the rest", async ({
-  page,
-}) => {
+test("one press takes out all of it and keeps nothing", async ({ page }) => {
   const w = world.get();
   const project = await launchProject(w, "portions", FOUNDER_NOSTR);
   await backFor(w, project, w.who.backer, 100n);
@@ -103,29 +101,14 @@ test("half and a quarter take out that part and keep the rest", async ({
   const { wallet } = await openMoney(page, w, project, {
     account: w.who.backer,
   });
-  const held = await reads.balanceOf(read, project.shares, w.who.backer);
   await page.getByTestId("holding-take-out").click();
-  await page.getByTestId("takeout-portion-half").check();
-  await expect(page.getByTestId("takeout-kept")).toContainText("Shares");
+  await expect(page.getByTestId("takeout-shares")).toContainText("Shares");
   await page.getByTestId("sheet-confirm").click();
   await expect(page.getByTestId("takeout-sheet")).toBeHidden({
     timeout: 30_000,
   });
-  expect(await reads.balanceOf(read, project.shares, w.who.backer)).toBe(
-    held - held / 2n,
-  );
-  await page.getByTestId("holding-take-out").click();
-  await page.getByTestId("takeout-portion-quarter").check();
-  const left = held - held / 2n;
-  await expect(page.getByTestId("takeout-shares")).toBeVisible();
-  await page.getByTestId("sheet-confirm").click();
-  await expect(page.getByTestId("takeout-sheet")).toBeHidden({
-    timeout: 30_000,
-  });
-  expect(await reads.balanceOf(read, project.shares, w.who.backer)).toBe(
-    left - left / 4n,
-  );
-  expect(wallet.prompts).toBe(2);
+  expect(await reads.balanceOf(read, project.shares, w.who.backer)).toBe(0n);
+  expect(wallet.prompts).toBe(1);
 });
 
 interface State {

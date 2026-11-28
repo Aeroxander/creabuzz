@@ -105,18 +105,16 @@ describe("Your Shares", () => {
 });
 
 describe("the Take out sheet", () => {
-  it("shows the cash now and what is kept, and sends the number shown with a guard 0.5% under the quote", async () => {
+  it("shows the cash now, and sends the number shown with a guard 0.5% under the quote", async () => {
     setup({ shares: 1_000n * S });
     show();
     fireEvent.click(await screen.findByTestId("holding-take-out"));
     expect((await screen.findByTestId("takeout-cash")).textContent).toBe(
       "9.80 dollars",
     );
-    expect(screen.getByTestId("takeout-held").textContent).toBe("1,000 Shares");
     expect(screen.getByTestId("takeout-shares").textContent).toBe(
       "1,000 Shares",
     );
-    expect(screen.getByTestId("takeout-kept").textContent).toBe("0 Shares");
     fireEvent.click(screen.getByTestId("sheet-confirm"));
     await waitFor(() => expect(chain.sent.length).toBe(1));
     const call = chain.sent[0];
@@ -134,35 +132,13 @@ describe("the Take out sheet", () => {
     expect(ownSteps(BACKER_EVM, numbers.key)[0]?.kind).toBe("take-out");
   });
 
-  it("taking out half sends half of what is held, and shows what is kept", async () => {
-    setup({ shares: 1_000n * S });
-    show();
-    fireEvent.click(await screen.findByTestId("holding-take-out"));
-    await screen.findByTestId("takeout-cash");
-    fireEvent.click(screen.getByTestId("takeout-portion-half"));
-    await waitFor(() =>
-      expect(screen.getByTestId("takeout-shares").textContent).toBe(
-        "500 Shares",
-      ),
-    );
-    expect(screen.getByTestId("takeout-cash").textContent).toBe("4.90 dollars");
-    expect(screen.getByTestId("takeout-kept").textContent).toBe("500 Shares");
-    fireEvent.click(screen.getByTestId("sheet-confirm"));
-    await waitFor(() => expect(chain.sent.length).toBe(1));
-    expect(decodeCall(TREASURY_ABI, chain.sent[0].data)?.args[0]).toBe(
-      500n * S,
-    );
-  });
-
   it("says that outside money still arriving is not paid now", async () => {
     setup({ shares: 1_000n * S }, { quoteTakeOut: [9_800_000n, 0n, 4n * D] });
     show();
     fireEvent.click(await screen.findByTestId("holding-take-out"));
     const words = await screen.findByTestId("takeout-arriving");
-    expect(words.textContent).toMatch(
-      /4 dollars of outside money is still arriving/,
-    );
-    expect(words.textContent).toMatch(/leaves it for the people who stay/);
+    expect(words.textContent).toMatch(/4 dollars still arriving/);
+    expect(words.textContent).toMatch(/stay for the people who hold on/);
   });
 
   it("a refused press says what happened and leaves the press to try again", async () => {
@@ -196,7 +172,7 @@ describe("the Take out sheet", () => {
     fireEvent.click(await screen.findByTestId("holding-take-out"));
     expect(
       (await screen.findByTestId("takeout-read-failed")).textContent,
-    ).toMatch(/Nothing was taken/);
+    ).toMatch(/nothing was taken/);
   });
 
   it("Escape closes it and nothing is sent", async () => {
@@ -221,9 +197,8 @@ describe("Team Shares held", () => {
       /pay only the project's money above what backers put in/,
     );
     fireEvent.click(screen.getByTestId("holding-take-out-team"));
-    expect(
-      (await screen.findByTestId("takeout-team-words")).textContent,
-    ).toMatch(/estimate/);
+    // The figure of a Team Share take-out is an estimate, and the sheet says "about".
+    expect(await screen.findByText("You get about")).not.toBeNull();
     // 2,000 Team Shares at 61 millionths of a dollar each.
     expect(screen.getByTestId("takeout-cash").textContent).toBe(
       "0.122 dollars",
@@ -285,20 +260,6 @@ describe("leaving does not depend on a nicety", () => {
     expect((await screen.findByTestId("takeout-cash")).textContent).toBe(
       "9.80 dollars",
     );
-  });
-
-  it("a part that is too small to take out leaves the choice on the sheet, so 'all of it' is one press away", async () => {
-    // Three wei of Shares: half is one wei, a quarter is none.
-    setup({ shares: 3n }, { quoteTakeOut: [1n, 0n, 0n] });
-    show();
-    fireEvent.click(await screen.findByTestId("holding-take-out"));
-    await screen.findByTestId("takeout-portion-quarter");
-    fireEvent.click(screen.getByTestId("takeout-portion-quarter"));
-    expect((await screen.findByTestId("takeout-tiny")).textContent).toMatch(
-      /too small to take out/,
-    );
-    fireEvent.click(screen.getByTestId("takeout-portion-all"));
-    expect(await screen.findByTestId("takeout-cash")).not.toBeNull();
   });
 });
 

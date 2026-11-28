@@ -162,9 +162,6 @@ export function StartPage() {
   return (
     <main className="screen mx-auto flex max-w-lg flex-col gap-6">
       <ScreenHeader title="Start a project" />
-      <p className="-mt-3 text-muted">
-        Three answers. You can change them later, and nothing costs anything.
-      </p>
       <form
         className="flex flex-col gap-5"
         data-testid="start-form"
@@ -187,7 +184,7 @@ export function StartPage() {
           data-testid="start-name"
           label="Name"
           onChange={(e) => set("name")(e.target.value)}
-          placeholder="For example: Night Sky Maps"
+          placeholder="Night Sky Maps"
           problem={problems.name}
           value={draft.name}
         />
@@ -196,7 +193,7 @@ export function StartPage() {
           data-testid="start-goal"
           label="What will you make?"
           onChange={(e) => set("goal")(e.target.value)}
-          placeholder="For example: a first version that ten people use."
+          placeholder="A first version that ten people use"
           problem={problems.goal}
           rows={3}
           value={draft.goal}
@@ -206,7 +203,7 @@ export function StartPage() {
           data-testid="start-how"
           label="How will people know it worked?"
           onChange={(e) => set("how")(e.target.value)}
-          placeholder="For example: ten people use it every week."
+          placeholder="Ten people use it every week"
           problem={problems.how}
           rows={2}
           value={draft.how}

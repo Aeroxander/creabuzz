@@ -12,11 +12,10 @@ import type { Project } from "../project/project-record";
 import { PotSheet } from "../pot/PotSheet";
 import type { Ready } from "../pot/use-pot";
 import { isLaunched } from "./launch-read";
-import { launchIdentity, sharesName, sharesSymbol } from "./launch-ids";
+import { launchIdentity } from "./launch-ids";
 import { launchCallFor } from "./launch-plan";
 import {
-  afterLaunch,
-  fixedLimits,
+  feeSentence,
   launchTermsFor,
   launchTermsSentence,
   SETTINGS_MOVED_WORDS,
@@ -54,7 +53,6 @@ export function LaunchSheet({
     queryFn: () => readLaunchOffer(ready.read, launcher),
   });
   const terms = offer.data ? launchTermsFor(offer.data) : null;
-  const name = sharesName(project.name);
   const { key } = launchIdentity(project, ready.address);
   const call =
     offer.data && terms
@@ -75,7 +73,6 @@ export function LaunchSheet({
       calls={call ? [call] : null}
       chainId={chainId}
       confirmLabel={`Launch ${project.name}`}
-      description="Put it on the network so people can back it"
       detail={terms ? `${terms.ratePpm}:${terms.teamPool}` : undefined}
       done="It is on the network. Tying your page to it now."
       doneEarlier="Your earlier launch is on the network. Its numbers cannot be changed now. Nothing new was sent."
@@ -105,8 +102,7 @@ export function LaunchSheet({
       ) : offer.isError || !shown ? (
         <div className="flex flex-col gap-2" data-testid="launch-read-failed">
           <p className="text-sm">
-            Creaton's settings could not be read from the network, so nothing
-            can be sent now. Nothing changed.
+            Creaton's settings could not be read, so nothing was sent.
           </p>
           <Button onClick={() => void offer.refetch()} variant="secondary">
             Try again
@@ -116,40 +112,19 @@ export function LaunchSheet({
         <>
           {terms ? (
             <p className="text-sm" data-testid="launch-terms">
-              {launchTermsSentence(project.name, terms)} Its Shares will be
-              named {name} ({sharesSymbol(project.name)}). You sign once.
+              {launchTermsSentence(terms)}
             </p>
           ) : (
             <p className="text-sm" data-testid="launch-over-ceiling">
               Creaton's limits are under the starting numbers right now, so
-              nothing can be sent. Nothing changed.
+              nothing can be sent.
             </p>
           )}
-          <section
-            aria-labelledby="launch-same-title"
-            className="flex flex-col gap-1.5"
-            data-testid="launch-limits"
-          >
-            <h3 className="text-sm font-semibold" id="launch-same-title">
-              The same for every project
-            </h3>
-            <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted">
-              {fixedLimits(shown).map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          </section>
-          <section
-            aria-labelledby="launch-later-title"
-            className="flex flex-col gap-1.5"
-            data-testid="launch-later"
-          >
-            <h3 className="text-sm font-semibold" id="launch-later-title">
-              After you launch
-            </h3>
-            <p className="text-sm text-muted">{afterLaunch(shown).cannot}</p>
-            <p className="text-sm text-muted">{afterLaunch(shown).can}</p>
-          </section>
+          {feeSentence(shown.feeBps) ? (
+            <p className="text-sm" data-testid="launch-fee">
+              {feeSentence(shown.feeBps)}
+            </p>
+          ) : null}
           <details className="text-sm text-muted">
             <summary className="cursor-pointer">Technical details</summary>
             <p className="mt-1.5 break-all" data-testid="launch-fingerprint">

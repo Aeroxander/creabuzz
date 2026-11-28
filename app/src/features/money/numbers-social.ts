@@ -48,7 +48,7 @@ const PEOPLE_MAX = 1_000_000;
  * What the feed's amounts are rounded to: 100 dollars (6 decimals). The privacy of a small project rests on it, so a feed that
  * says another figure (an exact one) is not believed and is never drawn.
  */
-export const FEED_ROUND_TO = 100_000_000n;
+const FEED_ROUND_TO = 100_000_000n;
 
 /** What the parts of a record say that the four keys are checked against (all from the money part of the same record). */
 export interface SocialContext {

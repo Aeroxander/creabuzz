@@ -4,7 +4,7 @@
  * here: the sheet's press sends, with the sender the person chose.
  */
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { Field } from "../../ui/field";
@@ -13,7 +13,7 @@ import type { ProjectNumbers } from "../money/numbers";
 import { markBackAfterSignUp, takeBackAfterSignUp } from "./back-after-sign-up";
 import { BackSheet } from "./BackSheet";
 import { FaucetCard } from "./FaucetCard";
-import { doorShutWords, smallDollarsText } from "../money/copy";
+import { dollarsPhrase, doorShutWords } from "../money/copy";
 import { targetOf } from "./target";
 import { recordFitsBuild, type Ready, WalletGate } from "./use-pot";
 import { useHolding } from "./YourShares";
@@ -23,9 +23,8 @@ function amountWords(
   min: bigint,
 ): string {
   if (reason === "empty") return "Say how many dollars.";
-  if (reason === "format")
-    return "Write a number of dollars, like 25 or 25.50.";
-  return `The smallest amount is ${smallDollarsText(min)} ${min === 1_000_000n ? "dollar" : "dollars"}.`;
+  if (reason === "format") return "Write a number, like 25 or 25.50.";
+  return `The smallest amount is ${dollarsPhrase(min)}.`;
 }
 
 function sessionStore(): Storage | null {
@@ -89,11 +88,10 @@ function BackForm({
           <Field
             autoComplete="off"
             data-testid="backing-amount"
-            hint={`From ${smallDollarsText(min)} ${min === 1_000_000n ? "dollar" : "dollars"}. There is no most.`}
             inputMode="decimal"
             label="How many dollars?"
             onChange={(event) => setText(event.target.value)}
-            placeholder="For example: 25"
+            placeholder="25"
             problem={problem}
             value={text}
           />
@@ -182,31 +180,23 @@ export function BackCard({
   projectName: string;
   now: number;
 }) {
-  const titleId = useId();
   const shut = doorShutWords(numbers, now);
   return (
     <Card
-      aria-labelledby={titleId}
+      aria-label="Back this project"
       className="flex flex-col gap-2 p-3"
       data-testid="backing-box"
       role="region"
     >
-      <h2 className="headline text-lg" id={titleId}>
-        Back this project
-      </h2>
       {!recordFitsBuild(numbers) ? (
         <p className="text-sm" data-testid="back-wrong-contracts">
-          This project's money is on contracts this version of the app does not
-          know, so backing is off here. Nothing was sent. You can still take
-          your money out.
+          Backing is off here: this app does not know this project's contracts.
+          You can still take your money out.
         </p>
       ) : shut ? (
-        <div className="flex flex-col gap-2" data-testid="back-door-shut">
-          <p className="text-sm">{shut}</p>
-          <p className="text-sm text-muted">
-            You can still take your money out, whatever the door says.
-          </p>
-        </div>
+        <p className="text-sm" data-testid="back-door-shut">
+          {shut}
+        </p>
       ) : (
         <WalletGate
           chainId={numbers.chainId}

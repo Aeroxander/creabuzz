@@ -27,7 +27,6 @@ export interface PotSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
-  description?: string;
   testId: string;
   /** Names the step: one runs at a time under it, and a call that went out is remembered under it. */
   action: string;
@@ -148,7 +147,6 @@ export function PotSheet(props: PotSheetProps) {
         : props.confirmLabel;
   return (
     <Sheet
-      description={`${props.description ? `${props.description}. ` : ""}Nothing is sent until you press the button below and say yes ${send.words.where}.`}
       onOpenChange={(next) => {
         // A wallet that never answers must not lock the sheet: closing is always possible. A step that went out is not
         // abandoned by it: it is looked up (never sent twice) when the sheet is opened again.

@@ -169,7 +169,7 @@ describe("the counts and the net", () => {
     const feed = parsedExample().feed;
     if (!feed) throw new Error("feed");
     expect(roundingNote(feed.roundTo)).toBe(
-      `Amounts are rounded to the nearest ${feedDollars(feed.roundTo)}. No names are shown.`,
+      `Amounts are rounded to the nearest ${feedDollars(feed.roundTo)}.`,
     );
     expect(roundingNote(feed.roundTo)).toContain("100 dollars");
     expect(coverWords(feed.hours, feed.bucketSecs)).toBe("2 days");

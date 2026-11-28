@@ -19,9 +19,9 @@ export function feedDollars(raw: bigint): string {
   return raw === 1_000_000n ? "1 dollar" : `${smallDollarsText(raw)} dollars`;
 }
 
-/** Under the title: how the amounts are rounded, and that no one is named. */
+/** Under the title, when an amount is shown: how the amounts are rounded. */
 export function roundingNote(roundTo: bigint): string {
-  return `Amounts are rounded to the nearest ${feedDollars(roundTo)}. No names are shown.`;
+  return `Amounts are rounded to the nearest ${feedDollars(roundTo)}.`;
 }
 
 /** What one thing the team or a worker did is called, with when it happened and, where it matters, the date it points to. */

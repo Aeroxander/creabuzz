@@ -321,12 +321,10 @@ describe("which sender sends", () => {
 describe("what a sheet says of who asks", () => {
   it("is the wallet's own words for the wallet, and says once, and the server's fee, for the passkey account", () => {
     const wallet = senderWords(injectedWallet(undefined));
-    expect(wallet.where).toBe("in your wallet");
     expect(wallet.twoCalls).toMatch(/wallet asks twice/);
     const passkey = senderWords(
       createPasskeySender(SETTINGS, { probe: READY }),
     );
-    expect(passkey.where).toBe("with your passkey");
     expect(passkey.twoCalls).toMatch(/passkey is asked once/);
     expect(passkey.waiting).toBe("Waiting for your passkey…");
     expect(passkey.twoCalls).not.toMatch(/wallet/);

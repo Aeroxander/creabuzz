@@ -132,8 +132,6 @@ describe("a passkey account launches a project", () => {
     wrap(<LaunchCard project={project} />);
     fireEvent.click(await screen.findByTestId("launch-open"));
     await screen.findByTestId("launch-terms");
-    // The sheet says the passkey is asked once.
-    expect(screen.getByTestId("launch-sheet").textContent).toMatch(/passkey/i);
     fireEvent.click(screen.getByTestId("sheet-confirm"));
     await waitFor(() => expect(operations.length).toBe(1));
     expect(operations[0]).toHaveLength(1);

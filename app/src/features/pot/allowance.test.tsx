@@ -1,6 +1,6 @@
-// The allowance screen for the people who run the project: the box, the ceiling, the rate, an announced raise and the weekly
-// check-in with its dates; draw to an address, change the rate (lower at once, raise after the wait), apply it, and the door.
-// Each sheet's numbers are the numbers in the call it sends, and with a Pair each step is a proposal for the other signer.
+// The allowance screen for the people who run the project: the box and the rate, draw to an address, change the rate (lower at
+// once, raise after the wait) and apply it. Each sheet's numbers are the numbers in the call it sends, and with a Pair each
+// step is a proposal for the other signer.
 import { applyServerSettings } from "@creaton/core/client/server-settings.ts";
 import { decodeCall } from "@creaton/core/pot/abi-codec.ts";
 import { PAIR_ABI, TREASURY_ABI } from "@creaton/core/pot/abis.generated.ts";
@@ -80,17 +80,13 @@ afterEach(() => {
 });
 
 describe("who sees the allowance screen", () => {
-  it("the runner sees the box, its limit, the rate and the ceiling, read from the chain", async () => {
+  it("the runner sees the box and the rate, read from the chain", async () => {
     setup(FOUNDER_EVM);
     show();
     expect((await screen.findByTestId("allowance-box")).textContent).toBe(
       "700 dollars",
     );
-    expect(screen.getByTestId("allowance-cap").textContent).toBe(
-      "7,000 dollars",
-    );
     expect(screen.getByTestId("allowance-rate").textContent).toBe("0.10%");
-    expect(screen.getByTestId("allowance-ceiling").textContent).toBe("0.20%");
   });
 
   it("the box is what the larger of the Treasury's last settle and the server's reading says, so a quiet project can still be drawn from", async () => {
@@ -125,27 +121,6 @@ describe("who sees the allowance screen", () => {
     expect(screen.queryByTestId("allowance-section")).toBeNull();
   });
 
-  it("says when the weekly check-in is due and what happens if it lapses, with the date", async () => {
-    setup(FOUNDER_EVM);
-    show();
-    const words =
-      (await screen.findByTestId("allowance-checkin")).textContent ?? "";
-    expect(words).toMatch(/last check-in was on/);
-    expect(words).toMatch(/If the team does not check in again by/);
-    expect(words).toMatch(
-      /box stops filling, new backing stops and Team Shares stop unlocking/,
-    );
-    expect(words).toMatch(/Backers can always take their money out/);
-  });
-
-  it("says a check-in is overdue once its date has passed", async () => {
-    setup(FOUNDER_EVM, { activeEnd: [BigInt(NOW - 86_400)] });
-    show();
-    expect(
-      (await screen.findByTestId("allowance-checkin")).textContent,
-    ).toMatch(/is overdue/);
-  });
-
   it("a wound-down project has no allowance to run: the screen is gone and no press is offered", () => {
     setup(FOUNDER_EVM);
     show({ ...numbers, windDown: { kind: 1, at: NOW - 10 } });
@@ -162,46 +137,7 @@ describe("who sees the allowance screen", () => {
     show();
     expect(
       (await screen.findByTestId("allowance-read-failed")).textContent,
-    ).toMatch(/Nothing changed/);
-  });
-});
-
-const CHECK_IN_NO_RECORD = `0x${"0".repeat(64)}`;
-
-describe("the check-in press on the money tab", () => {
-  // The press lives beside the runner's other presses because after a hand-over the new runner did not start the
-  // project and the This-week page lists nothing for them: this is the only way back for them.
-  it("the runner presses and the call goes to the Treasury at once, carrying no week's words", async () => {
-    setup(FOUNDER_EVM);
-    show();
-    fireEvent.click(await screen.findByTestId("allowance-check-in"));
-    await waitFor(() => expect(chain.sent.length).toBe(1));
-    expect(chain.sent[0]?.to).toBe(numbers.contracts.treasury);
-    expect(decodeCall(TREASURY_ABI, chain.sent[0]?.data ?? "")).toMatchObject({
-      name: "checkIn",
-      args: [CHECK_IN_NO_RECORD],
-    });
-    expect((await screen.findByTestId("toast")).textContent).toContain(
-      "Checked in. The allowance keeps running.",
-    );
-  });
-
-  it("a Pair signer presses and it checks in at once through the Pair: a Pair lets either signer check in alone", async () => {
-    setup(BACKER_EVM);
-    show(pairRun, BACKER_EVM);
-    const block = await screen.findByTestId("allowance-checkin");
-    // No line about asking the other signer: a check-in needs one signer only.
-    expect(block.textContent).not.toContain("asks the other signer");
-    fireEvent.click(screen.getByTestId("allowance-check-in"));
-    await waitFor(() => expect(chain.sent.length).toBe(1));
-    expect(chain.sent[0]?.to).toBe(PAIR);
-    expect(decodeCall(PAIR_ABI, chain.sent[0]?.data ?? "")).toMatchObject({
-      name: "checkIn",
-      args: [CHECK_IN_NO_RECORD],
-    });
-    expect((await screen.findByTestId("toast")).textContent).toContain(
-      "Checked in. The allowance keeps running.",
-    );
+    ).toMatch(/could not be read/);
   });
 });
 
@@ -308,7 +244,7 @@ describe("the rate", () => {
       target: { value: "0.05" },
     });
     expect(screen.getByTestId("rate-terms").textContent).toMatch(
-      /takes effect at once/,
+      /applies at once/,
     );
     fireEvent.click(screen.getByTestId("sheet-confirm"));
     await waitFor(() => expect(chain.sent.length).toBe(1));
@@ -352,9 +288,9 @@ describe("the rate", () => {
       pendingAt: [BigInt(NOW + 86_400 - numbers.unit)],
     });
     show();
-    expect(
-      (await screen.findByTestId("allowance-pending")).textContent,
-    ).toMatch(/0\.15% a day was announced.*You can apply it from/);
+    expect((await screen.findByTestId("allowance-apply")).textContent).toBe(
+      "See the announced rate",
+    );
     fireEvent.click(screen.getByTestId("allowance-apply"));
     expect((await screen.findByTestId("apply-wait")).textContent).toMatch(
       /can be applied from/,
@@ -382,30 +318,11 @@ describe("the rate", () => {
   });
 });
 
-describe("the door", () => {
-  it("closing it says people can still take their money out, and sends setDoor(false)", async () => {
-    setup(FOUNDER_EVM);
-    show();
-    fireEvent.click(await screen.findByTestId("allowance-door"));
-    expect((await screen.findByTestId("door-words")).textContent).toMatch(
-      /still take their money out/,
-    );
-    fireEvent.click(screen.getByTestId("sheet-confirm"));
-    await waitFor(() => expect(chain.sent.length).toBe(1));
-    const decoded = decodeCall(TREASURY_ABI, chain.sent[0].data);
-    expect(decoded?.name).toBe("setDoor");
-    expect(decoded?.args).toEqual([false]);
-  });
-});
-
 describe("a project run by two", () => {
   it("a signer's draw is a proposal to the Pair for the exact call, and says the other signer must confirm", async () => {
     setup(FOUNDER_EVM);
     show(pairRun);
-    expect((await screen.findByTestId("allowance-pair")).textContent).toMatch(
-      /asks the other signer/,
-    );
-    fireEvent.click(screen.getByTestId("allowance-draw"));
+    fireEvent.click(await screen.findByTestId("allowance-draw"));
     await screen.findByTestId("draw-box");
     fireEvent.change(screen.getByLabelText("Draw to which account?"), {
       target: { value: TO },

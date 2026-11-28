@@ -5,7 +5,7 @@
 import type { FeedHour, FeedItem } from "../money/numbers-types";
 
 /** How many items show first, and how many more each press of "Show earlier" adds. */
-export const FIRST_ITEMS = 5;
+export const FIRST_ITEMS = 3;
 export const MORE_ITEMS = 10;
 
 /** The items to draw when `shown` of them are open: newest first, as the record has them. Never more than there are. */

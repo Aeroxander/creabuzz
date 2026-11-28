@@ -87,7 +87,6 @@ export function GrantSheet({
           ? `Grant ${sharesWords(amount)} Team Shares to ${member.name}`
           : "Grant Team Shares"
       }
-      description="From the Team pool"
       done={doneWords(
         send?.through ?? "alone",
         "Granted. Its clock has started.",
@@ -107,8 +106,7 @@ export function GrantSheet({
       title="Grant Team Shares"
     >
       <p className="text-sm" data-testid="grant-pool">
-        {sharesWords(left)} of the {sharesWords(numbers.team.pool)} Team Shares
-        are left to grant.
+        {sharesWords(left)} of {sharesWords(numbers.team.pool)} left to grant.
       </p>
       <div className="flex flex-col gap-1.5">
         <label className="text-sm font-semibold" htmlFor="grant-member">
@@ -146,18 +144,10 @@ export function GrantSheet({
       >
         <li>
           Each grant has its own clock. Nothing unlocks for{" "}
-          {unitsWords(cliffUnits, numbers.unit)}; after that it unlocks a little
-          each day, for {unitsWords(vestUnits, numbers.unit)} in all, while the
-          team keeps checking in.
+          {unitsWords(cliffUnits, numbers.unit)}; then it unlocks a little each
+          day, for {unitsWords(vestUnits, numbers.unit)} in all.
         </li>
-        <li>
-          Team Shares claim only the project's money above what backers put in.
-          If there is none, they are worth nothing.
-        </li>
-        <li>
-          The person can give up what has not unlocked; you cannot take it back
-          without a public notice first.
-        </li>
+        <li>Team Shares pay only what is above what backers put in.</li>
       </ul>
       {member?.address && amount !== null && !problem ? (
         <p className="text-sm" data-testid="grant-terms">

@@ -20,7 +20,6 @@ import {
   checkAgainstContracts,
   helperJobs,
   dollarsAsPageSays,
-  dollarsInASentence,
   NOT_RUNNABLE,
   type NumbersJson,
   newestRecord,
@@ -99,31 +98,6 @@ async function pageShowsTheRecord(
       continue;
     }
     const n = after.content;
-    // The rest of what the Money tab says about the money is the same record's, in the page's words.
-    const perDay =
-      (BigInt(n.money.pot) * BigInt(n.allowance.ratePpm)) / 1_000_000n;
-    const allowanceLine = await text(page, "money-allowance");
-    check(
-      allowanceLine.includes(
-        `${(n.allowance.ratePpm / 10_000).toFixed(2)}% of the project's money a day`,
-      ) &&
-        allowanceLine.includes(
-          `(about ${dollarsInASentence(perDay)} dollars today)`,
-        ) &&
-        allowanceLine.includes(
-          `It holds ${dollarsInASentence(BigInt(n.allowance.box))} dollars now.`,
-        ),
-      `${what}: the allowance line is the record's rate, daily amount and box ("${allowanceLine.slice(0, 120)}")`,
-    );
-    const backers = BigInt(n.shares.backers);
-    const teamCounted = BigInt(n.shares.teamCounted);
-    same(
-      await text(page, "money-team-part").then(
-        (t) => /gets (\d+)%/.exec(t)?.[1],
-      ),
-      String((teamCounted * 100n) / (backers + teamCounted)),
-      `${what}: the Team's part is the record's`,
-    );
     same(
       await text(page, "money-state"),
       n.quiet.state === "active" ? "Open" : n.quiet.state,

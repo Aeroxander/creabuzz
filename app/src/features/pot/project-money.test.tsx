@@ -95,7 +95,7 @@ afterEach(() => {
 });
 
 describe("the project's money", () => {
-  it("says what the project holds, what one Share gives, the allowance, the Team's part and where it stands, in plain words", async () => {
+  it("says what the project holds, what one Share gives and where it stands, in plain words", async () => {
     show(numbers);
     expect((await screen.findByTestId("money-pot")).textContent).toBe(
       dollarsText(numbers.money.pot),
@@ -105,12 +105,6 @@ describe("the project's money", () => {
     );
     expect(screen.getByTestId("play-money").textContent).toMatch(
       /play money, not real money/,
-    );
-    expect(screen.getByTestId("money-allowance").textContent).toMatch(
-      /up to 0\.10% of the project's money a day/,
-    );
-    expect(screen.getByTestId("money-team-part").textContent).toMatch(
-      /team's side gets \d+% of anything above/,
     );
     expect(screen.getByTestId("money-state").textContent).toBe("Open");
     expect(screen.getByTestId("ownership").textContent).toBe(LEGAL);
@@ -210,14 +204,11 @@ describe("after a Back lands", () => {
 });
 
 describe("where the project stands, and Take out in each", () => {
-  it("quiet: says what stopped, shuts the Back box with the reason, and Take out is there", async () => {
+  it("quiet: names it, shuts the Back box with the reason, and Take out is there", async () => {
     const now = (numbers.quiet.quietFrom ?? 0) + 60;
     show(builtAt(now), { now });
     expect((await screen.findByTestId("money-state")).textContent).toBe(
       "Quiet",
-    );
-    expect(screen.getByTestId("money-state-words").textContent).toMatch(
-      /New backing and the allowance are stopped/,
     );
     expect(screen.getByTestId("back-door-shut").textContent).toMatch(
       /has not checked in since/,
@@ -237,13 +228,10 @@ describe("where the project stands, and Take out in each", () => {
     expect((await screen.findByTestId("money-state")).textContent).toBe(
       "Can be wound down",
     );
-    expect(screen.getByTestId("money-state-words").textContent).toMatch(
-      /anyone can now wind the project down/,
-    );
     expect(await screen.findByTestId("holding-take-out")).not.toBeNull();
   });
 
-  it("wound down: says it is for good, no backing, Take out stays", async () => {
+  it("wound down: names it, no backing, Take out stays", async () => {
     const wound: ProjectNumbers = {
       ...numbers,
       windDown: { kind: 1, at: numbers.builtAt - 10 },
@@ -252,9 +240,6 @@ describe("where the project stands, and Take out in each", () => {
     show(wound);
     expect((await screen.findByTestId("money-state")).textContent).toBe(
       "Wound down",
-    );
-    expect(screen.getByTestId("money-state-words").textContent).toMatch(
-      /take yours out/,
     );
     expect(screen.getByTestId("back-door-shut").textContent).toMatch(
       /wound down/,

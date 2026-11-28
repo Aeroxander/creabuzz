@@ -106,7 +106,6 @@ describe("no serious accessibility violation on the money screens", () => {
       ["allowance-draw", "draw-box", /Draw from the allowance box/],
       ["allowance-rate-open", "rate-now", /Change the daily allowance/],
       ["allowance-apply", "apply-ready", /Apply the announced allowance/],
-      ["allowance-door", "door-words", /door to new backing/],
       ["grant-open", "grant-pool", /Grant Team Shares/],
     ] as const) {
       fireEvent.click(await screen.findByTestId(open));

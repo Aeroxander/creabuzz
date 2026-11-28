@@ -1,6 +1,6 @@
 /**
  * Team Shares on the Money tab: for the runner (and a Pair's signers) the grant button and the pool, for a member their own
- * grants. Both say plainly that Team Shares claim only the project's money above what backers put in.
+ * grants. It says plainly that Team Shares pay only what is above what backers put in.
  */
 import { useId, useState } from "react";
 import { Button } from "../../ui/button";
@@ -9,7 +9,7 @@ import type { ProjectNumbers } from "../money/numbers";
 import { runnerRole } from "../money/runner";
 import { GrantSheet, type GrantMember } from "./GrantSheet";
 import { MyGrants } from "./MyGrants";
-import { sharesWords, teamPartPercent } from "../money/copy";
+import { sharesWords } from "../money/copy";
 import { type Ready, WalletGate } from "./use-pot";
 
 export function TeamSharesSection({
@@ -39,11 +39,7 @@ export function TeamSharesSection({
         Team Shares
       </h2>
       <p className="text-sm text-muted" data-testid="team-shares-words">
-        Team Shares claim only the project's money above what backers put in
-        {teamPartPercent(numbers) !== null
-          ? `, and the Team's side gets ${teamPartPercent(numbers)}% of that`
-          : ""}
-        . If there is none, they are worth nothing.
+        Team Shares pay only what is above what backers put in.
       </p>
       <WalletGate chainId={numbers.chainId} what="see your Team Shares">
         {(ready) => (
@@ -76,8 +72,8 @@ function Inner({
       {role !== "none" ? (
         <>
           <p className="text-sm" data-testid="team-shares-pool">
-            {sharesWords(numbers.team.ungranted)} of the{" "}
-            {sharesWords(numbers.team.pool)} Team Shares are left to grant.
+            {sharesWords(numbers.team.ungranted)} of{" "}
+            {sharesWords(numbers.team.pool)} left to grant.
           </p>
           <Button
             block

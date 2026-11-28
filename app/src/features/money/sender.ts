@@ -113,8 +113,6 @@ export function useSender(): MoneyWallet {
  * (once, for all the calls of the step, with the fee paid by the server).
  */
 export function senderWords(sender: MoneyWallet): {
-  /** "... until you say so here and <where>." */
-  where: string;
   /** The label of a press while the step runs. */
   waiting: string;
   /** What the person is asked for, as one sentence for a step of two calls (approve, then ask). */
@@ -128,7 +126,6 @@ export function senderWords(sender: MoneyWallet): {
 } {
   return senderKind(sender) === "passkey"
     ? {
-        where: "with your passkey",
         waiting: "Waiting for your passkey…",
         twoCalls:
           "Your passkey is asked once, for both steps. The server pays the network fee.",
@@ -137,7 +134,6 @@ export function senderWords(sender: MoneyWallet): {
         kind: "passkey",
       }
     : {
-        where: "in your wallet",
         waiting: "Waiting for your wallet…",
         twoCalls:
           "Your wallet asks twice: once to let the round take the dollars, once for the ask.",

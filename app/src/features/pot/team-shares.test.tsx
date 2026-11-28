@@ -121,16 +121,12 @@ afterEach(() => {
 });
 
 describe("Team Shares says what they are", () => {
-  it("that they claim only the project's money above what backers put in, and what the team's side gets", async () => {
+  it("that they pay only what is above what backers put in", async () => {
     setup(FOUNDER_EVM);
     show();
     const words =
       (await screen.findByTestId("team-shares-words")).textContent ?? "";
-    expect(words).toMatch(
-      /claim only the project's money above what backers put in/,
-    );
-    expect(words).toMatch(/Team's side gets \d+% of that/);
-    expect(words).toMatch(/worth nothing/);
+    expect(words).toMatch(/pay only what is above what backers put in/);
   });
   it("is not shown to someone who neither runs the project nor holds a grant", () => {
     setup(BACKER_EVM);
@@ -149,13 +145,13 @@ describe("grant Team Shares", () => {
   it("shows the pool, the clock of a grant and the Team Shares' limit, and sends the member and amount typed", async () => {
     await open();
     expect(screen.getByTestId("grant-pool").textContent).toContain(
-      `${sharesWords(numbers.team.ungranted)} of the ${sharesWords(numbers.team.pool)} Team Shares are left to grant`,
+      `${sharesWords(numbers.team.ungranted)} of ${sharesWords(numbers.team.pool)} left to grant`,
     );
     expect(screen.getByTestId("grant-clock").textContent).toMatch(
       /Each grant has its own clock.*about 91 days.*about 728 days/s,
     );
     expect(screen.getByTestId("grant-clock").textContent).toMatch(
-      /claim only the project's money above what backers put in/,
+      /pay only what is above what backers put in/,
     );
     fireEvent.change(screen.getByLabelText("Grant to"), {
       target: { value: ANNA.pubkey },

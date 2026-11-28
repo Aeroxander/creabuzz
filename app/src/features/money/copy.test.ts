@@ -2,9 +2,7 @@
 // that means, and why the door is shut. No protocol word, event name or contract name is in any of them.
 import { describe, expect, it } from "vitest";
 import { numbersFor, S } from "../../../tests/helpers/pot-harness";
-import { allowancePerDay, dollarsText } from "./numbers";
 import {
-  allowanceWords,
   boxNow,
   doorShutWords,
   exactDollarsText,
@@ -12,8 +10,7 @@ import {
   sharesWords,
   smallDollarsText,
   spanOf,
-  stateWords,
-  teamPartPercent,
+  standsWord,
 } from "./copy";
 
 const numbers = numbersFor();
@@ -65,17 +62,8 @@ describe("amounts", () => {
   });
 });
 
-describe("the allowance and the Team's part", () => {
-  it("says the daily limit, what it is today and what the box holds", () => {
-    const words = allowanceWords(numbers);
-    expect(words).toContain(
-      `up to 0.10% of the project's money a day (about ${dollarsText(allowancePerDay(numbers))} dollars today)`,
-    );
-    expect(words).toContain(
-      `It holds ${dollarsText(numbers.allowance.box)} dollars now`,
-    );
-  });
-  it("the box is never said to hold more than the Treasury's own cap on it", () => {
+describe("the box", () => {
+  it("is never said to hold more than the Treasury's own cap on it", () => {
     const stale = {
       ...numbers,
       allowance: { ...numbers.allowance, box: 800_000n },
@@ -91,57 +79,22 @@ describe("the allowance and the Team's part", () => {
     // With no cap read, nothing is cut down.
     expect(boxNow(stale, 0n)).toBe(800_000n);
   });
-  it("an allowance switched off says nothing goes into the box", () => {
-    const off = { ...numbers, allowance: { ...numbers.allowance, ratePpm: 0 } };
-    expect(allowanceWords(off)).toMatch(/switched off/);
-  });
-  it("the Team's part is a whole percent, and none without Team Shares", () => {
-    const { backers, teamCounted } = numbers.shares;
-    expect(teamPartPercent(numbers)).toBe(
-      Number((teamCounted * 100n) / (backers + teamCounted)),
-    );
-    expect(
-      teamPartPercent({
-        ...numbers,
-        shares: { ...numbers.shares, teamCounted: 0n },
-      }),
-    ).toBeNull();
-  });
 });
 
 describe("where the project stands", () => {
   const q = numbers.quiet;
-  it("open: when the team checked in, and when it would go quiet", () => {
-    const s = stateWords(numbers, numbers.builtAt);
-    expect(s.label).toBe("Open");
-    expect(s.meaning).toMatch(/checked in on .*goes quiet/);
-    expect(s.meaning).toMatch(/take your money out any time/);
-  });
-  it("quiet, dormant, open to wind down, wound down", () => {
-    expect(stateWords(numbers, (q.quietFrom ?? 0) + 1).label).toBe("Quiet");
-    expect(stateWords(numbers, (q.dormantFrom ?? 0) + 1).label).toBe("Dormant");
-    expect(stateWords(numbers, (q.windableFrom ?? 0) + 1).label).toBe(
+  it("open, quiet, dormant, open to wind down, wound down", () => {
+    expect(standsWord(numbers, numbers.builtAt)).toBe("Open");
+    expect(standsWord(numbers, (q.quietFrom ?? 0) + 1)).toBe("Quiet");
+    expect(standsWord(numbers, (q.dormantFrom ?? 0) + 1)).toBe("Dormant");
+    expect(standsWord(numbers, (q.windableFrom ?? 0) + 1)).toBe(
       "Can be wound down",
     );
     const wound = {
       ...numbers,
       windDown: { kind: 1 as const, at: numbers.builtAt },
     };
-    expect(stateWords(wound, numbers.builtAt).label).toBe("Wound down");
-    expect(stateWords(wound, numbers.builtAt).meaning).toMatch(
-      /take yours out/,
-    );
-  });
-  it("every state says taking out still works, or is what is left", () => {
-    for (const at of [
-      numbers.builtAt,
-      (q.quietFrom ?? 0) + 1,
-      (q.dormantFrom ?? 0) + 1,
-      (q.windableFrom ?? 0) + 1,
-    ])
-      expect(stateWords(numbers, at).meaning).toMatch(
-        /take your money out any time/,
-      );
+    expect(standsWord(wound, numbers.builtAt)).toBe("Wound down");
   });
 });
 
@@ -171,9 +124,8 @@ describe("why the door is shut", () => {
 describe("plain words", () => {
   it("none of the money screens' sentences carries a protocol word", () => {
     const all = [
-      allowanceWords(numbers),
-      stateWords(numbers, numbers.builtAt).meaning,
-      stateWords(numbers, (numbers.quiet.quietFrom ?? 0) + 1).meaning,
+      standsWord(numbers, numbers.builtAt),
+      standsWord(numbers, (numbers.quiet.quietFrom ?? 0) + 1),
       doorShutWords(numbers, (numbers.quiet.quietFrom ?? 0) + 1) ?? "",
     ].join(" ");
     for (const word of [

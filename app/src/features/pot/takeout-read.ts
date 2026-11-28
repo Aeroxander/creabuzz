@@ -8,25 +8,12 @@ import { planTakeOut, planTeamTakeOut } from "@creaton/core/pot/pot-plans.ts";
 import { balanceOf, type ReadCall } from "@creaton/core/pot/pot-reads.ts";
 import type { MoneyTarget } from "./target";
 
-/** How much of what is held to take out. */
-export type Portion = "all" | "half" | "quarter";
-
-export const PORTION_WORDS: Record<Portion, string> = {
-  all: "All of it",
-  half: "Half",
-  quarter: "A quarter",
-};
-
-const portionOf = (held: bigint, portion: Portion): bigint =>
-  portion === "all" ? held : portion === "half" ? held / 2n : held / 4n;
-
 export type TakeOutRead =
-  | { ok: false; why: "none" | "tiny" | "nothing" }
+  | { ok: false; why: "none" | "nothing" }
   | {
       ok: true;
       kind: "backer" | "team";
-      /** What the account holds now, and how many of it this press takes out. */
-      held: bigint;
+      /** What the account holds now, all of which this press takes out. */
       shares: bigint;
       /** Cash now: exact for Shares, an estimate for Team Shares. */
       cash: bigint;
@@ -44,7 +31,6 @@ export async function readTakeOut(
   read: ReadCall,
   target: MoneyTarget,
   kind: "backer" | "team",
-  portion: Portion,
   account: string,
 ): Promise<TakeOutRead> {
   const held = await balanceOf(
@@ -52,10 +38,9 @@ export async function readTakeOut(
     kind === "team" ? target.team : target.shares,
     account,
   );
-  const shares = portionOf(held, portion);
   if (held === 0n) return { ok: false, why: "none" };
-  // Something is held but this portion of it rounds to no Shares: the person can still choose a bigger portion.
-  if (shares === 0n) return { ok: false, why: "tiny" };
+  // One press takes all of it.
+  const shares = held;
   const readAt = Math.floor(Date.now() / 1000);
   if (kind === "team") {
     const plan = await planTeamTakeOut(read, {
@@ -67,7 +52,6 @@ export async function readTakeOut(
     return {
       ok: true,
       kind,
-      held,
       shares,
       cash: plan.estimate,
       minCash: plan.minCash,
@@ -87,7 +71,6 @@ export async function readTakeOut(
   return {
     ok: true,
     kind,
-    held,
     shares,
     cash: plan.quote.cashNow,
     minCash: plan.minCash,

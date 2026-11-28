@@ -134,12 +134,11 @@ afterEach(() => {
 });
 
 describe("the launch card", () => {
-  it("says what launching is, that the dollars are play money, and offers one button", async () => {
+  it("names the project, says the dollars are play money, and offers one button", async () => {
     setup();
     show();
     const card = await screen.findByTestId("launch-card");
     expect(card.textContent).toMatch(/Open Lantern to backers/);
-    expect(card.textContent).toMatch(/take\s+their money out any day/);
     expect(text("launch-play-money")).toMatch(/play money/);
     expect(await screen.findByTestId("launch-open")).not.toBeNull();
     // Nothing was sent by looking.
@@ -179,7 +178,7 @@ describe("the launch card", () => {
 });
 
 describe("the launch sheet", () => {
-  it("opens with nothing to type: the starting terms in one sentence, the limits, and what cannot be changed", async () => {
+  it("opens with nothing to type: the starting terms in one sentence, and the fee", async () => {
     setup();
     show();
     await open();
@@ -188,17 +187,13 @@ describe("the launch sheet", () => {
     expect(screen.queryByTestId("launch-rate")).toBeNull();
     expect(screen.queryByTestId("launch-pool")).toBeNull();
     expect(text("launch-terms")).toMatch(
-      /Lantern will be put on the network with a daily allowance of 0\.10% .* Team pool of 10,000,000 Team Shares\./,
+      /The team may take 0\.10% of the project's money a day\. Team pool: 10,000,000 Team Shares\. You sign once\./,
     );
-    const limits = text("launch-limits");
-    expect(limits).toMatch(/takes 2% of the money people put in/);
-    expect(limits).toMatch(/smallest backing is 1 dollar\./);
-    expect(limits).toMatch(/never go above 0\.20% of the project's money/);
-    expect(limits).toMatch(/check in for about 56 minutes/);
-    expect(limits).toMatch(/helper can draw at most 25 dollars/);
-    const later = text("launch-later");
-    expect(later).toMatch(/cannot change the size of the Team pool/);
-    expect(later).toMatch(/lower the daily allowance at once/);
+    expect(text("launch-fee")).toBe(
+      "Creaton takes 2% of the money people put in.",
+    );
+    expect(screen.queryByTestId("launch-limits")).toBeNull();
+    expect(screen.queryByTestId("launch-later")).toBeNull();
     // The settings fingerprint is under "Technical details", not in the main words.
     expect(text("launch-fingerprint")).toContain(HASH);
     expect(text("sheet-play-money")).toMatch(/play money/);
@@ -320,7 +315,7 @@ describe("the launch sheet", () => {
     fireEvent.click(await screen.findByTestId("launch-open"));
     expect(
       (await screen.findByTestId("launch-read-failed")).textContent,
-    ).toMatch(/could not be read from the network, so nothing can be sent/);
+    ).toMatch(/could not be read, so nothing was sent/);
     expect(
       (screen.getByTestId("sheet-confirm") as HTMLButtonElement).disabled,
     ).toBe(true);

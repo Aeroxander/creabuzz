@@ -103,12 +103,12 @@ describe("what happened", () => {
     expect(screen.queryByTestId("feed-show-earlier")).toBeNull();
   });
 
-  it("does not repeat the line about not being a return (the money card above it has the one), and says the rounding and no-names note", () => {
+  it("does not repeat the line about not being a return (the money card above it has the one), and says the rounding note", () => {
     draw(numbersWith());
     const feed = screen.getByTestId("project-feed");
     expect(feed.textContent?.split(NOT_A_RETURN_LITERAL)).toHaveLength(1);
     expect(screen.getByTestId("feed-rounding").textContent).toBe(
-      "Amounts are rounded to the nearest 100 dollars. No names are shown.",
+      "Amounts are rounded to the nearest 100 dollars.",
     );
   });
 

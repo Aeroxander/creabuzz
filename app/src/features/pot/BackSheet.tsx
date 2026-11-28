@@ -1,21 +1,17 @@
 /**
  * The Back sheet: what a person reads before the one press. It opens on an amount, reads the chain at that moment (the
- * quote, the fee, the door, what the account holds) and shows exactly what will be put into the call: what you pay, the
- * fee to the platform, the Shares you get and what taking out right now would give. The guard on the Shares comes from that
- * same quote. A shut door, an amount that buys nothing, or too few play dollars say what to do instead of offering the press.
+ * quote, the door, what the account holds) and shows what will be put into the call: what you pay, the Shares you get and
+ * what taking out right now would give. The guard on the Shares comes from that same quote. A shut door, an amount that buys nothing, or too few play dollars say what to do instead of offering the press.
  */
-import { QUOTE_TOLERANCE_BPS } from "@creaton/core/pot/pot-plans.ts";
 import { balanceOf } from "@creaton/core/pot/pot-reads.ts";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "../../ui/button";
 import { Row } from "../../ui/row";
 import { Card } from "../../ui/card";
 import type { ProjectNumbers } from "../money/numbers";
-import { potProblem } from "../money/problems";
 import { type BackRead, readBack } from "./back-read";
 import { plannedBackLine } from "./back-tasks";
 import { rememberStep } from "./own-history";
-import { senderKind } from "../money/wallet";
 import { PotSheet } from "./PotSheet";
 import type { Ready } from "./use-pot";
 import {
@@ -26,12 +22,6 @@ import {
   sharesWords,
   smallDollarsText,
 } from "../money/copy";
-
-/** What a typed amount's fee is as a percent: "2%". */
-function percentWords(bps: number): string {
-  const percent = bps / 100;
-  return `${Number.isInteger(percent) ? percent : percent.toFixed(2)}%`;
-}
 
 export function BackSheet({
   numbers,
@@ -71,12 +61,11 @@ export function BackSheet({
   const good = data?.ok ? data : null;
   const short = good !== null && good.dollars < (amount ?? 0n);
   const calls = good && !short ? good.plan.calls : null;
-  const guard = good?.plan.minShares ?? 0n;
   // The fee as the chain charged it on this amount (the record's percent is hours old), to the nearest hundredth of a percent.
-  const feeBps =
+  const feePercent =
     good && amount !== null && amount > 0n
-      ? Number(((good.fee * 20_000n) / amount + 1n) / 2n)
-      : numbers.feeBps;
+      ? `${Number(((good.fee * 20_000n) / amount + 1n) / 2n) / 100}%`
+      : "";
   const detail =
     good && amount !== null
       ? `${amount}:${good.sharesBefore}`.slice(0, 80)
@@ -89,8 +78,7 @@ export function BackSheet({
     body = (
       <div className="flex flex-col gap-3" data-testid="back-read-failed">
         <p className="text-sm">
-          The price could not be read from the network, so nothing can be sent
-          now. Nothing was taken. {potProblem(reading.error, "back")}
+          The price could not be read, so nothing was taken.
         </p>
         <Button onClick={() => void reading.refetch()} variant="secondary">
           Try again
@@ -101,8 +89,8 @@ export function BackSheet({
     body = (
       <p className="text-sm" data-testid={`back-${data.why}`}>
         {data.why === "door-shut"
-          ? "The door to new backing is shut right now, so nothing can be sent. You can still take your money out. Look again when the team has checked in or opened the door."
-          : "That amount is too small to buy any Shares at the price now. Nothing was taken. Go back and enter more."}
+          ? "Backing is shut right now. You can still take your money out."
+          : "That is too small to buy any Shares. Enter more."}
       </p>
     );
   else if (good && amount !== null)
@@ -115,23 +103,31 @@ export function BackSheet({
             value={`${exactDollarsText(amount)} dollars`}
           />
           <Row
-            label="Fee to the platform, part of that"
-            testId="back-fee"
-            value={`${exactDollarsText(good.fee)} dollars (${percentWords(feeBps)})`}
-          />
-          <Row
             label="You get"
             strong
             testId="back-shares"
             value={`${sharesWords(good.plan.quote.shares)} Shares`}
           />
           <Row
-            label="Taking out right now would give you"
+            label="Taking out now would give"
             testId="back-now"
             value={`${smallDollarsText(good.plan.quote.takeOutNow)} dollars`}
           />
         </dl>
         <p className="text-sm text-muted">{NOT_A_RETURN}</p>
+        <p className="text-sm" data-testid="back-rate">
+          The team may take up to {rateWords(good.ratePpm)} of the money a day.
+        </p>
+        {good.fee > 0n ? (
+          <p className="text-sm" data-testid="back-fee">
+            Creaton keeps {feePercent} of what you pay.
+          </p>
+        ) : null}
+        {good.plan.quote.locked > 0n ? (
+          <p className="text-sm" data-testid="back-locked">
+            {backLockedWords(good.plan.quote.locked)}
+          </p>
+        ) : null}
         {planned ? (
           <p className="text-sm" data-testid="back-planned">
             {planned}
@@ -143,45 +139,10 @@ export function BackSheet({
             data-testid="back-short"
             role="alert"
           >
-            You hold {smallDollarsText(good.dollars)} play dollars, which is
-            less than the {exactDollarsText(amount)} this needs. Nothing was
-            taken. Enter less, or get play dollars first.
+            You hold {smallDollarsText(good.dollars)} play dollars, less than{" "}
+            {exactDollarsText(amount)}. Get play dollars first.
           </p>
         ) : null}
-        <details className="text-sm">
-          <summary className="min-h-11 cursor-pointer font-semibold">
-            Details
-          </summary>
-          <ul className="mt-1 flex list-disc flex-col gap-1.5 pl-5 text-muted">
-            <li>
-              The team may take up to {rateWords(good.ratePpm)} of the project's
-              money a day.
-            </li>
-            <li data-testid="back-locked">
-              {backLockedWords(good.plan.quote.locked)}
-            </li>
-            <li data-testid="back-arriving">
-              Money from outside still arriving:{" "}
-              {good.plan.quote.arriving === 0n
-                ? "none"
-                : `${smallDollarsText(good.plan.quote.arriving)} dollars`}
-              .
-            </li>
-            <li data-testid="back-guard">
-              If the price moves against you by more than{" "}
-              {percentWords(Number(QUOTE_TOLERANCE_BPS))} before this lands,
-              nothing is taken. You are guaranteed at least {sharesWords(guard)}{" "}
-              Shares.
-            </li>
-            <li>
-              {good.plan.oneSignature
-                ? "This is one signature."
-                : senderKind(ready.wallet) === "passkey"
-                  ? "Your passkey is asked once, for both steps: letting the project take the dollars, and backing. The server pays the network fee."
-                  : "This is two signatures: one to let the project take the dollars, one to back."}
-            </li>
-          </ul>
-        </details>
       </>
     );
   else body = null;
@@ -198,7 +159,6 @@ export function BackSheet({
           ? "Back"
           : `Back with ${exactDollarsText(amount)} dollars`
       }
-      description={`Backing ${projectName}`}
       detail={detail}
       done="Backed. Your new Shares show on this page."
       landed={async (wallet, from, earlier) => {

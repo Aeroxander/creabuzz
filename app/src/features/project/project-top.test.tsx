@@ -37,7 +37,7 @@ import { PLAY_MONEY_WORDS } from "../money/copy";
 import { BANNER_LITERAL } from "../../../tests/helpers/legal-words";
 import { ProjectPage } from "./ProjectPage";
 import { projectPath, projectRef } from "./project-record";
-import { keptLine, peopleLine, takeOutNowLine } from "./project-top-words";
+import { takeOutNowLine } from "./project-top-words";
 
 const [, FOUNDER, ID] = COORDINATE.split(":");
 
@@ -138,30 +138,14 @@ describe("the money, the banner and Back in the order a stranger reads them", ()
     });
     await screen.findByTestId("project-money");
     expect(
-      screen.getAllByRole("heading", { name: "Back this project" }),
+      screen.getAllByRole("region", { name: "Back this project" }),
     ).toHaveLength(1);
     expect(screen.getAllByTestId("backing-box")).toHaveLength(1);
-  });
-
-  it("who backs it, how long money has stayed and the updates, from the record", async () => {
-    await page();
-    const n = parsedExample();
-    await screen.findByTestId("top-facts");
-    expect(screen.getByTestId("top-people").textContent).toBe(
-      peopleLine(n.holderCount),
-    );
-    expect(screen.getByTestId("top-kept").textContent).toBe(keptLine(n));
-    expect(screen.getByTestId("top-check-in").textContent).toMatch(
-      new RegExp(`Check-ins: ${n.streaks?.updates.weeks} weeks in a row\\.$`),
-    );
-    expect(screen.getByTestId("top-chips").textContent).toContain(
-      "Open to back",
-    );
   });
 });
 
 describe("what is drawn when a key is absent, null, wrong or old", () => {
-  it("a record from an older server has no kept line", async () => {
+  it("a record without the social keys still shows the money, and Back", async () => {
     await page(
       withSocial({
         held: "absent",
@@ -169,31 +153,15 @@ describe("what is drawn when a key is absent, null, wrong or old", () => {
         streaks: "absent",
       }),
     );
-    await screen.findByTestId("top-facts");
-    expect(screen.queryByTestId("top-kept")).toBeNull();
-    // The money is read all the same.
-    expect(screen.getByTestId("top-money-pot")).not.toBeNull();
-  });
-
-  it("a key that is null is not 'none' and not zero: nothing is drawn for it", async () => {
-    await page(withSocial({ held: null, streaks: null }));
-    await screen.findByTestId("top-facts");
-    expect(screen.queryByTestId("top-kept")).toBeNull();
-    expect(screen.getByTestId("top-check-in").textContent).toMatch(
-      /^(Last check-in|No check-in yet)/,
-    );
-    expect(screen.getByTestId("top-check-in").textContent).not.toMatch(
-      /weeks in a row/,
-    );
+    expect(await screen.findByTestId("top-money-pot")).not.toBeNull();
+    expect(screen.getByTestId("backing-box")).not.toBeNull();
   });
 
   it("a key that is wrong reads as null for that part, and the money page stands", async () => {
     await page((c) => {
       (c.held as Record<string, unknown>).rank = "garbage";
     });
-    await screen.findByTestId("top-facts");
-    expect(screen.queryByTestId("top-kept")).toBeNull();
-    expect(screen.getByTestId("top-money-pot")).not.toBeNull();
+    expect(await screen.findByTestId("top-money-pot")).not.toBeNull();
     expect(screen.getByTestId("backing-box")).not.toBeNull();
   });
 
@@ -205,13 +173,11 @@ describe("what is drawn when a key is absent, null, wrong or old", () => {
     expect(screen.getByTestId("top-money-pot")).not.toBeNull();
   });
 
-  it("a record older than a day shows none of the money and no kept line, and Back waits", async () => {
+  it("a record older than a day shows none of the money, and Back waits", async () => {
     await page(undefined, NOW - 2 * 86_400);
     expect(await screen.findByTestId("top-money-stale")).not.toBeNull();
     expect(screen.queryByTestId("top-money-pot")).toBeNull();
     expect(screen.queryByTestId("top-take-out-now")).toBeNull();
-    expect(screen.queryByTestId("top-kept")).toBeNull();
-    expect(screen.queryByTestId("top-people")).toBeNull();
     expect(screen.getByTestId("back-paused").textContent).toMatch(
       /Taking your money out does not wait/,
     );

@@ -105,14 +105,11 @@ test("a founder starts a project, launches it with no field and one signature, a
   const sheet = page.getByTestId("launch-sheet");
   await expect(sheet).toBeVisible();
   await expect(sheet.getByRole("textbox")).toHaveCount(0);
-  await expect(page.getByTestId("launch-limits")).toContainText(
-    "Creaton takes 2% of the money people put in",
-  );
-  await expect(page.getByTestId("launch-later")).toContainText(
-    "you cannot change the size of the Team pool",
+  await expect(page.getByTestId("launch-fee")).toHaveText(
+    "Creaton takes 2% of the money people put in.",
   );
   await expect(page.getByTestId("launch-terms")).toContainText(
-    "daily allowance of 0.10% of the project's money and a Team pool of 10,000,000 Team Shares",
+    "The team may take 0.10% of the project's money a day. Team pool: 10,000,000 Team Shares.",
   );
   await path.read(page, "the launch sheet");
   await path.press(page.getByTestId("sheet-confirm"), "Launch Lantern");
@@ -245,7 +242,7 @@ test("the platform's settings change between the sheet and the signature: nothin
     w.who.admin,
     w.chain.launcher,
     encodeCall(LAUNCHER_ABI, "setSettings", [
-      [dollar, receiver, fee, unit, agentUsd + 1_000_000n],
+      [dollar, receiver, fee / 2n, unit, agentUsd],
     ]),
   );
   await page.getByTestId("sheet-confirm").click();
@@ -255,12 +252,12 @@ test("the platform's settings change between the sheet and the signature: nothin
   );
   await expect(problem).not.toContainText(/0x|revert|SettingsMoved/);
   expect(wallet.prompts).toBe(0);
-  // The sheet shows the new settings (a new fingerprint and the helper limit the platform changed).
+  // The sheet shows the new settings (a new fingerprint and the fee the platform changed).
   await expect(page.getByTestId("launch-fingerprint")).not.toHaveText(
     fingerprint ?? "",
   );
-  await expect(page.getByTestId("launch-limits")).toContainText(
-    "A helper can draw at most 26 dollars a day",
+  await expect(page.getByTestId("launch-fee")).toHaveText(
+    "Creaton takes 1% of the money people put in.",
   );
   await page.getByTestId("sheet-confirm").click();
   await expect(page.getByTestId("launch-sheet")).toBeHidden({
@@ -369,7 +366,7 @@ test("the launch card and sheet are reachable by keyboard, Escape closes the she
   await page.keyboard.press("Enter");
   const sheet = page.getByTestId("launch-sheet");
   await expect(sheet).toBeVisible();
-  await expect(page.getByTestId("launch-limits")).toBeVisible();
+  await expect(page.getByTestId("launch-terms")).toBeVisible();
   await expectAccessible(page, "Launch sheet");
   await page.screenshot({ path: "test-results/pot-screens/launch-sheet.png" });
   await sheet.evaluate((el) => {

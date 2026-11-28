@@ -1,6 +1,6 @@
 /**
  * The runner's sheets for the allowance: draw to an address, change the rate (lower at once, or announce a raise and apply
- * it after the wait), apply an announced raise, open or close the door. Each shows what it does in plain words and the
+ * it after the wait), and apply an announced raise. Each shows what it does in plain words and the
  * numbers it read from the chain when it opened, and the call it sends is made from exactly what is on the sheet. With a
  * Pair as runner each is a proposal the other signer confirms.
  */
@@ -8,7 +8,6 @@ import {
   applyRateCall,
   drawCall,
   proposeRateCall,
-  setDoorCall,
   setRateCall,
 } from "@creaton/core/pot/pot-calls.ts";
 import {
@@ -22,7 +21,7 @@ import { Card } from "../../ui/card";
 import { Field } from "../../ui/field";
 import { parseDollarAmount } from "../money/calls";
 import { dollarsPhrase } from "../money/copy";
-import { dayText, type ProjectNumbers, timeText } from "../money/numbers";
+import { type ProjectNumbers, timeText } from "../money/numbers";
 import { PotSheet } from "./PotSheet";
 import { PAIR_WORDS, doneWords, runnerSend } from "./runner-calls";
 import { boxNow, rateWords, smallDollarsText } from "../money/copy";
@@ -45,7 +44,7 @@ export function useAllowanceState(
   });
 }
 
-type Sheet = "draw" | "rate" | "door" | "apply";
+type Sheet = "draw" | "rate" | "apply";
 
 interface Props {
   numbers: ProjectNumbers;
@@ -125,7 +124,6 @@ function DrawSheet({ numbers, ready, sheet, onClose }: Props) {
           ? `Draw ${smallDollarsText(parsed.raw)} dollars`
           : "Draw"
       }
-      description="Take money from the allowance box"
       done={doneWords(
         send?.through ?? "alone",
         "Drawn from the allowance box.",
@@ -151,13 +149,11 @@ function DrawSheet({ numbers, ready, sheet, onClose }: Props) {
       ) : (
         <>
           <p className="text-sm" data-testid="draw-box">
-            The box holds about {smallDollarsText(box)} dollars now. You can
-            draw up to that, to an account of your choice.
+            The box holds about {smallDollarsText(box)} dollars now.
           </p>
           <Field
             autoComplete="off"
             data-testid="draw-to"
-            hint="The account that gets the dollars."
             label="Draw to which account?"
             onChange={(e) => setTo(e.target.value)}
             placeholder="0x…"
@@ -236,7 +232,6 @@ function RateSheet({ numbers, ready, sheet, onClose }: Props) {
             ? `Announce ${rateWords(ppm)} a day`
             : `Lower it to ${rateWords(ppm)} a day`
       }
-      description="Change the daily allowance"
       done={doneWords(
         send?.through ?? "alone",
         raise
@@ -263,13 +258,13 @@ function RateSheet({ numbers, ready, sheet, onClose }: Props) {
       ) : (
         <>
           <p className="text-sm" data-testid="rate-now">
-            The allowance is {rateWords(current)} of the project's money a day
-            now. The most allowed is {rateWords(max)}.
+            Now {rateWords(current)} of the project's money a day. The most is{" "}
+            {rateWords(max)}.
           </p>
           <Field
             autoComplete="off"
             data-testid="rate-new"
-            hint="Percent of the project's money a day, like 0.10."
+            hint="Percent a day, like 0.10."
             inputMode="decimal"
             label="New rate"
             onChange={(e) => setText(e.target.value)}
@@ -280,8 +275,8 @@ function RateSheet({ numbers, ready, sheet, onClose }: Props) {
           {ppm !== null && !problem ? (
             <p className="text-sm" data-testid="rate-terms">
               {raise
-                ? `A higher rate is announced first, so everyone can see it. It can be applied ${weekWords(numbers)} after you announce it.`
-                : "A lower rate takes effect at once."}
+                ? `A higher rate is announced first and applies after ${weekWords(numbers)}.`
+                : "A lower rate applies at once."}
             </p>
           ) : null}
           {send?.through === "pair" ? (
@@ -321,7 +316,6 @@ function ApplySheet({ numbers, ready, sheet, onClose, now }: Props) {
       confirmLabel={
         pending ? `Apply ${rateWords(pending.ratePpm)} a day` : "Apply"
       }
-      description="Apply the announced allowance"
       done={doneWords(
         send?.through ?? "alone",
         "The new allowance is in place.",
@@ -359,60 +353,13 @@ function ApplySheet({ numbers, ready, sheet, onClose, now }: Props) {
   );
 }
 
-function DoorSheet({ numbers, ready, sheet, onClose }: Props) {
-  const open = sheet === "door";
-  const shutting = numbers.door.switchOn;
-  const send = runnerSend(
-    numbers,
-    ready.address,
-    setDoorCall(numbers.contracts.treasury, !shutting),
-  );
-  return (
-    <PotSheet
-      account={ready.address}
-      action={`door:${numbers.chainId}:${numbers.contracts.treasury}`}
-      calls={send?.calls ?? null}
-      chainId={numbers.chainId}
-      confirmLabel={shutting ? "Close the door" : "Open the door"}
-      description="The door to new backing"
-      done={doneWords(
-        send?.through ?? "alone",
-        shutting ? "The door is closed." : "The door is open.",
-      )}
-      lookLabel="Look for your change"
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-      open={open}
-      playMoney={numbers.playMoney}
-      problemAction="door"
-      testId="door-sheet"
-      title={
-        shutting
-          ? "Close the door to new backing?"
-          : "Open the door to new backing?"
-      }
-    >
-      <p className="text-sm" data-testid="door-words">
-        {shutting
-          ? "While the door is closed nobody can back this project. People who hold Shares can still take their money out."
-          : `Opening it lets anyone back this project again, as long as the team keeps checking in${numbers.clock.activeUntil ? ` (the next check-in is due by ${dayText(numbers.clock.activeUntil)})` : ""}.`}
-      </p>
-      {send?.through === "pair" ? (
-        <p className="text-sm text-muted">{PAIR_WORDS}</p>
-      ) : null}
-    </PotSheet>
-  );
-}
-
-/** All four sheets; the one named by `sheet` is open. */
+/** All three sheets; the one named by `sheet` is open. */
 export function AllowanceSheets(props: Props) {
   return (
     <>
       <DrawSheet {...props} />
       <RateSheet {...props} />
       <ApplySheet {...props} />
-      <DoorSheet {...props} />
     </>
   );
 }

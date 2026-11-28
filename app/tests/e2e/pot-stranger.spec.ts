@@ -53,12 +53,11 @@ test("a stranger with a wallet and no play dollars reads the Back sheet and send
   });
   // The faucet is one press on the page, and nothing is sent until it is pressed.
   await expect(page.getByTestId("faucet-open")).toHaveText("Get play dollars");
-  // The Back sheet says what you pay, the part that goes to the platform, the Shares and what taking out now would give.
+  // The Back sheet says what you pay, the Shares and what taking out now would give.
   await page.getByTestId("backing-amount").fill("25");
   await page.getByTestId("backing-review").click();
   const sheet = page.getByTestId("back-sheet");
   await expect(page.getByTestId("back-pay")).toHaveText("25 dollars");
-  await expect(page.getByTestId("back-fee")).toContainText("0.50 dollars");
   await expect(page.getByTestId("back-shares")).toContainText("Shares");
   await expect(page.getByTestId("back-now")).toContainText("dollars");
   await expect(sheet).toContainText(
@@ -66,10 +65,6 @@ test("a stranger with a wallet and no play dollars reads the Back sheet and send
   );
   await expect(sheet.getByTestId("sheet-play-money")).toContainText(NOTICE);
   await expect(sheet.getByTestId("ownership")).toHaveText(LEGAL);
-  await sheet.getByText("Details").click();
-  await expect(page.getByTestId("back-guard")).toContainText(
-    "guaranteed at least",
-  );
   // No play dollars yet: the sheet says so and does not offer the press.
   await expect(page.getByTestId("back-short")).toContainText(
     /You hold 0(\.00)? play dollars/,

@@ -10,13 +10,7 @@ import {
   type ProjectNumbers,
   timeText,
 } from "../money/numbers";
-import {
-  allowanceWords,
-  NOT_A_RETURN,
-  smallDollarsText,
-  stateWords,
-  teamPartPercent,
-} from "../money/copy";
+import { NOT_A_RETURN, smallDollarsText, standsWord } from "../money/copy";
 
 /** A record too old to show figures: what it means for the person's own money. */
 export function StaleMoney({
@@ -46,8 +40,6 @@ export function MoneyFacts({
   now: number;
 }) {
   const age = freshnessOf(numbers, now);
-  const state = stateWords(numbers, now);
-  const team = teamPartPercent(numbers);
   return (
     <div
       className="glass flex flex-col gap-2 rounded-2xl p-4"
@@ -61,7 +53,7 @@ export function MoneyFacts({
           value={smallDollarsText(numbers.money.pot)}
         />
         <Row
-          label="What one Share gives if taken out now"
+          label="Taking out now gives, per Share"
           strong
           testId="money-share-value"
           value={smallDollarsText(numbers.value.leaveValue)}
@@ -70,7 +62,7 @@ export function MoneyFacts({
           label="Where it stands"
           strong
           testId="money-state"
-          value={state.label}
+          value={standsWord(numbers, now)}
         />
       </dl>
       {age.level === "as-of" ? (
@@ -79,18 +71,6 @@ export function MoneyFacts({
         </p>
       ) : null}
       <p className="text-sm text-muted">{NOT_A_RETURN}</p>
-      <p className="text-sm" data-testid="money-state-words">
-        {state.meaning}
-      </p>
-      <p className="text-sm text-muted" data-testid="money-allowance">
-        {allowanceWords(numbers)}
-      </p>
-      {team !== null ? (
-        <p className="text-sm text-muted" data-testid="money-team-part">
-          The team's side gets {team}% of anything above what backers put in.
-          Backers are paid back what they put in first.
-        </p>
-      ) : null}
     </div>
   );
 }

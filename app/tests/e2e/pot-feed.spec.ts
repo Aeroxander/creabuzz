@@ -66,14 +66,14 @@ test("the feed on a phone: what happened, joins and take-outs at equal weight, t
   await expect(feed).not.toContainText(NOT_A_RETURN);
   await expect(page.getByTestId("top-money")).toContainText(NOT_A_RETURN);
   await expect(feed).toContainText(
-    "Amounts are rounded to the nearest 100 dollars. No names are shown.",
+    "Amounts are rounded to the nearest 100 dollars.",
   );
-  // The things that lasted, newest first, five to begin with; one press shows ten more and keeps the reader's place.
+  // The things that lasted, newest first, three to begin with; one press shows ten more and keeps the reader's place.
   const items = feed.getByTestId("feed-item");
-  await expect(items).toHaveCount(5);
+  await expect(items).toHaveCount(3);
   await feed.getByTestId("feed-show-earlier").click();
-  await expect(items).toHaveCount(15);
-  await expect(items.nth(5)).toBeFocused();
+  await expect(items).toHaveCount(13);
+  await expect(items.nth(3)).toBeFocused();
 
   // Equal weight: the two counts have the same size, weight and colour as the browser draws them.
   const look = (id: string) =>

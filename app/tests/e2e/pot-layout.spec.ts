@@ -169,7 +169,6 @@ for (const size of SIZES)
       for (const [opener, sheet] of [
         ["allowance-draw", "draw-sheet"],
         ["allowance-rate-open", "rate-sheet"],
-        ["allowance-door", "door-sheet"],
       ]) {
         await runner.getByTestId(opener).click();
         await expect(runner.getByTestId(sheet)).toBeVisible();

@@ -195,7 +195,7 @@ describe("the Back sheet's lines about tasks", () => {
     await screen.findByTestId("back-pay");
   }
 
-  it("says what money set aside for tasks means for the price, and none without", async () => {
+  it("says what money set aside for tasks means for the price, and nothing without", async () => {
     setup({
       quoteBack: (args: readonly unknown[]) => {
         const amount = args[0] as bigint;
@@ -209,9 +209,7 @@ describe("the Back sheet's lines about tasks", () => {
     cleanup();
     setup();
     await openBack();
-    expect(screen.getByTestId("back-locked").textContent).toBe(
-      "Money set aside for tasks: none.",
-    );
+    expect(screen.queryByTestId("back-locked")).toBeNull();
   });
 
   it("says a plan is coming, from the record's rows, without a read of its own", async () => {

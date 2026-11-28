@@ -198,11 +198,6 @@ export function freshnessOf(numbers: ProjectNumbers, now: number): Freshness {
   return { level: "as-of", ageSecs };
 }
 
-/** The allowance box's growth in a day, as far as the record can say: the pot times the daily rate. An estimate. */
-export function allowancePerDay(numbers: ProjectNumbers): bigint {
-  return (numbers.money.pot * BigInt(numbers.allowance.ratePpm)) / 1_000_000n;
-}
-
 // --- Words for numbers --------------------------------------------------------------------------------------------
 
 function groupThousands(whole: bigint): string {

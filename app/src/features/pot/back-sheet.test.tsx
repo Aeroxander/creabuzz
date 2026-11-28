@@ -93,11 +93,11 @@ describe("the Back sheet shows what is put into the call", () => {
     expect((await screen.findByTestId("back-pay")).textContent).toBe(
       "10 dollars",
     );
-    expect(screen.getByTestId("back-fee").textContent).toBe(
-      "0.20 dollars (2%)",
-    );
     expect(screen.getByTestId("back-shares").textContent).toBe("1,000 Shares");
     expect(screen.getByTestId("back-now").textContent).toBe("9.80 dollars");
+    expect(screen.getByTestId("back-fee").textContent).toBe(
+      "Creaton keeps 2% of what you pay.",
+    );
     expect(
       screen.getByText(/This can go up or down. It is not a return./),
     ).not.toBeNull();
@@ -137,9 +137,6 @@ describe("the Back sheet shows what is put into the call", () => {
     await openSheet("25.50");
     await screen.findByTestId("back-pay");
     expect(screen.getByTestId("back-pay").textContent).toBe("25.50 dollars");
-    await waitFor(() =>
-      expect(screen.getByText(/two signatures/)).not.toBeNull(),
-    );
     fireEvent.click(screen.getByTestId("sheet-confirm"));
     await waitFor(() => expect(chain.sent.length).toBe(2));
     const [approve, join] = chain.sent;
@@ -176,7 +173,7 @@ describe("what stops a Back says what to do", () => {
   it("an amount that is not a number says how to write one", async () => {
     setup();
     await openSheet("ten");
-    expect(await screen.findByText(/Write a number of dollars/)).not.toBeNull();
+    expect(await screen.findByText(/Write a number, like 25/)).not.toBeNull();
   });
 
   it("a door the record says is shut shows no form and says why; taking out is pointed to", async () => {
@@ -188,7 +185,6 @@ describe("what stops a Back says what to do", () => {
     wrap(<BackCard now={NOW} numbers={shut} projectName="Lantern" />);
     const words = await screen.findByTestId("back-door-shut");
     expect(words.textContent).toMatch(/closed the door to new backing/);
-    expect(words.textContent).toMatch(/take your money out/);
     expect(screen.queryByTestId("backing-amount")).toBeNull();
   });
 
@@ -236,7 +232,7 @@ describe("what stops a Back says what to do", () => {
     });
     await openSheet("10");
     const failed = await screen.findByTestId("back-read-failed");
-    expect(failed.textContent).toMatch(/Nothing was taken/);
+    expect(failed.textContent).toMatch(/nothing was taken/);
     fireEvent.click(within(failed).getByRole("button", { name: "Try again" }));
   });
 });
@@ -406,9 +402,6 @@ describe("what the sheet says is what the call takes", () => {
     expect(screen.getByTestId("sheet-confirm").textContent).toBe(
       "Back with 25.123456 dollars",
     );
-    expect(screen.getByTestId("back-fee").textContent).toMatch(
-      /^0\.502469 dollars/,
-    );
     fireEvent.click(screen.getByTestId("sheet-confirm"));
     await waitFor(() => expect(chain.sent.length).toBe(1));
     const decoded = decodeCall(PLAY_DOLLAR_ABI, chain.sent[0].data);
@@ -423,19 +416,41 @@ describe("what the sheet says is what the call takes", () => {
     );
   });
 
-  it("states the fee percent the chain charged on this amount, not the record's hours-old percent", async () => {
+  it("shows what the chain quotes now, not the record's hours-old fee: the Shares and what taking out would give", async () => {
     // The record says 2%; the chain charges 5% now.
     setup({
       answers: {
         feeFor: (args: readonly unknown[]) => [
           ((args[0] as bigint) * 5n) / 100n,
         ],
+        quoteBack: (args: readonly unknown[]) => {
+          const amount = args[0] as bigint;
+          return [(amount * 100n * S) / D, (amount * 95n) / 100n, 0n, 0n];
+        },
       },
     });
     await openSheet("10");
     expect(
-      await screen.findByTestId("back-fee").then((e) => e.textContent),
-    ).toBe("0.50 dollars (5%)");
+      await screen.findByTestId("back-now").then((e) => e.textContent),
+    ).toBe("9.50 dollars");
+    expect(screen.getByTestId("back-fee").textContent).toBe(
+      "Creaton keeps 5% of what you pay.",
+    );
+  });
+
+  it("says nothing of a fee when the platform keeps none", async () => {
+    setup({
+      answers: {
+        feeFor: () => [0n],
+        quoteBack: (args: readonly unknown[]) => {
+          const amount = args[0] as bigint;
+          return [(amount * 100n * S) / D, amount, 0n, 0n];
+        },
+      },
+    });
+    await openSheet("10");
+    await screen.findByTestId("back-pay");
+    expect(screen.queryByTestId("back-fee")).toBeNull();
   });
 });
 

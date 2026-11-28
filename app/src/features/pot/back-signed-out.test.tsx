@@ -100,7 +100,7 @@ describe("Back with no account", () => {
     });
     fireEvent.click(screen.getByTestId("backing-review"));
     expect(navigate).not.toHaveBeenCalled();
-    expect(screen.getByText(/Write a number of dollars/)).toBeTruthy();
+    expect(screen.getByText(/Write a number, like 25/)).toBeTruthy();
     expect(takeBackAfterSignUp(sessionStorage, numbers.key)).toBeNull();
   });
 

@@ -121,9 +121,11 @@ export function ProjectFeed({
         <h2 className="headline text-xl" id={titleId}>
           {FEED_TITLE}
         </h2>
-        <p className="text-sm text-muted" data-testid="feed-rounding">
-          {roundingNote(feed.roundTo)}
-        </p>
+        {sum.moved ? (
+          <p className="text-sm text-muted" data-testid="feed-rounding">
+            {roundingNote(feed.roundTo)}
+          </p>
+        ) : null}
         {level === "as-of" ? (
           <p className="text-sm text-muted" data-testid="feed-as-of">
             {asOfLine(numbers)}

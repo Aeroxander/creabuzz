@@ -100,10 +100,6 @@ describe("the launch press", () => {
     wrap(<LaunchCard project={project} />);
     fireEvent.click(await screen.findByTestId("launch-open"));
     await screen.findByTestId("launch-terms");
-    // The helper's two limits are on the sheet, the Team Shares one beside the dollars one.
-    expect(screen.getByTestId("launch-limits").textContent).toMatch(
-      /A helper can draw at most 25 dollars a day, and use at most one part in 1,000 of the Team pool in Team Shares a day\./,
-    );
     fireEvent.click(screen.getByTestId("sheet-confirm"));
     await waitFor(() =>
       expect(
