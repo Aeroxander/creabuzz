@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { decodeExecuteCallData } from "../../../packages/creaton-core/src/aa/sponsoredSender.ts";
 import { decodeCall } from "../../../packages/creaton-core/src/pot/abi-codec.ts";
-import { PLAY_DOLLAR_ABI } from "../../../packages/creaton-core/src/pot/abis.generated.ts";
+import { LAUNCHER_ABI, PLAY_DOLLAR_ABI } from "../../../packages/creaton-core/src/pot/abis.generated.ts";
 import * as reads from "../../../packages/creaton-core/src/pot/pot-reads.ts";
 import { startFront } from "../anvil/fronts";
 import { setUpPhoneChain } from "../anvil/phone-chain";
@@ -232,6 +232,36 @@ run(
       expect(
         await reads.balanceOf(read, project.dollar, account),
       ).toBeGreaterThan(cashBefore);
+
+      // The same phone starts a project and launches it from its passkey account: the launch card is there (the Launcher's
+      // refusal of an unknown project is read as "not launched", not as a network that did not answer), and one press sends.
+      await page.getByTestId("tab-link-start").click();
+      // After a reload the passkey is locked: one press to unlock, as for any post.
+      await page.getByRole("button", { name: "Unlock" }).click();
+      await page.getByTestId("start-name").fill("Night Sky");
+      await page
+        .getByTestId("start-goal")
+        .fill("A map of the night sky that ten people use.");
+      await page.getByTestId("start-how").fill("Ten people use it every week.");
+      await page.getByTestId("start-submit").click();
+      await expect(page.getByTestId("launch-card")).toBeVisible({
+        timeout: 30_000,
+      });
+      await expect(page.getByTestId("launch-read-failed")).toHaveCount(0);
+      await page.getByTestId("launch-open").click();
+      await page.getByTestId("sheet-confirm").click();
+      await expect(page.getByTestId("launch-sheet")).toBeHidden({
+        timeout: 90_000,
+      });
+      const launchOps = bundler.sent.filter(
+        (o) => o.sender.toLowerCase() === account,
+      );
+      const launchCall = decodeExecuteCallData(
+        launchOps[launchOps.length - 1].op.callData,
+      );
+      expect(launchCall).toHaveLength(1);
+      expect(launchCall[0].to.toLowerCase()).toBe(world.chain.launcher);
+      expect(decodeCall(LAUNCHER_ABI, launchCall[0].data)?.name).toBe("launch");
 
       // The account paid no network fee, and every request went to the address meant for it.
       expect(
