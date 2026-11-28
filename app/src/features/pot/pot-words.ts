@@ -207,7 +207,7 @@ export function spanOf(seconds: number): string {
  * How long the team may be quiet before anyone can wind the project down: this project's own wait (its wind-down units of
  * its time unit), "about half a year" on a real network and hours on a test network's short unit.
  */
-export function quietWaitWords(numbers: ProjectNumbers): string {
+function quietWaitWords(numbers: ProjectNumbers): string {
   const secs = numbers.limits.windDownUnits * numbers.unit;
   const days = secs / 86_400;
   return days >= 150 && days <= 220 ? "about half a year" : spanOf(secs);

@@ -10,9 +10,8 @@
 #   pot-allowance.test.ts an announced raise: the date the app reads is the date the Treasury's own RateProposed log announces
 #                         (announced at + one time unit), applying before it is refused and after it works;
 #   pot-team.test.ts      launching through the launch sheet's own reader, terms and call (the defaults, other numbers, the ceiling, a platform
-#                         setting that changed between the sheet and the signature, the same project twice); an offer of the seat taken,
-#                         withdrawn, left to run out, and made with the founder leaving; a Pair made from an offer to its address and a
-#                         wind-down through it (both signers, in words, taking out stays open); a wind-down by anyone after a long quiet;
+#                         setting that changed between the sheet and the signature, the same project twice); a wind-down by anyone after a
+#                         long quiet;
 #   pot-task-pay.test.ts  paying an accepted task from the box: the payment search finds a draw by payee and amount after the work was
 #                         accepted (and not another amount, another wallet, one a task already carries, or one made before), also
 #                         when a Pair's second signer made it by confirming;

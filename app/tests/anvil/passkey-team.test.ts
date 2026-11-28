@@ -1,8 +1,7 @@
 // biome-ignore-all lint/style/noNonNullAssertion: each read is asserted non-null on the line before it is used
 /**
  * The founder's and the team's presses from a passkey account, on the real pot contracts: launch, check in, draw from the
- * allowance box, plan a task, accept and pay it (set-aside money and from the box), grant Team Shares, hand over the seat
- * and take a seat offered. The passkey account is the founder (then the runner); the people on the other side (backers, a
+ * allowance box, plan a task, accept and pay it (set-aside money and from the box), grant Team Shares. The passkey account is the founder and the runner; the people on the other side (backers, a
  * worker, a teammate) are plain accounts. Every press goes through the app's own call builders and gates, the sender the
  * app builds (one operation, one passkey prompt, the fee paid by a paymaster) and the app's words for a refusal. Run by
  * `scripts/phone-loop.sh`; skipped without `M7_ANVIL_RPC`.
@@ -31,7 +30,6 @@ import { potProblem } from "../../src/features/money/pot-copy";
 import { checkInFor } from "../../src/features/money/runner";
 import { runnerSend } from "../../src/features/pot/runner-calls";
 import { WalletStepError } from "../../src/features/money/wallet";
-import { readSeatView } from "../../src/features/seat/use-seat";
 import { drawForTaskCall } from "../../src/features/tasks/task-calls";
 import { readPlan } from "../../src/features/tasks/chain/team/plan-read";
 import { pass, phoneWorld } from "./phone-world";
@@ -62,8 +60,8 @@ async function stoppedWith(
 run(
   "founder and team presses from a passkey account, on the real contracts",
   () => {
-    it("launches, checks in, draws, plans and pays a task, grants Team Shares and hands over the seat: one operation and one prompt each", async () => {
-      const [admin, backer, worker, member, next] = await accounts();
+    it("launches, checks in, draws, plans and pays a task, and grants Team Shares: one operation and one prompt each", async () => {
+      const [admin, backer, worker, member] = await accounts();
       const chain = await deployPot(admin);
       const world = await phoneWorld(admin);
       try {
@@ -89,7 +87,7 @@ run(
           return result;
         };
 
-        for (const who of [backer, worker, member, next])
+        for (const who of [backer, worker, member])
           await walletOf(who).sendCalls([pot.faucetCall(chain.dollar)], CHAIN);
 
         // ---- Launch: the launch sheet's own reader, terms and call; the account is the founder --------------------------
@@ -277,46 +275,6 @@ run(
         ).toMatch(/\S/);
         pass(
           "a passkey runner grants Team Shares to a teammate in one operation and one prompt",
-        );
-
-        // ---- Hand over the seat: offered, taken by the other account, and then offered back and taken by the passkey ----
-        await press([
-          pot.handOverCall({ treasury, next, founderLeaves: false }),
-        ]);
-        expect(
-          (await readSeatView(asFounder, { address: next, read }, []))
-            .offerIsFor,
-        ).toBe("me");
-        await walletOf(next).sendCalls([pot.takeSeatCall(treasury)], CHAIN);
-        expect((await state.readSeatState(read, treasury)).runner).toBe(next);
-        // The passkey account no longer runs it: the app's gate offers nothing, and the chain refuses in words.
-        const nextRuns = numbers(next);
-        expect(
-          runnerSend(nextRuns, founder, pot.setDoorCall(treasury, false)),
-        ).toBeNull();
-        expect(
-          await stoppedWith(
-            sender.sendCalls([pot.checkInCall(treasury, hash)], CHAIN),
-            "check-in",
-          ),
-        ).toBe("Only the person who runs the project can check in.");
-        pass(
-          "a passkey runner hands over the seat in one operation, and after it is taken the old runner is refused in words",
-        );
-        await walletOf(next).sendCalls(
-          [pot.handOverCall({ treasury, next: founder, founderLeaves: false })],
-          CHAIN,
-        );
-        expect(
-          (await readSeatView(nextRuns, { address: founder, read }, []))
-            .offerIsFor,
-        ).toBe("me");
-        await press([pot.takeSeatCall(treasury)]);
-        expect((await state.readSeatState(read, treasury)).runner).toBe(
-          founder,
-        );
-        pass(
-          "a passkey account takes the seat that was offered to it, in one operation and one prompt",
         );
       } finally {
         await world.close();

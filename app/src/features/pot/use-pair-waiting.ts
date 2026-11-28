@@ -15,7 +15,6 @@ import {
   readTask,
 } from "@creaton/core/pot/pot-reads.ts";
 import { proposalTtl, readProposal } from "@creaton/core/pot/pot-state.ts";
-import { useQuery } from "@tanstack/react-query";
 import type { ChainLog } from "../money/wallet";
 import { readLogsBack } from "../money/wallet";
 import type { Ready } from "./use-pot";
@@ -36,7 +35,7 @@ const SAMPLE_BLOCKS = 5_000;
  * How many blocks back a waiting call can still be in time: the Pair's own limit (read from it) over the network's own pace
  * of blocks (the last `SAMPLE_BLOCKS` of them), with a margin. `needed` is what covering it takes, `span` what is looked at.
  */
-export function windowOf(
+function windowOf(
   ttlSecs: number,
   head: number,
   headTime: number,
@@ -221,26 +220,4 @@ export async function readPairWaiting(
     // What the task calls among them are about, as the chain says now; without a Treasury none is read.
     facts: treasury ? await readTaskFacts(ready, treasury, waiting, now) : null,
   };
-}
-
-export function usePairWaiting(
-  pair: string | null,
-  ready: Ready | null,
-  chainId: number,
-  treasury: string | null = null,
-) {
-  return useQuery({
-    queryKey: ["pot", "pair-waiting", pair ?? "", chainId, treasury ?? ""],
-    enabled: Boolean(pair && ready),
-    staleTime: 10_000,
-    retry: false,
-    queryFn: async () =>
-      pair && ready
-        ? readPairWaiting(ready, pair, treasury)
-        : {
-            waiting: [] as Proposal[],
-            complete: true,
-            facts: null as WaitingTaskFacts | null,
-          },
-  });
 }

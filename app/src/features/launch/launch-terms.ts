@@ -9,8 +9,6 @@ import { dollarsText } from "../money/numbers";
 import { parseRate } from "../pot/AllowanceSheets";
 import { rateWords, sharesWords, spanOf } from "../pot/pot-words";
 
-export { spanOf };
-
 const SHARE = 1_000_000_000_000_000_000n;
 
 /** The allowance the sheet starts with: 0.10% of the project's money a day (1,000 parts per million). */
@@ -111,7 +109,7 @@ export function afterLaunch(offer: LaunchOffer): {
   return {
     cannot:
       "After it is launched you cannot change the size of the Team pool, or any of the limits above.",
-    can: `You can still lower the daily allowance at once, raise it (that waits ${spanOf(offer.unit)} and everyone can see it first), close the door to new backing, hand the project to someone, run it with a second person, or wind it down.`,
+    can: `You can still lower the daily allowance at once, raise it (that waits ${spanOf(offer.unit)} and everyone can see it first), or close the door to new backing.`,
   };
 }
 

@@ -13,7 +13,6 @@ import type { Project } from "../project/project-record";
 import { goToClaims } from "../tasks/chain/holder/claims-anchor";
 import { NotesCard } from "../tasks/chain/holder/NotesSection";
 import { PlannedSection } from "../tasks/chain/holder/PlannedSection";
-import { owedTaskNames, useProjectTasks } from "../tasks/use-tasks";
 import { useTeamWallets } from "../team/use-wallets";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
@@ -28,14 +27,11 @@ import { AllowanceSection } from "./AllowanceSection";
 import { ChainOnlyShares } from "./ChainOnlyShares";
 import type { GrantMember } from "./GrantSheet";
 import { MoneyFacts, StaleMoney } from "./MoneyFacts";
-import { SeatSection } from "../seat/SeatSection";
-import { PairWaiting } from "./PairWaiting";
 import { PLAY_MONEY_WORDS } from "./pot-words";
 import { targetOf } from "./target";
 import { TeamSharesSection } from "./TeamSharesSection";
 import { usePotWallet } from "./use-pot";
 import { YourShares } from "./YourShares";
-import { shortAddress } from "../../lib/short-address";
 
 function PlayMoneyLine() {
   return (
@@ -57,7 +53,6 @@ export function ProjectMoney({
   profiles,
   project,
 }: {
-  /** The project, so a draw that pays an accepted task can name the task to the second signer. */
   project?: Project;
   projectName: string;
   /** The chain key the founder's record names, or null. */
@@ -82,17 +77,8 @@ export function ProjectMoney({
       address: wallet?.state === "linked" ? wallet.address : null,
     };
   });
-  // A name for an account's address, for the sentences a second signer reads.
-  const nameOfAddress = (address: string) =>
-    members.find((m) => m.address === address.toLowerCase())?.name ??
-    shortAddress(address);
   const wallet = usePotWallet(
     numbers && !numbers.removed ? numbers.chainId : undefined,
-  );
-  // Only a Pair's two signers read waiting calls: only then are the tasks read, to name what a draw pays for.
-  const tasksRead = useProjectTasks(
-    project ?? null,
-    Boolean(numbers && !numbers.removed && numbers.runner.isPair),
   );
   if (loading) return <Card className="h-40 animate-pulse" />;
   if (error)
@@ -181,27 +167,6 @@ export function ProjectMoney({
         address={wallet.address}
         members={members}
         numbers={numbers}
-      />
-      <SeatSection
-        members={members}
-        nameOf={nameOfAddress}
-        now={now}
-        numbers={numbers}
-        projectName={projectName}
-      />
-      <PairWaiting
-        address={wallet.address}
-        nameOf={nameOfAddress}
-        numbers={numbers}
-        taskWordsOf={(what) =>
-          tasksRead.data?.tasks.find((t) => `0x${t.id}` === what.toLowerCase())
-            ?.what ?? null
-        }
-        tasksFor={(payee, raw) =>
-          owedTaskNames(tasksRead.data?.tasks ?? [], payee, raw, (pubkey) =>
-            nameOf(profiles, pubkey),
-          )
-        }
       />
       <OwnershipLine className="text-sm text-muted" />
     </div>
