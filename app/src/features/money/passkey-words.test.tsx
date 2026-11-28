@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SERVER, wrap } from "../../../tests/helpers/money-harness";
 import { nameTheNetwork, numbersFor } from "../../../tests/helpers/pot-harness";
 import { WalletGate } from "../pot/use-pot";
-import { ACCOUNT_MISMATCH_WORDS } from "./money-copy";
+import { ACCOUNT_MISMATCH_WORDS } from "./copy";
 import { senderWords } from "./sender";
 import { type MoneyWallet, WalletStepError } from "./wallet";
 

@@ -9,7 +9,7 @@ import {
   raw,
   SERVER,
 } from "../../../tests/helpers/numbers-v2-parse";
-import { doorShutWords, smallDollarsText } from "../pot/pot-words";
+import { doorShutWords, smallDollarsText } from "../money/copy";
 import {
   doorChip,
   keptLine,

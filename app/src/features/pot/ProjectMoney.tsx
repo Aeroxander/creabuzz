@@ -26,7 +26,7 @@ import { AllowanceSection } from "./AllowanceSection";
 import { ChainOnlyShares } from "./ChainOnlyShares";
 import type { GrantMember } from "./GrantSheet";
 import { MoneyFacts, StaleMoney } from "./MoneyFacts";
-import { PLAY_MONEY_WORDS } from "./pot-words";
+import { PLAY_MONEY_WORDS } from "../money/copy";
 import { targetOf } from "./target";
 import { TeamSharesSection } from "./TeamSharesSection";
 import { usePotWallet } from "./use-pot";

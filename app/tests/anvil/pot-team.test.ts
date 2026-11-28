@@ -26,7 +26,7 @@ import {
   type LaunchTerms,
   launchTermsFor,
 } from "../../src/features/launch/launch-terms";
-import { potProblem } from "../../src/features/money/pot-copy";
+import { potProblem } from "../../src/features/money/problems";
 import { WalletStepError } from "../../src/features/money/wallet";
 import { deployPot, walletOf } from "./pot-chain";
 import { accounts, call, RPC, send } from "./rpc";

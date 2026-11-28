@@ -13,7 +13,7 @@ import { Button } from "../../ui/button";
 import { Sheet } from "../../ui/sheet";
 import { useToast } from "../../ui/toast";
 import { OwnershipLine } from "../money/OwnershipLine";
-import { type PotAction, potProblem } from "../money/pot-copy";
+import { type PotAction, potProblem } from "../money/problems";
 import { type MoneySendInput, useMoneySend } from "../money/use-money";
 import { type MoneyWallet, senderKind } from "../money/wallet";
 import type { PendingSend } from "../money/pending-sends";
@@ -21,7 +21,7 @@ import {
   PLAY_MONEY_WORDS,
   TAKE_OUT_BANNER,
   UNAUDITED_WORDS,
-} from "./pot-words";
+} from "../money/copy";
 
 export interface PotSheetProps {
   open: boolean;

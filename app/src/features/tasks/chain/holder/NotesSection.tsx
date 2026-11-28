@@ -14,7 +14,7 @@ import { Button } from "../../../../ui/button";
 import { Card } from "../../../../ui/card";
 import type { ProjectNumbers } from "../../../money/numbers";
 import { ownNoteSerials } from "../../../pot/own-history";
-import { PLAY_MONEY_WORDS } from "../../../pot/pot-words";
+import { PLAY_MONEY_WORDS } from "../../../money/copy";
 import { type Ready, WalletGate } from "../../../pot/use-pot";
 import type { Project } from "../../../project/project-record";
 import { useTaskJoin } from "../join";

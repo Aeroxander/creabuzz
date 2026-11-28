@@ -22,7 +22,7 @@ import { Card } from "../../ui/card";
 import { dayText, type ProjectNumbers, timeText } from "../money/numbers";
 import type { GrantNumbers } from "../money/numbers-types";
 import { PotSheet } from "./PotSheet";
-import { sharesWords } from "./pot-words";
+import { sharesWords } from "../money/copy";
 import type { Ready } from "./use-pot";
 
 interface MyGrant {

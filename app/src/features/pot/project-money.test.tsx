@@ -20,7 +20,7 @@ import {
 } from "../../../tests/helpers/pot-harness";
 import { dollarsText, type ProjectNumbers } from "../money/numbers";
 import { PageMoney } from "../../../tests/helpers/page-money";
-import { smallDollarsText } from "./pot-words";
+import { smallDollarsText } from "../money/copy";
 
 vi.mock(
   "../../lib/relay",

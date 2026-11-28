@@ -21,7 +21,7 @@ import {
   NOT_A_RETURN,
   PLAY_MONEY_WORDS,
   smallDollarsText,
-} from "../pot/pot-words";
+} from "../money/copy";
 import { targetOf } from "../pot/target";
 import type { Project } from "./project-record";
 import {

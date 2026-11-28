@@ -6,7 +6,7 @@
  */
 import { readProjectParts } from "@creaton/core/pot/pot-state.ts";
 import type { ReadCall } from "@creaton/core/pot/pot-reads.ts";
-import { potRefusalOf } from "../money/pot-copy";
+import { potRefusalOf } from "../money/problems";
 
 export async function isLaunched(
   read: ReadCall,

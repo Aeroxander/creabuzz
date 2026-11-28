@@ -32,8 +32,8 @@ import {
 } from "../../../tests/helpers/numbers-v2-fixture";
 import { parsedExample } from "../../../tests/helpers/numbers-v2-parse";
 import { WithMoneyBanner } from "../../app/MoneyBanner";
-import { smallDollarsText } from "../pot/pot-words";
-import { PLAY_MONEY_WORDS } from "../pot/pot-words";
+import { smallDollarsText } from "../money/copy";
+import { PLAY_MONEY_WORDS } from "../money/copy";
 import { BANNER_LITERAL } from "../../../tests/helpers/legal-words";
 import { ProjectPage } from "./ProjectPage";
 import { projectPath, projectRef } from "./project-record";

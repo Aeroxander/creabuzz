@@ -23,7 +23,7 @@ import {
   theTaskWords,
   UNKNOWN_TASK_WORDS,
 } from "../tasks/chain/words";
-import { rateWords, sharesWords, smallDollarsText } from "./pot-words";
+import { rateWords, sharesWords, smallDollarsText } from "../money/copy";
 
 type PairCallKind =
   | "draw"

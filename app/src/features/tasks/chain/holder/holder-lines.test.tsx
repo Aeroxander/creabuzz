@@ -18,7 +18,7 @@ import {
 } from "../../../../../tests/helpers/plan-scene";
 import { taskRow } from "../../../../../tests/helpers/numbers-v2-fixture";
 import { timeText, type ProjectNumbers } from "../../../money/numbers";
-import { smallDollarsText } from "../../../pot/pot-words";
+import { smallDollarsText } from "../../../money/copy";
 import type { Project } from "../../../project/project-record";
 import type { ProjectTask } from "../../task-record";
 import { chainRowOf, nowOf } from "../state";

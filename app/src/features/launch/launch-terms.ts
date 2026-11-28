@@ -6,7 +6,7 @@
  */
 import type { LaunchOffer } from "@creaton/core/pot/pot-state.ts";
 import { dollarsText } from "../money/numbers";
-import { rateWords, sharesWords, spanOf } from "../pot/pot-words";
+import { rateWords, sharesWords, spanOf } from "../money/copy";
 
 const SHARE = 1_000_000_000_000_000_000n;
 

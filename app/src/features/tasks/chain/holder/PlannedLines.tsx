@@ -5,7 +5,7 @@
  * the team's own words are used only where the plan ties to its record.
  */
 import type { ProjectNumbers } from "../../../money/numbers";
-import { NOT_A_RETURN } from "../../../pot/pot-words";
+import { NOT_A_RETURN } from "../../../money/copy";
 import type { ProjectTask } from "../../task-record";
 import { phaseOf } from "../state";
 import type { ChainTask } from "../types";

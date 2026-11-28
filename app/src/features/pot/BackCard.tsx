@@ -13,7 +13,7 @@ import type { ProjectNumbers } from "../money/numbers";
 import { markBackAfterSignUp, takeBackAfterSignUp } from "./back-after-sign-up";
 import { BackSheet } from "./BackSheet";
 import { FaucetCard } from "./FaucetCard";
-import { doorShutWords, smallDollarsText } from "./pot-words";
+import { doorShutWords, smallDollarsText } from "../money/copy";
 import { targetOf } from "./target";
 import { recordFitsBuild, type Ready, WalletGate } from "./use-pot";
 import { useHolding } from "./YourShares";

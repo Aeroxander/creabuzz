@@ -20,7 +20,7 @@ import * as pot from "../../../packages/creaton-core/src/pot/pot-calls.ts";
 import { planBack } from "../../../packages/creaton-core/src/pot/pot-plans.ts";
 import * as reads from "../../../packages/creaton-core/src/pot/pot-reads.ts";
 import * as state from "../../../packages/creaton-core/src/pot/pot-state.ts";
-import { potProblem } from "../../src/features/money/pot-copy";
+import { potProblem } from "../../src/features/money/problems";
 import { WalletStepError } from "../../src/features/money/wallet";
 import type { Ready } from "../../src/features/pot/use-pot";
 import { walletOf } from "./pot-chain";

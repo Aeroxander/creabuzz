@@ -6,7 +6,7 @@ import {
   useSenders,
   writeSenderChoice,
 } from "./sender";
-import { ACCOUNT_MISMATCH_WORDS } from "./money-copy";
+import { ACCOUNT_MISMATCH_WORDS } from "./copy";
 import { useWalletAddress } from "./use-money";
 import {
   isAccountMismatch,

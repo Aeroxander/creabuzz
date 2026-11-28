@@ -4,7 +4,7 @@
  * can claim". Each sentence says what is so and what to do next and names no event, code or contract.
  */
 import { dayText, timeText } from "../../../money/numbers";
-import { TASK_EXTENSIONS } from "../../../money/pot-copy-tasks";
+import { CLAIM_NOTHING_WORDS, claimNotYetWords } from "../../../money/problems";
 import type { Phase } from "../state";
 import { dollarsPhrase, quotedWhat } from "../words";
 
@@ -118,12 +118,12 @@ export const CLAIM_READ_FAILED =
 
 /** Where a claim is stopped, one sentence each (the contract's own words where it has them). */
 export const CLAIM_BLOCK = {
-  nothing: TASK_EXTENSIONS.NothingToPay["claim-note"],
+  nothing: CLAIM_NOTHING_WORDS,
   inconsistent:
     "Something in the project's numbers did not add up, so nothing was done. Nothing changed. Try again in a moment.",
 } as const;
 
 /** The task has not ended yet. */
 export function claimNotYet(until: number): string {
-  return TASK_EXTENSIONS.NotYet["claim-note"]([BigInt(until)]);
+  return claimNotYetWords(until);
 }

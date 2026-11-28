@@ -6,9 +6,9 @@
 import { useState } from "react";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
-import { potProblem } from "../money/pot-copy";
+import { potProblem } from "../money/problems";
 import { goToClaims } from "../tasks/chain/holder/claims-anchor";
-import { NOT_A_RETURN, sharesWords, smallDollarsText } from "./pot-words";
+import { NOT_A_RETURN, sharesWords, smallDollarsText } from "../money/copy";
 import { TakeOutSheet } from "./TakeOutSheet";
 import type { MoneyTarget } from "./target";
 import { type Ready, useQuietReady } from "./use-pot";

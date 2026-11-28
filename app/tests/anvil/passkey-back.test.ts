@@ -20,7 +20,7 @@ import {
   knownSendTargets,
   rememberSendTargets,
 } from "../../src/features/money/send-targets";
-import { potProblem } from "../../src/features/money/pot-copy";
+import { potProblem } from "../../src/features/money/problems";
 import type { WalletStepError } from "../../src/features/money/wallet";
 import { pass, phoneWorld } from "./phone-world";
 import { deployPot, walletOf } from "./pot-chain";

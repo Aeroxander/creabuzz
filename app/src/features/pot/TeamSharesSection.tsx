@@ -9,7 +9,7 @@ import type { ProjectNumbers } from "../money/numbers";
 import { runnerRole } from "../money/runner";
 import { GrantSheet, type GrantMember } from "./GrantSheet";
 import { MyGrants } from "./MyGrants";
-import { sharesWords, teamPartPercent } from "./pot-words";
+import { sharesWords, teamPartPercent } from "../money/copy";
 import { type Ready, WalletGate } from "./use-pot";
 
 export function TeamSharesSection({

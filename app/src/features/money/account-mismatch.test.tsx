@@ -7,7 +7,8 @@ import { applyServerSettings } from "@creaton/core/client/server-settings.ts";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SERVER, wrap } from "../../../tests/helpers/money-harness";
-import { ACCOUNT_MISMATCH_WORDS, moneyProblem } from "./money-copy";
+import { ACCOUNT_MISMATCH_WORDS } from "./copy";
+import { potProblem } from "./problems";
 import {
   createPasskeySender,
   type PasskeyProbe,
@@ -144,7 +145,7 @@ describe("the account address, worked out on the phone and checked against the n
   });
 
   it("reads as a plain sentence with no protocol words", () => {
-    const words = moneyProblem(
+    const words = potProblem(
       new WalletStepError("account-mismatch", 0),
       "back",
     );

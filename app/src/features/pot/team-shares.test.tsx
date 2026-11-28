@@ -24,7 +24,7 @@ import {
   S,
 } from "../../../tests/helpers/pot-harness";
 import type { ProjectNumbers } from "../money/numbers";
-import { sharesWords } from "./pot-words";
+import { sharesWords } from "../money/copy";
 import type { GrantMember } from "./GrantSheet";
 import { TeamSharesSection } from "./TeamSharesSection";
 

@@ -24,7 +24,7 @@ import {
   PLAY_MONEY_WORDS,
   sharesWords,
   smallDollarsText,
-} from "./pot-words";
+} from "../money/copy";
 import { targetOf } from "./target";
 import { type Ready, WalletGate } from "./use-pot";
 import { readHolding } from "./YourShares";

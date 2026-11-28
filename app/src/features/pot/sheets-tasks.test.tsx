@@ -30,7 +30,7 @@ import { timeText, type ProjectNumbers } from "../money/numbers";
 import { PlannedStrips } from "../tasks/chain/holder/PlannedStrips";
 import type { Project } from "../project/project-record";
 import { BackCard } from "./BackCard";
-import { smallDollarsText } from "./pot-words";
+import { smallDollarsText } from "../money/copy";
 import { targetOf } from "./target";
 import { HoldingTop } from "./HoldingTop";
 

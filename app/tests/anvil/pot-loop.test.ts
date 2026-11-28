@@ -25,7 +25,7 @@ import {
   projectIdOf,
 } from "../../../packages/creaton-core/src/launchpad/project-chain.ts";
 import { encodeCall } from "../../../packages/creaton-core/src/pot/abi-codec.ts";
-import { potProblem } from "../../src/features/money/pot-copy";
+import { potProblem } from "../../src/features/money/problems";
 import { WalletStepError } from "../../src/features/money/wallet";
 import { deployPot, walletOf } from "./pot-chain";
 import { accounts, call, chainTime, passTime, RPC, rpc } from "./rpc";

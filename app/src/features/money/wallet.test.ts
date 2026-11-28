@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { backCalls } from "@creaton/core/pot/pot-calls.ts";
 import type { MoneyCall } from "./calls";
 import type { PotNetwork } from "@creaton/core/pot/network.ts";
-import { moneyProblem } from "./money-copy";
+import { potFallback, potProblem } from "./problems";
 import {
   addressFromWord,
   type Eip1193Provider,
@@ -119,9 +119,7 @@ describe("the injected wallet", () => {
     expect(asked).toEqual([
       { from: FROM, to: "0x01", data: "0xaa", value: "0x0" },
     ]);
-    expect(moneyProblem(error, "open")).toBe(
-      "The project has raised the most it can at this stage, so no round can open.",
-    );
+    expect(potProblem(error, "back")).toBe(potFallback("back"));
   });
 
   it("gives up waiting after a bounded time, as not landed yet", async () => {
@@ -304,7 +302,7 @@ describe("the injected wallet", () => {
     expect(sent).toHaveLength(2);
     expect((error as WalletStepError).reason).toBe("pending");
     expect((error as WalletStepError).hash).toBe(`0x${"2".padStart(64, "0")}`);
-    expect(moneyProblem(error, "back")).not.toMatch(
+    expect(potProblem(error, "back")).not.toMatch(
       /Nothing changed|Nothing was taken/,
     );
   });

@@ -8,9 +8,10 @@ import { QUOTE_TOLERANCE_BPS } from "@creaton/core/pot/pot-plans.ts";
 import { balanceOf } from "@creaton/core/pot/pot-reads.ts";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "../../ui/button";
+import { Row } from "../../ui/row";
 import { Card } from "../../ui/card";
 import type { ProjectNumbers } from "../money/numbers";
-import { potProblem } from "../money/pot-copy";
+import { potProblem } from "../money/problems";
 import { type BackRead, readBack } from "./back-read";
 import { plannedBackLine } from "./back-tasks";
 import { rememberStep } from "./own-history";
@@ -24,36 +25,12 @@ import {
   rateWords,
   sharesWords,
   smallDollarsText,
-} from "./pot-words";
+} from "../money/copy";
 
 /** What a typed amount's fee is as a percent: "2%". */
 function percentWords(bps: number): string {
   const percent = bps / 100;
   return `${Number.isInteger(percent) ? percent : percent.toFixed(2)}%`;
-}
-
-function Line({
-  label,
-  value,
-  testId,
-  strong,
-}: {
-  label: string;
-  value: string;
-  testId: string;
-  strong?: boolean;
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 py-1.5">
-      <dt className="text-sm text-muted">{label}</dt>
-      <dd
-        className={`num text-right ${strong ? "font-semibold" : ""}`}
-        data-testid={testId}
-      >
-        {value}
-      </dd>
-    </div>
-  );
 }
 
 export function BackSheet({
@@ -132,23 +109,23 @@ export function BackSheet({
     body = (
       <>
         <dl className="divide-y divide-white/10">
-          <Line
+          <Row
             label="You pay"
             testId="back-pay"
             value={`${exactDollarsText(amount)} dollars`}
           />
-          <Line
+          <Row
             label="Fee to the platform, part of that"
             testId="back-fee"
             value={`${exactDollarsText(good.fee)} dollars (${percentWords(feeBps)})`}
           />
-          <Line
+          <Row
             label="You get"
             strong
             testId="back-shares"
             value={`${sharesWords(good.plan.quote.shares)} Shares`}
           />
-          <Line
+          <Row
             label="Taking out right now would give you"
             testId="back-now"
             value={`${smallDollarsText(good.plan.quote.takeOutNow)} dollars`}

@@ -7,38 +7,20 @@
 import { Link } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { Button } from "../../ui/button";
+import { Row } from "../../ui/row";
 import { Card } from "../../ui/card";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "../../ui/toast";
 import { dayText, type ProjectNumbers, timeText } from "../money/numbers";
-import { potProblem } from "../money/pot-copy";
-import { checkInFor, mayCheckIn, runnerRole } from "../money/runner";
+import { potProblem } from "../money/problems";
+import { checkInFor, mayCheckIn, NO_RECORD, runnerRole } from "../money/runner";
 import { useMoneySend } from "../money/use-money";
 import { checkInAction } from "../week/use-week";
 import { AllowanceSheets, useAllowanceState } from "./AllowanceSheets";
-import { boxNow, rateWords, smallDollarsText, whenWords } from "./pot-words";
+import { boxNow, rateWords, smallDollarsText } from "../money/copy";
 import { type Ready, WalletGate } from "./use-pot";
 
 type Sheet = "draw" | "rate" | "door" | "apply";
-
-function Row({
-  label,
-  value,
-  testId,
-}: {
-  label: string;
-  value: string;
-  testId: string;
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 py-1.5">
-      <dt className="text-sm text-muted">{label}</dt>
-      <dd className="num text-right" data-testid={testId}>
-        {value}
-      </dd>
-    </div>
-  );
-}
 
 /** What happens if the weekly check-in lapses (or has), with the date. */
 function lapseWords(lapseAt: number | null, now: number): string {
@@ -47,9 +29,6 @@ function lapseWords(lapseAt: number | null, now: number): string {
     ? `If the team does not check in again by ${timeText(lapseAt)}, the box stops filling, new backing stops and Team Shares stop unlocking until it does.`
     : `The check-in is overdue (it was due ${timeText(lapseAt)}): the box has stopped filling, new backing is stopped and Team Shares have stopped unlocking until the team checks in.`;
 }
-
-/** What a check-in carries when there is no weekly update to point at: 32 zero bytes. */
-const NO_RECORD = `0x${"0".repeat(64)}`;
 
 /**
  * The weekly check-in's block: when the last one was, what a lapse does, and the press that keeps the project running.
@@ -206,7 +185,7 @@ function Inner({
           A higher rate of {rateWords(a.pending.ratePpm)} a day was announced.{" "}
           {due
             ? "The wait is over: you can apply it."
-            : `You can apply it from ${whenWords(a.pending.applicableAt)}.`}
+            : `You can apply it from ${timeText(a.pending.applicableAt)}.`}
         </p>
       ) : null}
       <CheckInBlock

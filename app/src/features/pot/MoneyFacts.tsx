@@ -3,6 +3,7 @@
  * daily allowance in plain words, the Team's part and where the project stands. These are the server's record, said with
  * its age; the sheets that move money read the chain at the moment they open and never use these numbers.
  */
+import { Row } from "../../ui/row";
 import {
   dayText,
   freshnessOf,
@@ -15,26 +16,7 @@ import {
   smallDollarsText,
   stateWords,
   teamPartPercent,
-} from "./pot-words";
-
-function Row({
-  label,
-  value,
-  testId,
-}: {
-  label: string;
-  value: string;
-  testId: string;
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 py-1.5">
-      <dt className="text-sm text-muted">{label}</dt>
-      <dd className="num text-right font-semibold" data-testid={testId}>
-        {value}
-      </dd>
-    </div>
-  );
-}
+} from "../money/copy";
 
 /** A record too old to show figures: what it means for the person's own money. */
 export function StaleMoney({
@@ -74,15 +56,22 @@ export function MoneyFacts({
       <dl className="divide-y divide-white/10">
         <Row
           label="The project's money"
+          strong
           testId="money-pot"
           value={smallDollarsText(numbers.money.pot)}
         />
         <Row
           label="What one Share gives if taken out now"
+          strong
           testId="money-share-value"
           value={smallDollarsText(numbers.value.leaveValue)}
         />
-        <Row label="Where it stands" testId="money-state" value={state.label} />
+        <Row
+          label="Where it stands"
+          strong
+          testId="money-state"
+          value={state.label}
+        />
       </dl>
       {age.level === "as-of" ? (
         <p className="text-sm text-muted" data-testid="money-as-of">

@@ -12,6 +12,9 @@ import {
 import type { MoneyCall } from "./calls";
 import { isRunner, type ProjectNumbers, signsForRunner } from "./numbers";
 
+/** What a check-in carries when there is no weekly update to point at: 32 zero bytes. */
+export const NO_RECORD = `0x${"0".repeat(64)}`;
+
 /** How this account takes part in running the project. */
 type RunnerRole =
   /** This account is the runner: it sends to the Treasury itself. */

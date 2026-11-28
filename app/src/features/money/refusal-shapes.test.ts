@@ -1,7 +1,7 @@
 // Contract errors in the shapes wallets really give must read as plain sentences, never a
 // raw name, a hex selector or an empty line.
 import { describe, expect, it } from "vitest";
-import { potProblem } from "./pot-copy";
+import { potProblem } from "./problems";
 import { WalletStepError } from "./wallet";
 
 const shapes: Record<string, unknown> = {

@@ -12,7 +12,7 @@ import {
   useLayoutEffect,
   useState,
 } from "react";
-import { TAKE_OUT_BANNER } from "../features/pot/pot-words";
+import { TAKE_OUT_BANNER } from "../features/money/copy";
 import { investingOn } from "../lib/server";
 
 /** What a page that draws its own banner calls to tell the shell: returns the call that takes it back. */

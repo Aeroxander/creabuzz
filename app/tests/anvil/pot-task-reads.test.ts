@@ -32,7 +32,7 @@ import {
 } from "../../../packages/creaton-core/src/pot/pot-plans.ts";
 import * as reads from "../../../packages/creaton-core/src/pot/pot-reads.ts";
 import type { NoteLog } from "../../../packages/creaton-core/src/pot/pot-reads.ts";
-import { potProblem } from "../../src/features/money/pot-copy";
+import { potProblem } from "../../src/features/money/problems";
 import {
   type MoneyWallet,
   WalletStepError,

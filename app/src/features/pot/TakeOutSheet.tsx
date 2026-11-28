@@ -7,8 +7,9 @@ import { balanceOf } from "@creaton/core/pot/pot-reads.ts";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Button } from "../../ui/button";
+import { Row } from "../../ui/row";
 import { Card } from "../../ui/card";
-import { potProblem } from "../money/pot-copy";
+import { potProblem } from "../money/problems";
 import { rememberStep } from "./own-history";
 import { PotSheet } from "./PotSheet";
 import { trackNotes } from "./take-out-notes";
@@ -18,7 +19,7 @@ import {
   smallDollarsText,
   takeOutTaskWords,
   WHERE_TO_CLAIM,
-} from "./pot-words";
+} from "../money/copy";
 import {
   PORTION_WORDS,
   type Portion,
@@ -39,30 +40,6 @@ export interface TakeOutTaskInfo {
   dueSecs: number | null;
   /** Goes to the claims; the link is drawn only when the page can go there. */
   onWhereToClaim?: () => void;
-}
-
-function Line({
-  label,
-  value,
-  testId,
-  strong,
-}: {
-  label: string;
-  value: string;
-  testId: string;
-  strong?: boolean;
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 py-1.5">
-      <dt className="text-sm text-muted">{label}</dt>
-      <dd
-        className={`num text-right ${strong ? "font-semibold" : ""}`}
-        data-testid={testId}
-      >
-        {value}
-      </dd>
-    </div>
-  );
 }
 
 export function TakeOutSheet({
@@ -183,23 +160,23 @@ export function TakeOutSheet({
       <>
         {portions}
         <dl className="divide-y divide-white/10">
-          <Line
+          <Row
             label={`You hold`}
             testId="takeout-held"
             value={`${sharesWords(good.held)} ${word}`}
           />
-          <Line
+          <Row
             label={`You take out`}
             testId="takeout-shares"
             value={`${sharesWords(good.shares)} ${word}`}
           />
-          <Line
+          <Row
             label={team ? "Taking out now gives about" : "Taking out now gives"}
             strong
             testId="takeout-cash"
             value={`${smallDollarsText(good.cash)} dollars`}
           />
-          <Line
+          <Row
             label="You keep"
             testId="takeout-kept"
             value={`${sharesWords(good.held - good.shares)} ${word}`}

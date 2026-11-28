@@ -25,7 +25,7 @@ import {
   planTakeOut,
 } from "../../../packages/creaton-core/src/pot/pot-plans.ts";
 import * as reads from "../../../packages/creaton-core/src/pot/pot-reads.ts";
-import { potProblem } from "../../src/features/money/pot-copy";
+import { potProblem } from "../../src/features/money/problems";
 import { WalletStepError } from "../../src/features/money/wallet";
 import { deployPot, walletOf } from "./pot-chain";
 import { accounts, call, passTime, RPC } from "./rpc";
@@ -269,7 +269,7 @@ run("Take out in every state, on the real contracts", () => {
           ],
           CHAIN,
         ),
-        "wind-down",
+        "check-in",
       ),
     ).toMatch(/wound down/);
     const planAfter = await planBack(read, {
@@ -314,7 +314,7 @@ run("Take out in every state, on the real contracts", () => {
           [pot.windDownCall(chain.launcher, project.key)],
           CHAIN,
         ),
-        "wind-down",
+        "check-in",
       ),
     ).toMatch(/\S/);
     await walletOf(founder).sendCalls(

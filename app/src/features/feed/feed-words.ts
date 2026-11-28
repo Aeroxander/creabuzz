@@ -5,7 +5,7 @@
  */
 import type { FeedHour, FeedItem } from "../money/numbers-types";
 import { timeText } from "../money/numbers";
-import { smallDollarsText } from "../pot/pot-words";
+import { smallDollarsText } from "../money/copy";
 import { durationWords } from "../tasks/chain/duration";
 
 export const FEED_TITLE = "Lately";

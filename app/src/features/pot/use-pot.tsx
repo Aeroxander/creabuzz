@@ -11,9 +11,9 @@ import { potNetwork } from "../../lib/pot-network";
 import { Button } from "../../ui/button";
 import {
   ACCOUNT_MISMATCH_WORDS,
-  moneyProblem,
   PASSKEY_WRONG_NETWORK_WORDS,
-} from "../money/money-copy";
+} from "../money/copy";
+import { potProblem } from "../money/problems";
 import { passkeyUnavailableSentence } from "../money/sender";
 import {
   useConnectWallet,
@@ -202,7 +202,7 @@ export function WalletGate({
             disabled={connect.isPending}
             onClick={() =>
               connect.mutate(undefined, {
-                onError: (error) => setProblem(moneyProblem(error, "connect")),
+                onError: (error) => setProblem(potProblem(error, "connect")),
               })
             }
             variant="secondary"
@@ -222,7 +222,7 @@ export function WalletGate({
           disabled={connect.isPending}
           onClick={() =>
             connect.mutate(undefined, {
-              onError: (error) => setProblem(moneyProblem(error, "connect")),
+              onError: (error) => setProblem(potProblem(error, "connect")),
             })
           }
           variant="secondary"
@@ -261,7 +261,7 @@ export function WalletGate({
                   queryKey: ["money", "wallet-chain"],
                 }),
               )
-              .catch((error) => setProblem(moneyProblem(error, "connect")))
+              .catch((error) => setProblem(potProblem(error, "connect")))
               .finally(() => setSwitching(false));
           }}
           variant="secondary"

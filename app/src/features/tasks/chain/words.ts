@@ -2,7 +2,7 @@
  * The sentences of the task queue that more than one screen says (plan section 5, 1.6 and 4.7): the words about a record that
  * is old or missing, the two lines a planned task carries for everyone, the line for a task that was taken or ended, and the
  * sentences a Pair's second signer reads. Pure.
- * The words of every contract refusal live in `money/pot-copy.ts`, not here; a sentence that only one screen says is in
+ * The words of every contract refusal live in `money/problems.ts`, not here; a sentence that only one screen says is in
  * that screen's own words file.
  *
  * Every sentence says what happened and what to do next, uses the plain words ("Back", "Take out", "the project's money"),
@@ -16,8 +16,8 @@ import {
   type ProjectNumbers,
   timeText,
 } from "../../money/numbers";
-import { dollarsPhrase, percentOfBps } from "../../money/pot-copy-tasks";
-import { exactDollarsText } from "../../pot/pot-words";
+import { dollarsPhrase, percentOfBps } from "../../money/copy";
+import { exactDollarsText } from "../../money/copy";
 import type { Phase } from "./state";
 import type { ChainTask } from "./types";
 

@@ -10,7 +10,7 @@ import {
   wrap,
 } from "../../../tests/helpers/money-harness";
 import type { MoneyCall } from "./calls";
-import { moneyProblem } from "./money-copy";
+import { potProblem } from "./problems";
 import {
   createPasskeySender,
   type PasskeyImpl,
@@ -346,7 +346,7 @@ describe("the words for a phone that cannot send", () => {
   });
   it("read as sentences when a step meets them, with no protocol words", () => {
     const say = (reason: ConstructorParameters<typeof WalletStepError>[0]) =>
-      moneyProblem(new WalletStepError(reason, 0), "back");
+      potProblem(new WalletStepError(reason, 0), "back");
     expect(say("not-set-up")).toMatch(/not switched on for this server/);
     expect(say("no-passkey")).toMatch(/passkey/);
     expect(say("not-known")).toMatch(/Nothing was sent/);

@@ -2,7 +2,7 @@
 // that means, and why the door is shut. No protocol word, event name or contract name is in any of them.
 import { describe, expect, it } from "vitest";
 import { numbersFor, S } from "../../../tests/helpers/pot-harness";
-import { allowancePerDay, dollarsText } from "../money/numbers";
+import { allowancePerDay, dollarsText } from "./numbers";
 import {
   allowanceWords,
   boxNow,
@@ -11,10 +11,10 @@ import {
   rateWords,
   sharesWords,
   smallDollarsText,
-  spanWords,
+  spanOf,
   stateWords,
   teamPartPercent,
-} from "./pot-words";
+} from "./copy";
 
 const numbers = numbersFor();
 
@@ -58,9 +58,10 @@ describe("amounts", () => {
     expect(rateWords(12_345)).toBe("1.2345%");
   });
   it("a span", () => {
-    expect(spanWords(3 * 86_400)).toBe("about 3 days");
-    expect(spanWords(86_400)).toBe("about 1 day");
-    expect(spanWords(3_600)).toBe("less than a day");
+    expect(spanOf(3 * 86_400)).toBe("about 3 days");
+    expect(spanOf(86_400)).toBe("about 1 day");
+    expect(spanOf(3_600)).toBe("about 1 hour");
+    expect(spanOf(90)).toBe("about 2 minutes");
   });
 });
 

@@ -5,7 +5,7 @@
  */
 import type { ProjectNumbers } from "../money/numbers";
 import { nowOf, phaseOf } from "../tasks/chain/state";
-import { backPlannedWords } from "./pot-words";
+import { backPlannedWords } from "../money/copy";
 
 /** The line about planned tasks, or null when the record shows none (or has no queue). */
 export function plannedBackLine(numbers: ProjectNumbers): string | null {

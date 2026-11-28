@@ -4,7 +4,7 @@ import { TextArea } from "../../ui/field";
 import { Sheet } from "../../ui/sheet";
 import { useToast } from "../../ui/toast";
 import type { ProjectNumbers } from "../money/numbers";
-import { potProblem } from "../money/pot-copy";
+import { potProblem } from "../money/problems";
 import { checkInFor } from "../money/runner";
 import { useMoneySend } from "../money/use-money";
 import type { Project } from "../project/project-record";

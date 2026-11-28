@@ -8,8 +8,6 @@ import {
   signatureOf,
 } from "@creaton/core/pot/abi-codec.ts";
 import {
-  EARLIER_GRANTS_ABI,
-  HOLDER_PAUSE_ABI,
   LAUNCHER_ABI,
   PAIR_ABI,
   PLAY_DOLLAR_ABI,
@@ -19,13 +17,14 @@ import {
   VESTER_ABI,
 } from "@creaton/core/pot/abis.generated.ts";
 import { describe, expect, it } from "vitest";
+import { dollarsPhrase } from "./copy";
 import {
   POT_ERROR_NAMES,
   type PotAction,
   potFallback,
   potProblem,
   potRefusalOf,
-} from "./pot-copy";
+} from "./problems";
 import { WalletStepError } from "./wallet";
 
 // The task book's refusals bubble through the Treasury, so the book's ABI is read as well as the Treasury's.
@@ -37,8 +36,6 @@ const ABIS = [
   PAIR_ABI,
   SHARE_TOKEN_ABI,
   PLAY_DOLLAR_ABI,
-  HOLDER_PAUSE_ABI,
-  EARLIER_GRANTS_ABI,
 ];
 
 const ACTIONS: PotAction[] = [
@@ -52,25 +49,10 @@ const ACTIONS: PotAction[] = [
   "grant",
   "claim",
   "forfeit",
-  "revenue",
   "faucet",
-  "agent",
-  "seat",
   "launch",
-  "link",
-  "wind-down",
-  "pair",
-  "plan-task",
-  "take-task",
-  "pay-task",
-  "send-back-task",
-  "withdraw-task",
-  "return-task",
   "claim-note",
-  "park",
-  "take-back",
-  "start-day",
-  "earlier-claim",
+  "connect",
 ];
 
 /** Every custom error in the seven ABIs, as the generated file has them. */
@@ -183,7 +165,7 @@ describe("the words for every refusal of the money contracts", () => {
   });
 });
 
-describe("the words for every refusal of the task book and of the Treasury's task calls (4.6)", () => {
+describe("the words for the task book's refusals and what a holder reads of them", () => {
   /** The refusal `name` with these arguments, as a node would hand it back. */
   function refusal(name: string, args: bigint[] = []) {
     const item = ERRORS.find(
@@ -198,30 +180,12 @@ describe("the words for every refusal of the task book and of the Treasury's tas
   const say = (name: string, action: PotAction, args: bigint[] = []) =>
     potProblem(refusal(name, args), action);
 
-  it("every error of the book is in the table, and the new ones read for any action", () => {
+  it("every error of the book is in the table", () => {
     const book = (TASK_BOOK_ABI as readonly AbiItem[]).filter(
       (i) => i.type === "error",
     );
     expect(book.length).toBeGreaterThan(10);
     for (const item of book) expect(POT_ERROR_NAMES).toContain(item.name);
-  });
-
-  it("plan: a task's limits and who may plan, in the words of the plan", () => {
-    expect(say("BadInput", "plan-task")).toBe(
-      "A task needs its record, a person to pay who is not the project itself, at least 1 dollar and a share of the project's money from 0.01% to 5%. Nothing changed.",
-    );
-    expect(say("ShareTooBig", "plan-task")).toBe(
-      "That is more of the project's money than one task may ask for. Plan it in smaller parts. Nothing changed.",
-    );
-    expect(say("TooManyOpen", "plan-task")).toMatch(
-      /withdraw one that nobody has taken/,
-    );
-    expect(say("NotAllowed", "plan-task")).toMatch(
-      /both must say yes.*cannot be paid to someone who runs the project/s,
-    );
-    expect(say("ProjectQuiet", "plan-task")).toBe(
-      "The team has not checked in lately, so no task can be planned or taken until they do. Nothing changed.",
-    );
   });
 
   it("a node's message that carries the selector alone does not hide the arguments in the revert data", () => {
@@ -237,58 +201,14 @@ describe("the words for every refusal of the task book and of the Treasury's tas
       args: [1_795_089_600n],
     });
     expect(
-      potProblem(new WalletStepError("reverted", 0, cause), "take-task"),
-    ).toBe(say("NoticeRunning", "take-task", [1_795_089_600n]));
-  });
-
-  it("take: the notice, the window, the cap and the guard on the amount", () => {
-    expect(say("NoticeRunning", "take-task", [1_795_089_600n])).toMatch(
+      potProblem(new WalletStepError("reverted", 0, cause), "claim-note"),
+    ).toBe(say("NoticeRunning", "claim-note", [1_795_089_600n]));
+    expect(say("NoticeRunning", "claim-note", [1_795_089_600n])).toMatch(
       /^The notice is still running\. This task can be taken from \d+ \w+, \d\d:\d\d\. Nothing changed\.$/,
     );
-    expect(say("TakeWindowOver", "take-task")).toMatch(
-      /lapses and nothing was set aside/,
-    );
-    expect(say("CapReached", "take-task", [900n, 200n, 1_000n])).toBe(
-      "Too much of the project's money has been set aside for tasks recently: 9% of the 10% the limit allows, and this task needs 2%. It can be taken once earlier tasks are old enough to stop counting. Nothing was set aside.",
-    );
-    expect(say("TakesFull", "take-task")).toMatch(
-      /Try again later\. Nothing was set aside\.$/,
-    );
-    expect(say("TooLittleCash", "take-task", [40_000_000n, 12_500_000n])).toBe(
-      "The project's money moved, so only 12.50 dollars would be set aside, less than the 40 dollars you asked for. Nothing was taken. Look again and press again.",
-    );
-    expect(say("WrongTaskState", "take-task")).toMatch(
-      /already taken, withdrawn or has ended/,
-    );
-    expect(say("NotAllowed", "take-task")).toMatch(
-      /for someone else, or you run this project/,
-    );
   });
 
-  it("pay and send back: more than set aside, nothing, a task that is not waiting", () => {
-    expect(say("TooMuch", "pay-task", [50_000_000n, 40_000_000n])).toBe(
-      "That is more than the 40 dollars set aside for this task. Pay less. Nothing was paid.",
-    );
-    expect(say("BadInput", "pay-task")).toBe(
-      "Pay more than nothing, or send the money back instead. Nothing was paid.",
-    );
-    for (const action of ["pay-task", "send-back-task"] as const)
-      expect(say("WrongTaskState", action)).toMatch(
-        /may already be paid, sent back or have run out\. Nothing was paid\.$/,
-      );
-    expect(say("NotAllowed", "pay-task")).toMatch(
-      /not someone who took the task and now also runs the project/,
-    );
-    expect(say("NotAllowed", "send-back-task")).toMatch(/both must say yes/);
-  });
-
-  it("withdraw, return and claim", () => {
-    expect(say("WrongTaskState", "withdraw-task")).toMatch(
-      /cannot be withdrawn\. Nothing changed\.$/,
-    );
-    expect(say("NotYet", "return-task", [1_795_089_600n])).toMatch(
-      /^This task is not past its deadline yet\. The money can be returned from /,
-    );
+  it("claim: what is owed, and what is not", () => {
     expect(say("NotYet", "claim-note", [1_795_089_600n])).toMatch(
       /^This task has not ended yet, so there is nothing to claim\. It ends by /,
     );
@@ -298,9 +218,12 @@ describe("the words for every refusal of the task book and of the Treasury's tas
     expect(say("NoSuchTask", "claim-note")).toBe(
       "The network does not know that task. Nothing changed.",
     );
+    expect(say("CapReached", "claim-note", [900n, 200n, 1_000n])).toBe(
+      "Too much of the project's money has been set aside for tasks recently: 9% of the 10% the limit allows, and this task needs 2%. Nothing was set aside.",
+    );
   });
 
-  it("an error with no sentence for a task step says its own general one, and an earlier action keeps its words", () => {
+  it("an error with no sentence for a step says its own general one, and another action keeps its words", () => {
     expect(say("NotAllowed", "claim-note")).toMatch(
       /This account may not do this/,
     );
@@ -308,28 +231,11 @@ describe("the words for every refusal of the task book and of the Treasury's tas
       /allowance box holds right now/,
     );
     expect(say("NotYet", "rate", [1_795_089_600n])).toMatch(/applied from/);
-    expect(say("Inconsistent", "take-task")).toMatch(/did not add up/);
-  });
-
-  it("a task step the app cannot read the refusal of says which step did not go through", () => {
-    for (const action of [
-      "plan-task",
-      "take-task",
-      "pay-task",
-      "send-back-task",
-      "withdraw-task",
-      "return-task",
-      "claim-note",
-    ] as const)
-      expect(potProblem(new Error("socket hang up"), action)).toMatch(
-        /did not go through\. Nothing changed\. Try again\.$/,
-      );
   });
 });
 
 describe("dollarsPhrase", () => {
-  it("says 1 dollar for a hair over one dollar, never 1 dollars", async () => {
-    const { dollarsPhrase } = await import("./pot-copy-tasks");
+  it("says 1 dollar for a hair over one dollar, never 1 dollars", () => {
     expect(dollarsPhrase(1_000_000n)).toBe("1 dollar");
     expect(dollarsPhrase(1_009_999n)).toBe("1 dollar");
     expect(dollarsPhrase(2_000_000n)).toBe("2 dollars");
@@ -337,19 +243,27 @@ describe("dollarsPhrase", () => {
 });
 
 describe("the words for a passkey person's refusals", () => {
-  it("say 'your account' where a wallet person's say 'your wallet', and change nothing else", () => {
-    const item = ERRORS.find((e) => e.name === "InsufficientBalance");
-    if (!item) throw new Error("InsufficientBalance is gone from the ABIs");
-    const data = selectorOf(signatureOf(item));
-    const asWallet = refused(data);
-    const asPasskey = refused(data);
-    asPasskey.sender = "passkey";
-    asWallet.sender = "wallet";
-    expect(potProblem(asWallet, "park")).toContain("in your wallet");
-    const said = potProblem(asPasskey, "park");
-    expect(said).toContain("in your account");
-    expect(said).not.toMatch(/wallet/i);
-    for (const action of ACTIONS)
-      expect(potProblem(asPasskey, action), action).not.toMatch(/wallet/i);
+  it("say 'your account' where a wallet person's say 'your wallet', and say no 'wallet' at all", () => {
+    const coin = (sender: "wallet" | "passkey") => {
+      const error = new WalletStepError("failed", 0, {
+        code: -32000,
+        message: "insufficient funds for gas * price + value",
+      });
+      error.sender = sender;
+      return potProblem(error, "back");
+    };
+    expect(coin("wallet")).toMatch(
+      /Your wallet needs a little of the network's own coin/,
+    );
+    expect(coin("wallet")).not.toMatch(/enough dollars/);
+    expect(coin("passkey")).not.toMatch(/wallet/i);
+    for (const item of ERRORS)
+      for (const action of ACTIONS) {
+        const error = refused(revertData(item));
+        error.sender = "passkey";
+        expect(potProblem(error, action), `${item.name} ${action}`).not.toMatch(
+          /wallet/i,
+        );
+      }
   });
 });

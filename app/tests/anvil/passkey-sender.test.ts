@@ -11,7 +11,7 @@ import {
 } from "../../../packages/creaton-core/src/aa/sponsoredSender.ts";
 import { encodeFunctionData } from "../../../packages/creaton-core/src/launchpad/evmAbi.ts";
 import type { MoneyCall } from "../../src/features/money/calls";
-import { moneyProblem } from "../../src/features/money/money-copy";
+import { potProblem } from "../../src/features/money/problems";
 import { WalletStepError } from "../../src/features/money/wallet";
 import { getPasskeyAssertion } from "../../../packages/creaton-core/src/account/passkey.ts";
 import { isValidKernelSignature } from "../../../packages/creaton-core/src/aa/kernel-signature.ts";
@@ -265,7 +265,7 @@ run(
         );
         expect(bundler.sent.length).toBe(sentBefore);
         expect(authenticator.calls.get).toBe(promptsBefore);
-        const words = moneyProblem(caught, "back");
+        const words = potProblem(caught, "back");
         expect(words).toMatch(/free network fee was refused/);
         expect(words).not.toMatch(/gas policy|paymaster|sponsor|bundler/i);
         pass(
@@ -326,7 +326,7 @@ run(
         expect(caught).toBeInstanceOf(WalletStepError);
         expect((caught as WalletStepError).reason).toBe("failed");
         expect(await balanceOf(chain.token, account)).toBe(before);
-        expect(moneyProblem(caught, "back")).toMatch(/did not go through/);
+        expect(potProblem(caught, "back")).toMatch(/did not go through/);
         pass(
           "an operation signed by a key the account does not know is refused by the validator and nothing changes",
         );

@@ -12,7 +12,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { moneyProblem } from "./money-copy";
+import { potProblem } from "./problems";
 import { createPasskeyImpl } from "./passkey-sender-impl";
 import {
   createPasskeySender,
@@ -394,7 +394,7 @@ describe("what a person reads when the passkey account sent", () => {
     await act(async () => {
       error = await result.current.sendAsync(INPUT).catch((e: unknown) => e);
     });
-    const words = moneyProblem(error, "back");
+    const words = potProblem(error, "back");
     expect(words).not.toMatch(/wallet/i);
     expect(words).toMatch(/not landed yet/);
   });
@@ -402,8 +402,8 @@ describe("what a person reads when the passkey account sent", () => {
   it("keeps the wallet's own words for the wallet", () => {
     const error = new WalletStepError("pending", 0);
     error.sender = "wallet";
-    expect(moneyProblem(error, "back")).toMatch(/Your wallet sent it/);
-    expect(moneyProblem(new WalletStepError("pending", 0), "back")).toMatch(
+    expect(potProblem(error, "back")).toMatch(/Your wallet sent it/);
+    expect(potProblem(new WalletStepError("pending", 0), "back")).toMatch(
       /Your wallet sent it/,
     );
   });
@@ -412,7 +412,7 @@ describe("what a person reads when the passkey account sent", () => {
     for (const reason of ["replaced", "wrong-network"] as const) {
       const error = new WalletStepError(reason, 0);
       error.sender = "passkey";
-      expect(moneyProblem(error, "back")).not.toMatch(/wallet/i);
+      expect(potProblem(error, "back")).not.toMatch(/wallet/i);
     }
   });
 });

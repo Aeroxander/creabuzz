@@ -1,7 +1,7 @@
 /**
- * The words of the money screens that are a function of numbers: how a rate, a count of Shares and a small amount of
- * dollars read, where a project stands (open, quiet, wound down) and what that means for a person, why the door is shut,
- * and the two lines every money sheet carries. Pure: no screen logic, so one test holds the sentences.
+ * Every word the money screens say that is not a screen's own: the fixed lines every money screen carries, amounts and
+ * rates in words, and where a project stands. Pure: no screen logic, so one test holds the sentences, and a sentence is
+ * written once. What a person reads when a money step stops is in `problems.ts`.
  */
 import { durationWords } from "../tasks/chain/duration";
 import {
@@ -10,7 +10,9 @@ import {
   type ProjectNumbers,
   quietStateAt,
   timeText,
-} from "../money/numbers";
+} from "./numbers";
+
+// --- The fixed lines (quoted word for word, never reworded) -----------------------------------------------------------
 
 /** Under every live number. */
 export const NOT_A_RETURN = "This can go up or down. It is not a return.";
@@ -29,17 +31,29 @@ export const PLAY_MONEY_WORDS =
  */
 export const UNAUDITED_WORDS =
   "The contracts behind these screens are new and have not been audited.";
+/**
+ * What a person reads when the server's address for their passkey account is not the one this phone works out from the
+ * passkey: no deposit address is shown and nothing is sent from it.
+ */
+export const ACCOUNT_MISMATCH_WORDS =
+  "The server gave an address for your account that does not match the one this phone works out from your passkey. No address is shown and nothing was sent. Do not send money to it. Try again later, or tell whoever runs this server.";
+/** What a passkey account says when it is set up for another network than the project's. */
+export const PASSKEY_WRONG_NETWORK_WORDS =
+  "This phone's account is set up for another network than this project's. Nothing was sent.";
+
+// --- Amounts, rates and spans -------------------------------------------------------------------------------------------
 
 const SHARE = 1_000_000_000_000_000_000n;
 const DOLLAR = 1_000_000n;
+const group = (whole: bigint): string =>
+  whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 
 /** A count of Shares: whole above 10 or when it is whole, otherwise two decimals (so a part of a Share is never read as none). */
 export function sharesWords(raw: bigint): string {
   const whole = raw / SHARE;
   const hundredths = ((raw % SHARE) * 100n) / SHARE;
-  const grouped = whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  if (whole >= 10n || raw % SHARE === 0n) return grouped;
-  return `${grouped}.${hundredths.toString().padStart(2, "0")}`;
+  if (whole >= 10n || raw % SHARE === 0n) return group(whole);
+  return `${group(whole)}.${hundredths.toString().padStart(2, "0")}`;
 }
 
 /**
@@ -48,9 +62,14 @@ export function sharesWords(raw: bigint): string {
  */
 export function smallDollarsText(raw: bigint): string {
   if (raw >= DOLLAR) return dollarsText(raw);
-  // Six decimals, trailing zeros dropped, never fewer than two.
   const decimals = raw.toString().padStart(6, "0").replace(/0+$/, "");
   return `0.${decimals.padEnd(2, "0")}`;
+}
+
+/** "1 dollar", "25 dollars", "0.43 dollars": an amount in a sentence (rounded down, so a hair over one reads "1 dollar"). */
+export function dollarsPhrase(raw: bigint): string {
+  const text = smallDollarsText(raw);
+  return text === "1" ? "1 dollar" : `${text} dollars`;
 }
 
 /**
@@ -58,11 +77,11 @@ export function smallDollarsText(raw: bigint): string {
  * decimals at least once there are any ("25", "25.50", "25.123456"). For an amount a person typed or a call will move.
  */
 export function exactDollarsText(raw: bigint): string {
-  const whole = (raw / DOLLAR).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   const decimals = (raw % DOLLAR)
     .toString()
     .padStart(6, "0")
     .replace(/0+$/, "");
+  const whole = group(raw / DOLLAR);
   return decimals === "" ? whole : `${whole}.${decimals.padEnd(2, "0")}`;
 }
 
@@ -79,12 +98,26 @@ export function rateWords(ppm: number): string {
   return `${whole}.${decimals}%`;
 }
 
-/** "about 3 days", "about 1 day", "less than a day": a span of seconds for people. */
-export function spanWords(seconds: number): string {
-  const days = Math.round(seconds / 86_400);
-  if (seconds < 43_200) return "less than a day";
-  return `about ${days} ${days === 1 ? "day" : "days"}`;
+/** A share in ten-thousandths of the project's money as a percent: 100 is "1%", 495 is "4.95%", 1 is "0.01%". */
+export function percentOfBps(bps: number): string {
+  const whole = Math.floor(bps / 100);
+  const hundredths = String(bps % 100)
+    .padStart(2, "0")
+    .replace(/0+$/, "");
+  return hundredths === "" ? `${whole}%` : `${whole}.${hundredths}%`;
 }
+
+/** A span of seconds for a sentence: minutes or hours on a test network's short unit, days on a real one. */
+export function spanOf(seconds: number): string {
+  const plural = (n: number, unit: string) =>
+    `about ${n} ${unit}${n === 1 ? "" : "s"}`;
+  if (seconds < 3_600)
+    return plural(Math.max(1, Math.round(seconds / 60)), "minute");
+  if (seconds < 86_400) return plural(Math.round(seconds / 3_600), "hour");
+  return plural(Math.round(seconds / 86_400), "day");
+}
+
+// --- Where a project stands ---------------------------------------------------------------------------------------------
 
 /** The share of anything above what backers put in that the Team's side gets, as a whole percent, or null with no Shares. */
 export function teamPartPercent(numbers: ProjectNumbers): number | null {
@@ -100,6 +133,16 @@ export function allowanceWords(numbers: ProjectNumbers): string {
     return "The team's daily allowance is switched off, so nothing goes into the allowance box.";
   const perDay = (numbers.money.pot * BigInt(ratePpm)) / 1_000_000n;
   return `The team can take up to ${rateWords(ratePpm)} of the project's money a day (about ${dollarsText(perDay)} dollars today). It holds ${dollarsText(box)} dollars now.`;
+}
+
+/**
+ * How long the team may be quiet before anyone can wind the project down: this project's own wait (its wind-down units of
+ * its time unit), "about half a year" on a real network and hours on a test network's short unit.
+ */
+function quietWaitWords(numbers: ProjectNumbers): string {
+  const secs = numbers.limits.windDownUnits * numbers.unit;
+  const days = secs / 86_400;
+  return days >= 150 && days <= 220 ? "about half a year" : spanOf(secs);
 }
 
 export interface StateWords {
@@ -167,11 +210,6 @@ export function doorShutWords(
   return null;
 }
 
-/** A time for a sentence about when something becomes possible. */
-export function whenWords(seconds: number): string {
-  return timeText(seconds);
-}
-
 /**
  * What the allowance box holds now, as well as it can be known: the Treasury keeps the box as of its last settle (a draw settles
  * first, so it can then hold more), and the server's record works it forward to its own time. The larger of the two is what
@@ -189,36 +227,7 @@ export function boxNow(
   return onChainCap !== undefined && larger > onChainCap ? onChainCap : larger;
 }
 
-/** A span of seconds for a sentence: minutes or hours on a test network's short unit, days on a real one. */
-export function spanOf(seconds: number): string {
-  if (seconds < 3_600) {
-    const minutes = Math.max(1, Math.round(seconds / 60));
-    return `about ${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
-  }
-  if (seconds < 86_400) {
-    const hours = Math.round(seconds / 3_600);
-    return `about ${hours} ${hours === 1 ? "hour" : "hours"}`;
-  }
-  const days = Math.round(seconds / 86_400);
-  return `about ${days} ${days === 1 ? "day" : "days"}`;
-}
-
-/**
- * How long the team may be quiet before anyone can wind the project down: this project's own wait (its wind-down units of
- * its time unit), "about half a year" on a real network and hours on a test network's short unit.
- */
-function quietWaitWords(numbers: ProjectNumbers): string {
-  const secs = numbers.limits.windDownUnits * numbers.unit;
-  const days = secs / 86_400;
-  return days >= 150 && days <= 220 ? "about half a year" : spanOf(secs);
-}
-
-// --- Money set aside for tasks, on the Back and Take out sheets (plan section 5.10) -------------------------------------
-
-/** "1 dollar", "25 dollars", "0.43 dollars": an amount in a sentence. */
-function amountWords(raw: bigint): string {
-  return raw === 1_000_000n ? "1 dollar" : `${smallDollarsText(raw)} dollars`;
-}
+// --- Money set aside for tasks, on the Back and Take out sheets ---------------------------------------------------------
 
 /**
  * On the Back sheet, the line about money set aside for tasks: "none" as ever, and with money set aside, what that means for
@@ -227,7 +236,7 @@ function amountWords(raw: bigint): string {
 export function backLockedWords(locked: bigint): string {
   return locked === 0n
     ? "Money set aside for tasks: none."
-    : `Money set aside for tasks: ${amountWords(locked)}. You pay for it at full value now. If the task is paid, that cost is shared by everyone who holds; if it is not, the money comes back to the project.`;
+    : `Money set aside for tasks: ${dollarsPhrase(locked)}. You pay for it at full value now. If the task is paid, that cost is shared by everyone who holds; if it is not, the money comes back to the project.`;
 }
 
 /**
@@ -246,7 +255,7 @@ export function backPlannedWords(input: {
     input.from === null
       ? "and it can be taken now"
       : `from ${timeText(input.from)}`;
-  return `The team plans to pay up to ${amountWords(input.max)} ${what}, ${when}. You can take your money out any time.`;
+  return `The team plans to pay up to ${dollarsPhrase(input.max)} ${what}, ${when}. You can take your money out any time.`;
 }
 
 /** The link on the Take out sheet to where an owed amount is claimed. */
@@ -265,5 +274,5 @@ export function takeOutTaskWords(input: {
     input.dueSecs === null
       ? "Part of the project's money is set aside for a task."
       : `Part of the project's money is set aside for a task, for up to ${durationWords(input.dueSecs)}.`;
-  return `${aside} You get ${amountWords(input.cash)} now, and up to ${amountWords(input.note)} more if the task is not paid in full.`;
+  return `${aside} You get ${dollarsPhrase(input.cash)} now, and up to ${dollarsPhrase(input.note)} more if the task is not paid in full.`;
 }

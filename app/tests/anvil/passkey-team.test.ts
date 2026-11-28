@@ -23,7 +23,7 @@ import { launchCallFor } from "../../src/features/launch/launch-plan";
 import { isLaunched } from "../../src/features/launch/launch-read";
 import { launchTermsFor } from "../../src/features/launch/launch-terms";
 import type { ProjectNumbers } from "../../src/features/money/numbers";
-import { potProblem } from "../../src/features/money/pot-copy";
+import { potProblem } from "../../src/features/money/problems";
 import { checkInFor } from "../../src/features/money/runner";
 import { runnerSend } from "../../src/features/pot/runner-calls";
 import { WalletStepError } from "../../src/features/money/wallet";

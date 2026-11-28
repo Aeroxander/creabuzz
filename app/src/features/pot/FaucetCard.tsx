@@ -8,7 +8,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "../../ui/button";
 import { useToast } from "../../ui/toast";
-import { potProblem } from "../money/pot-copy";
+import { potProblem } from "../money/problems";
 import { useMoneySend } from "../money/use-money";
 import type { MoneyTarget } from "./target";
 import type { Ready } from "./use-pot";

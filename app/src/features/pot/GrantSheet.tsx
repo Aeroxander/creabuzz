@@ -9,7 +9,7 @@ import { Field } from "../../ui/field";
 import { dayText, type ProjectNumbers } from "../money/numbers";
 import { PotSheet } from "./PotSheet";
 import { PAIR_WORDS, doneWords, runnerSend } from "./runner-calls";
-import { sharesWords } from "./pot-words";
+import { sharesWords } from "../money/copy";
 import type { Ready } from "./use-pot";
 
 const SHARE = 1_000_000_000_000_000_000n;

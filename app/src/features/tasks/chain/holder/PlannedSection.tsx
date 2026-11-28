@@ -8,7 +8,7 @@ import { mustSayPlayMoney } from "@creaton/core/pot/network.ts";
 import { useId } from "react";
 import { type ProfileMetadata, useProfiles } from "../../../../lib/profiles";
 import type { ProjectNumbers } from "../../../money/numbers";
-import { PLAY_MONEY_WORDS } from "../../../pot/pot-words";
+import { PLAY_MONEY_WORDS } from "../../../money/copy";
 import type { Project } from "../../../project/project-record";
 import { useTaskJoin } from "../join";
 import { nowOf } from "../state";

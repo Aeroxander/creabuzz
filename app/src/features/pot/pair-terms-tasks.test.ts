@@ -16,7 +16,7 @@ import {
 } from "../../../tests/helpers/plan-scene";
 import { timeText } from "../money/numbers";
 import { UNKNOWN_TASK_WORDS } from "../tasks/chain/words";
-import { exactDollarsText } from "./pot-words";
+import { exactDollarsText } from "../money/copy";
 import type { ChainTaskNow } from "../tasks/chain/types";
 import {
   describePotCall,

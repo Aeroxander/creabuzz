@@ -101,7 +101,7 @@ run(
             serial: 1n,
             minAmount: max1,
           }),
-          "take-task",
+          "claim-note",
         ),
       ).toEqual(expect.any(String));
       await passTime(notice1.noticeSecs + 5);
@@ -124,7 +124,7 @@ run(
         await refused(
           stranger,
           pot.returnTaskCall({ treasury: A.treasury, serial: 1n }),
-          "return-task",
+          "claim-note",
         ),
       ).toEqual(expect.any(String));
 
@@ -206,7 +206,7 @@ run(
             serial: 1n,
             payDollars: pay,
           }),
-          "pay-task",
+          "claim-note",
         ),
       ).toEqual(expect.any(String));
       const workerBefore = await dollars(chain, worker);
@@ -233,7 +233,7 @@ run(
             serial: 1n,
             payDollars: pay,
           }),
-          "pay-task",
+          "claim-note",
         ),
       ).toEqual(expect.any(String));
 
@@ -321,7 +321,7 @@ run(
             serial: 2n,
             payDollars: DOLLAR,
           }),
-          "pay-task",
+          "claim-note",
         ),
       ).toEqual(expect.any(String));
       // The chain's own claim view reads nothing; the app's figure is the whole claim, as a claim settles first and returns it.

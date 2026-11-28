@@ -9,7 +9,7 @@ import { lazy, Suspense, useId } from "react";
 import { type ProfileMetadata, useProfiles } from "../../../../lib/profiles";
 import { Button } from "../../../../ui/button";
 import { holdingHint, type ProjectNumbers } from "../../../money/numbers";
-import { PLAY_MONEY_WORDS } from "../../../pot/pot-words";
+import { PLAY_MONEY_WORDS } from "../../../money/copy";
 import type { Project } from "../../../project/project-record";
 import type { ProjectTask } from "../../task-record";
 import { nowOf, phaseOf } from "../state";

@@ -9,7 +9,7 @@ import type { ProjectNumbers } from "../money/numbers";
 import { timeText } from "../money/numbers";
 import { FEED_ROUND_TO } from "../money/numbers-social";
 import { feedDollars } from "../feed/feed-words";
-import { doorShutWords, smallDollarsText } from "../pot/pot-words";
+import { doorShutWords, smallDollarsText } from "../money/copy";
 import { unitCount } from "./unit-words";
 
 /** What the money line says about what a take-out would give: the figure of the same name on the Take out sheet. */

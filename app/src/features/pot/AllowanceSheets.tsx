@@ -21,11 +21,11 @@ import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { Field } from "../../ui/field";
 import { parseDollarAmount } from "../money/calls";
-import { dollarsPhrase } from "../money/pot-copy-tasks";
+import { dollarsPhrase } from "../money/copy";
 import { dayText, type ProjectNumbers, timeText } from "../money/numbers";
 import { PotSheet } from "./PotSheet";
 import { PAIR_WORDS, doneWords, runnerSend } from "./runner-calls";
-import { boxNow, rateWords, smallDollarsText } from "./pot-words";
+import { boxNow, rateWords, smallDollarsText } from "../money/copy";
 import type { Ready } from "./use-pot";
 
 /** The allowance as the chain has it now, read when a sheet opens. */

@@ -1,7 +1,7 @@
 /**
  * The sentences of the holder's side of a task (plan section 5.3): the strips every reader sees about a planned or running
  * task. Pure. Each says what is so and what to do next, names no event, code or contract. The words of every contract refusal
- * live in `money/pot-copy.ts`; the two lines of a planned task and the line for a task that moved are in `chain/words.ts`.
+ * live in `money/problems.ts`; the two lines of a planned task and the line for a task that moved are in `chain/words.ts`.
  */
 import { shortAddress } from "../../../../lib/short-address";
 import { timeText } from "../../../money/numbers";

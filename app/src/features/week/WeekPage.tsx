@@ -11,8 +11,8 @@ import { Card } from "../../ui/card";
 import { EmptyState } from "../../ui/empty-state";
 import { useToast } from "../../ui/toast";
 import { dayText, type ProjectNumbers, quietStateAt } from "../money/numbers";
-import { potProblem } from "../money/pot-copy";
-import { checkInFor, mayCheckIn } from "../money/runner";
+import { potProblem } from "../money/problems";
+import { checkInFor, mayCheckIn, NO_RECORD } from "../money/runner";
 import {
   useMoneySend,
   useProjectNumbers,
@@ -216,6 +216,3 @@ function CheckInAgain({
     </>
   );
 }
-
-/** What a check-in carries when there is no weekly update to point at: 32 zero bytes. */
-const NO_RECORD = `0x${"0".repeat(64)}`;
