@@ -125,8 +125,8 @@ with bracketed items for counsel: that is expected on a test world. Never move t
 2. Press **Start**. **Working:** "Start a project" and "Three answers. You can change them later, and nothing costs anything." Name it
    Beacon, answer "What will you make?" and "How will people know it worked?", press "Start".
 3. On Beacon's page, under "Open Beacon to backers", press "Connect your wallet" (account 2). The card then has the press "Launch".
-   **Working:** the sheet "Launch Beacon" with "Daily allowance, percent a day" (0.10) and "Team pool, Team Shares" (10,000,000).
-   Press its button "Launch Beacon"; the wallet asks once.
+   **Working:** the sheet "Launch Beacon" with nothing to type: one sentence with a daily allowance of 0.10% and a Team pool of
+   10,000,000 Team Shares. Press its button "Launch Beacon"; the wallet asks once.
    **Working:** "It is on the network. Tying your page to it now." and then "Your project is open to backers." For a few seconds, until
    the server has read the block, the Money tab can say "No numbers yet" and shows no figure.
 

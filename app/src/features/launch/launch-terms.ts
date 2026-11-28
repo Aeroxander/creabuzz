@@ -1,89 +1,40 @@
 /**
- * The words and numbers of the launch sheet: the founder's two numbers (the daily allowance and the Team pool) with their
- * defaults, what a typed value means and why one is refused, what each means for a backer, the limits that are the same
- * for every project, and what can and cannot be changed after the launch. Pure: no screen, no chain read. The limits are
- * said from what the Launcher and the contracts it makes projects from gave (`LaunchOffer`), never from numbers kept here.
+ * The words and numbers of the launch sheet: the two starting numbers every project launches with (the daily allowance and
+ * the Team pool; the founder is not asked for them), the limits that are the same for every project, and what can and cannot
+ * be changed after the launch. Pure: no screen, no chain read. The limits are said from what the Launcher and the contracts
+ * it makes projects from gave (`LaunchOffer`), never from numbers kept here.
  */
 import type { LaunchOffer } from "@creaton/core/pot/pot-state.ts";
 import { dollarsText } from "../money/numbers";
-import { parseRate } from "../pot/AllowanceSheets";
 import { rateWords, sharesWords, spanOf } from "../pot/pot-words";
 
 const SHARE = 1_000_000_000_000_000_000n;
 
-/** The allowance the sheet starts with: 0.10% of the project's money a day (1,000 parts per million). */
-const DEFAULT_RATE_TEXT = "0.10";
-/** The Team pool the sheet starts with: 10,000,000 Team Shares. */
-const DEFAULT_POOL_TEXT = "10,000,000";
-
-/** What is typed on the sheet. */
-export interface LaunchDraft {
-  rate: string;
-  pool: string;
+/** The two numbers a launch carries, as the call carries them. */
+export interface LaunchTerms {
+  ratePpm: number;
+  teamPool: bigint;
 }
 
-export const DEFAULT_LAUNCH_DRAFT: LaunchDraft = {
-  rate: DEFAULT_RATE_TEXT,
-  pool: DEFAULT_POOL_TEXT,
+/** What every project starts with: 0.10% of its money a day (1,000 parts per million) and 10,000,000 Team Shares. */
+const STARTING_TERMS: LaunchTerms = {
+  ratePpm: 1000,
+  teamPool: 10_000_000n * SHARE,
 };
 
-/** The two numbers as the call carries them, or what is wrong with each box. */
-export type LaunchTerms =
-  | { ok: true; ratePpm: number; teamPool: bigint }
-  | { ok: false; rate: string | null; pool: string | null };
-
-/** A whole number of Team Shares typed by a person (commas allowed), as raw units; null when it is not one. */
-function parsePool(text: string): bigint | null {
-  const m = /^\d{1,12}$/.exec(text.trim().replace(/,/g, ""));
-  return m ? BigInt(m[0]) * SHARE : null;
-}
-
-/** Read the two boxes against the Launcher's ceilings. */
-export function readLaunchTerms(
-  draft: LaunchDraft,
+/** The starting numbers, or null when the platform's own ceilings sit under them (then a launch would be refused). */
+export function launchTermsFor(
   offer: Pick<LaunchOffer, "maxRatePpm" | "maxTeamPool">,
-): LaunchTerms {
-  const ppm = parseRate(draft.rate);
-  const pool = parsePool(draft.pool);
-  const rate =
-    draft.rate.trim() === ""
-      ? "Write a percent a day, like 0.10. Write 0 to switch the allowance off."
-      : ppm === null
-        ? "Write a percent a day, like 0.10."
-        : ppm > offer.maxRatePpm
-          ? `The most it can be is ${rateWords(offer.maxRatePpm)} a day.`
-          : null;
-  const poolProblem =
-    draft.pool.trim() === ""
-      ? "Write a number of Team Shares, like 10,000,000. Write 0 for none."
-      : pool === null
-        ? "Write a whole number of Team Shares, like 10,000,000."
-        : pool > offer.maxTeamPool
-          ? `The most is ${sharesWords(offer.maxTeamPool)} Team Shares.`
-          : null;
-  if (rate !== null || poolProblem !== null || ppm === null || pool === null)
-    return { ok: false, rate, pool: poolProblem };
-  return { ok: true, ratePpm: ppm, teamPool: pool };
+): LaunchTerms | null {
+  return STARTING_TERMS.ratePpm <= offer.maxRatePpm &&
+    STARTING_TERMS.teamPool <= offer.maxTeamPool
+    ? STARTING_TERMS
+    : null;
 }
 
 /** "0.001", "1", "2.5": a number with its trailing zeros dropped, at most three decimals. */
 function plainNumber(value: number): string {
   return String(Number(value.toFixed(3)));
-}
-
-/** For a backer: what the allowance is, in a sentence. */
-export function allowanceForBackers(ratePpm: number): string {
-  if (ratePpm === 0)
-    return "For backers: the allowance is switched off, so the team draws nothing from the project's money by this route.";
-  const perThousand = plainNumber(ratePpm / 1000);
-  return `For backers: the team can draw at most ${rateWords(ratePpm)} of the project's money a day (${perThousand} ${perThousand === "1" ? "dollar" : "dollars"} of every 1,000 it holds). It is a share of what is left, so it shrinks as money goes out, and backers can take their money out any day.`;
-}
-
-/** For a backer: what the Team pool is, in a sentence. */
-export function poolForBackers(teamPool: bigint): string {
-  if (teamPool === 0n)
-    return "For backers: there are no Team Shares, so the team has no claim on the project's money beyond the allowance.";
-  return `For backers: ${sharesWords(teamPool)} Team Shares are set aside for the people who build this. They only ever claim money above what backers put in, so they can never take a backer's money; if nothing is above it, they are worth nothing.`;
 }
 
 /** The limits every project has, in plain words, from what the contracts gave. */
@@ -114,10 +65,7 @@ export function afterLaunch(offer: LaunchOffer): {
 }
 
 /** The sentence that says what pressing will send: the same two numbers the call carries. */
-export function launchTermsSentence(
-  name: string,
-  terms: Extract<LaunchTerms, { ok: true }>,
-): string {
+export function launchTermsSentence(name: string, terms: LaunchTerms): string {
   return `${name} will be put on the network with a daily allowance of ${rateWords(terms.ratePpm)} of the project's money and a Team pool of ${sharesWords(terms.teamPool)} Team Shares.`;
 }
 

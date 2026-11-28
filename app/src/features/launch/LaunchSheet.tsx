@@ -1,15 +1,13 @@
 /**
- * Launch a project: the founder's two numbers (the daily allowance and the Team pool) with their defaults, what each means
- * for a backer, the limits every project has, what cannot be changed later, and one press that sends one call. The
- * Launcher's settings hash is read when the sheet opens and again just before the press; if it moved, nothing is sent and the
- * sheet says so and shows the new settings. The call is made from exactly the two numbers and the hash on the sheet.
+ * Launch a project: the two starting numbers every project has (the daily allowance and the Team pool; nothing is typed), the
+ * limits every project has, what cannot be changed later, and one press that sends one call. The Launcher's settings hash is
+ * read when the sheet opens and again just before the press; if it moved, nothing is sent and the sheet says so and shows the
+ * new settings. The call is made from exactly the two numbers and the hash on the sheet.
  */
 import { readLaunchOffer } from "@creaton/core/pot/pot-state.ts";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
-import { Field } from "../../ui/field";
 import type { Project } from "../project/project-record";
 import { PotSheet } from "../pot/PotSheet";
 import type { Ready } from "../pot/use-pot";
@@ -18,13 +16,9 @@ import { launchIdentity, sharesName, sharesSymbol } from "./launch-ids";
 import { launchCallFor } from "./launch-plan";
 import {
   afterLaunch,
-  allowanceForBackers,
-  DEFAULT_LAUNCH_DRAFT,
   fixedLimits,
-  type LaunchDraft,
+  launchTermsFor,
   launchTermsSentence,
-  poolForBackers,
-  readLaunchTerms,
   SETTINGS_MOVED_WORDS,
 } from "./launch-terms";
 
@@ -50,7 +44,6 @@ export function LaunchSheet({
   onClose,
   onLanded,
 }: Props) {
-  const [draft, setDraft] = useState<LaunchDraft>(DEFAULT_LAUNCH_DRAFT);
   const offer = useQuery({
     queryKey: ["pot", "launch-offer", launcher],
     enabled: open,
@@ -60,11 +53,11 @@ export function LaunchSheet({
     refetchOnWindowFocus: false,
     queryFn: () => readLaunchOffer(ready.read, launcher),
   });
-  const terms = offer.data ? readLaunchTerms(draft, offer.data) : null;
+  const terms = offer.data ? launchTermsFor(offer.data) : null;
   const name = sharesName(project.name);
   const { key } = launchIdentity(project, ready.address);
   const call =
-    offer.data && terms?.ok
+    offer.data && terms
       ? launchCallFor({
           launcher,
           project,
@@ -74,8 +67,6 @@ export function LaunchSheet({
         })
       : null;
   const shown = offer.data;
-  const set = (field: keyof LaunchDraft) => (value: string) =>
-    setDraft((d) => ({ ...d, [field]: value }));
   return (
     <PotSheet
       account={ready.address}
@@ -85,9 +76,9 @@ export function LaunchSheet({
       chainId={chainId}
       confirmLabel={`Launch ${project.name}`}
       description="Put it on the network so people can back it"
-      detail={terms?.ok ? `${terms.ratePpm}:${terms.teamPool}` : undefined}
+      detail={terms ? `${terms.ratePpm}:${terms.teamPool}` : undefined}
       done="It is on the network. Tying your page to it now."
-      doneEarlier="Your earlier launch is on the network, with the numbers you chose then. They cannot be changed now. Nothing new was sent."
+      doneEarlier="Your earlier launch is on the network. Its numbers cannot be changed now. Nothing new was sent."
       landed={(wallet) =>
         isLaunched((to, data) => wallet.readCall(to, data), launcher, key)
       }
@@ -123,40 +114,17 @@ export function LaunchSheet({
         </div>
       ) : (
         <>
-          <p className="text-sm">
-            You choose two numbers. Everything else is the same for every
-            project.
-          </p>
-          <Field
-            autoComplete="off"
-            data-testid="launch-rate"
-            hint="Percent of the project's money the team may draw a day. The start is 0.10."
-            inputMode="decimal"
-            label="Daily allowance, percent a day"
-            onChange={(e) => set("rate")(e.target.value)}
-            problem={terms && !terms.ok ? terms.rate : null}
-            value={draft.rate}
-          />
-          {terms?.ok ? (
-            <p className="text-sm text-muted" data-testid="launch-rate-words">
-              {allowanceForBackers(terms.ratePpm)}
+          {terms ? (
+            <p className="text-sm" data-testid="launch-terms">
+              {launchTermsSentence(project.name, terms)} Its Shares will be
+              named {name} ({sharesSymbol(project.name)}). You sign once.
             </p>
-          ) : null}
-          <Field
-            autoComplete="off"
-            data-testid="launch-pool"
-            hint="Team Shares set aside for the people who build this. The start is 10,000,000."
-            inputMode="numeric"
-            label="Team pool, Team Shares"
-            onChange={(e) => set("pool")(e.target.value)}
-            problem={terms && !terms.ok ? terms.pool : null}
-            value={draft.pool}
-          />
-          {terms?.ok ? (
-            <p className="text-sm text-muted" data-testid="launch-pool-words">
-              {poolForBackers(terms.teamPool)}
+          ) : (
+            <p className="text-sm" data-testid="launch-over-ceiling">
+              Creaton's limits are under the starting numbers right now, so
+              nothing can be sent. Nothing changed.
             </p>
-          ) : null}
+          )}
           <section
             aria-labelledby="launch-same-title"
             className="flex flex-col gap-1.5"
@@ -182,12 +150,6 @@ export function LaunchSheet({
             <p className="text-sm text-muted">{afterLaunch(shown).cannot}</p>
             <p className="text-sm text-muted">{afterLaunch(shown).can}</p>
           </section>
-          {terms?.ok ? (
-            <p className="text-sm" data-testid="launch-terms">
-              {launchTermsSentence(project.name, terms)} Its Shares will be
-              named {name} ({sharesSymbol(project.name)}). You sign once.
-            </p>
-          ) : null}
           <details className="text-sm text-muted">
             <summary className="cursor-pointer">Technical details</summary>
             <p className="mt-1.5 break-all" data-testid="launch-fingerprint">

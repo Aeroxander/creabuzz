@@ -21,10 +21,7 @@ import {
 } from "../../src/features/money/send-targets";
 import { launchCallFor } from "../../src/features/launch/launch-plan";
 import { isLaunched } from "../../src/features/launch/launch-read";
-import {
-  DEFAULT_LAUNCH_DRAFT,
-  readLaunchTerms,
-} from "../../src/features/launch/launch-terms";
+import { launchTermsFor } from "../../src/features/launch/launch-terms";
 import type { ProjectNumbers } from "../../src/features/money/numbers";
 import { potProblem } from "../../src/features/money/pot-copy";
 import { checkInFor } from "../../src/features/money/runner";
@@ -94,8 +91,8 @@ run(
           name: "phone",
         };
         const offer = await state.readLaunchOffer(read, chain.launcher);
-        const terms = readLaunchTerms(DEFAULT_LAUNCH_DRAFT, offer);
-        if (!terms.ok) throw new Error("the terms were refused");
+        const terms = launchTermsFor(offer);
+        if (!terms) throw new Error("the terms were refused");
         const key = chainKeyOf(founder, projectIdOf(project.coordinate));
         expect(await isLaunched(read, chain.launcher, key)).toBe(false);
         await press([

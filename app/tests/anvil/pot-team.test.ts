@@ -23,9 +23,8 @@ import * as state from "../../../packages/creaton-core/src/pot/pot-state.ts";
 import { launchCallFor } from "../../src/features/launch/launch-plan";
 import { isLaunched } from "../../src/features/launch/launch-read";
 import {
-  DEFAULT_LAUNCH_DRAFT,
   type LaunchTerms,
-  readLaunchTerms,
+  launchTermsFor,
 } from "../../src/features/launch/launch-terms";
 import { potProblem } from "../../src/features/money/pot-copy";
 import { WalletStepError } from "../../src/features/money/wallet";
@@ -68,20 +67,20 @@ async function stoppedWith(
   return words;
 }
 
-/** Launch a project exactly as the launch sheet does: its reader, its terms from what is typed, its call. */
+/** Launch a project exactly as the launch sheet does: its reader, its starting terms (or the ones given), its call. */
 async function launch(
   chain: Chain,
   founder: string,
   label: string,
-  draft = DEFAULT_LAUNCH_DRAFT,
+  chosen?: LaunchTerms,
 ) {
   const project = {
     coordinate: `37001:${"ee".repeat(32)}:${label}`,
     name: label,
   };
   const offer = await state.readLaunchOffer(read, chain.launcher);
-  const terms: LaunchTerms = readLaunchTerms(draft, offer);
-  if (!terms.ok) throw new Error("the terms were refused");
+  const terms = chosen ?? launchTermsFor(offer);
+  if (!terms) throw new Error("the terms were refused");
   const key = chainKeyOf(founder, projectIdOf(project.coordinate));
   expect(await isLaunched(read, chain.launcher, key)).toBe(false);
   await walletOf(founder).sendCalls(
@@ -127,7 +126,6 @@ run("launching, on the real contracts", () => {
     // The defaults launch what they say: 0.10% a day and a pool of 10,000,000 Team Shares.
     const first = await launch(chain, founder, "defaults");
     expect(first.terms).toEqual({
-      ok: true,
       ratePpm: 1000,
       teamPool: 10_000_000n * SHARE,
     });
@@ -137,23 +135,23 @@ run("launching, on the real contracts", () => {
     ).toBe(10_000_000n * SHARE);
     expect(first.parts.founder).toBe(founder);
 
-    // Other numbers typed: 0.2% (the ceiling) and 500,000 Team Shares.
+    // The contracts take other numbers too: 0.2% (the ceiling) and 500,000 Team Shares.
     const second = await launch(chain, founder, "typed", {
-      rate: "0.2",
-      pool: "500,000",
+      ratePpm: 2000,
+      teamPool: 500_000n * SHARE,
     });
     expect(await state.ratePpmNow(read, second.parts.treasury)).toBe(2000);
     expect(
       await reads.balanceOf(read, second.parts.team, second.parts.vester),
     ).toBe(500_000n * SHARE);
-    // One more thousandth is refused by the sheet, and by the contract if it were sent anyway.
-    const over = readLaunchTerms({ rate: "0.2001", pool: "10" }, offer);
-    expect(over).toMatchObject({ ok: false });
+    // The sheet sends nothing when the platform's ceilings sit under the starting numbers; the contract refuses one more
+    // thousandth over the ceiling if it were sent anyway.
+    expect(launchTermsFor({ ...offer, maxRatePpm: 999 })).toBeNull();
     const forced = launchCallFor({
       launcher: chain.launcher,
       project: { coordinate: `37001:${"ee".repeat(32)}:over`, name: "over" },
       founder,
-      terms: { ok: true, ratePpm: 2001, teamPool: 10n * SHARE },
+      terms: { ratePpm: 2001, teamPool: 10n * SHARE },
       offer,
     });
     expect(
@@ -171,7 +169,7 @@ run("launching, on the real contracts", () => {
                 name: "typed",
               },
               founder,
-              terms: { ok: true, ratePpm: 1000, teamPool: 10n * SHARE },
+              terms: { ratePpm: 1000, teamPool: 10n * SHARE },
               offer,
             }),
           ],
@@ -202,7 +200,7 @@ run("launching, on the real contracts", () => {
       launcher: chain.launcher,
       project: { coordinate: `37001:${"ee".repeat(32)}:late`, name: "late" },
       founder,
-      terms: { ok: true, ratePpm: 1000, teamPool: 10n * SHARE },
+      terms: { ratePpm: 1000, teamPool: 10n * SHARE },
       offer, // the settings the sheet read before the change
     });
     expect(

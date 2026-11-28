@@ -157,8 +157,7 @@ export function LaunchCard({
       </h2>
       <p className="text-sm">
         Right now this is a page. Launching it lets people back it and take
-        their money out any day. You choose two numbers; everything else is the
-        same for every project.
+        their money out any day.
       </p>
       <p className="text-sm text-muted" data-testid="launch-play-money">
         {PLAY_MONEY_WORDS}

@@ -34,7 +34,7 @@ test.skip(NO_CHAIN_WHY !== null, NO_CHAIN_WHY ?? "");
 
 /**
  * A founder launches from the app on a real local chain, in a real browser, in the default build: Start, then the launch
- * card on the new project's page, the sheet with its two numbers, one wallet signature, and the page that shows the project
+ * card on the new project's page, the sheet (nothing typed), one wallet signature, and the page that shows the project
  * once the server has read it (not before). Also: the platform's settings changing between the sheet and the signature, a
  * wallet that says no, a double press, a launch that landed but whose page was not tied to it yet, and the keyboard.
  */
@@ -59,7 +59,7 @@ function plainRelay(label: string) {
   return relay;
 }
 
-test("a founder starts a project, launches it with two numbers and one signature, and the page waits for the server before it shows any figure", async ({
+test("a founder starts a project, launches it with no field and one signature, and the page waits for the server before it shows any figure", async ({
   page,
 }) => {
   const w = world.get();
@@ -97,26 +97,21 @@ test("a founder starts a project, launches it with two numbers and one signature
   );
   await page.getByTestId("tab-updates").click();
 
-  // Launch: one press opens the sheet with its defaults; two numbers are changed; one press sends.
+  // Launch: one press opens the sheet, which asks for nothing (the two starting numbers are the same for every project);
+  // one press sends.
   const before = path.presses;
   await path.press(page.getByTestId("launch-open"), "Launch");
   const sheet = page.getByTestId("launch-sheet");
   await expect(sheet).toBeVisible();
-  await expect(page.getByTestId("launch-rate")).toHaveValue("0.10");
-  await expect(page.getByTestId("launch-pool")).toHaveValue("10,000,000");
+  await expect(sheet.getByRole("textbox")).toHaveCount(0);
   await expect(page.getByTestId("launch-limits")).toContainText(
     "Creaton takes 2% of the money people put in",
   );
   await expect(page.getByTestId("launch-later")).toContainText(
     "you cannot change the size of the Team pool",
   );
-  await path.type(page.getByTestId("launch-rate"), "0.15", "Daily allowance");
-  await path.type(page.getByTestId("launch-pool"), "2,000,000", "Team pool");
   await expect(page.getByTestId("launch-terms")).toContainText(
-    "daily allowance of 0.15% of the project's money and a Team pool of 2,000,000 Team Shares",
-  );
-  await expect(page.getByTestId("launch-rate-words")).toContainText(
-    "at most 0.15% of the project's money a day",
+    "daily allowance of 0.10% of the project's money and a Team pool of 10,000,000 Team Shares",
   );
   await path.read(page, "the launch sheet");
   await path.press(page.getByTestId("sheet-confirm"), "Launch Lantern");
@@ -135,12 +130,12 @@ test("a founder starts a project, launches it with two numbers and one signature
     projectIdOf(coordinate),
     "Lantern",
     "LANTERN",
-    [1500n, 2_000_000n * SHARE],
+    [1000n, 10_000_000n * SHARE],
   ]);
   const parts = await state.readProjectParts(read, w.chain.launcher, key);
-  expect(await state.ratePpmNow(read, parts.treasury)).toBe(1500);
+  expect(await state.ratePpmNow(read, parts.treasury)).toBe(1000);
   expect(await reads.balanceOf(read, parts.team, parts.vester)).toBe(
-    2_000_000n * SHARE,
+    10_000_000n * SHARE,
   );
 
   // The page is tied to the launch and shows the Money tab. The server has not read the project yet: it says so and shows
@@ -165,7 +160,7 @@ test("a founder starts a project, launches it with two numbers and one signature
   });
   await expect(page.getByTestId("money-state")).toBeVisible();
   console.log(
-    `MEASURED Launch, from the project's page: ${path.presses - before} presses, 2 fields typed (the defaults need none), ${wallet.prompts} wallet prompt`,
+    `MEASURED Launch, from the project's page: ${path.presses - before} presses, no field typed, ${wallet.prompts} wallet prompt`,
   );
 });
 
@@ -232,7 +227,7 @@ test("a wallet that says no leaves the same press; a double press sends one laun
   const wallet = await installAnvilWallet(page, w.who.founder);
   await page.goto(pageOf("nodouble"));
   await page.getByTestId("launch-open").click();
-  await expect(page.getByTestId("launch-rate")).toBeVisible();
+  await expect(page.getByTestId("launch-terms")).toBeVisible();
   wallet.rejectNext = 1;
   await page.getByTestId("sheet-confirm").click();
   await expect(page.getByTestId("sheet-problem")).toContainText(

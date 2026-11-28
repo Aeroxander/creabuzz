@@ -212,8 +212,9 @@ test("a project from its start to a Take out: the page, the server and the contr
     );
     await launch.press(founder.getByTestId("launch-open"), "Launch");
     await expect(founder.getByTestId("launch-sheet")).toBeVisible();
-    await expect(founder.getByTestId("launch-rate")).toHaveValue("0.10");
-    await expect(founder.getByTestId("launch-pool")).toHaveValue("10,000,000");
+    await expect(founder.getByTestId("launch-terms")).toContainText(
+      "daily allowance of 0.10% of the project's money and a Team pool of 10,000,000 Team Shares",
+    );
     await shot(founder, "00-launch-sheet");
     await launch.press(
       founder.getByTestId("sheet-confirm"),

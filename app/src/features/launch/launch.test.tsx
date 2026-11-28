@@ -1,6 +1,6 @@
-// Launching a project from its page: the card a founder sees, the sheet with the two numbers, and the one call it sends. Every
-// state: not the founder, a build with no network, the wallet's own gates, the Launcher's settings unreadable, the numbers
-// refused in words, a change of settings between the sheet and the signature, a refused send, a double press, a launch that
+// Launching a project from its page: the card a founder sees, the sheet (nothing is typed: the two starting numbers are the
+// same for every project), and the one call it sends. Every state: not the founder, a build with no network, the wallet's own
+// gates, the Launcher's settings unreadable, ceilings under the starting numbers, a change of settings between the sheet and the signature, a refused send, a double press, a launch that
 // already landed (only the tie is offered), and the tie that fails and is pressed again. The call is decoded and compared with
 // what the sheet showed.
 import { applyServerSettings } from "@creaton/core/client/server-settings.ts";
@@ -109,10 +109,8 @@ const show = (onLaunched?: () => void) =>
   wrap(<LaunchCard onLaunched={onLaunched} project={project} />);
 const open = async () => {
   fireEvent.click(await screen.findByTestId("launch-open"));
-  await screen.findByTestId("launch-rate");
+  await screen.findByTestId("launch-terms");
 };
-const type = (id: string, value: string) =>
-  fireEvent.change(screen.getByTestId(id), { target: { value } });
 const text = (id: string) => screen.getByTestId(id).textContent ?? "";
 const decodeSent = (index = 0) => {
   const call = chain.sent[index];
@@ -181,21 +179,16 @@ describe("the launch card", () => {
 });
 
 describe("the launch sheet", () => {
-  it("opens with the defaults, what each number means for a backer, the limits, and what cannot be changed", async () => {
+  it("opens with nothing to type: the starting terms in one sentence, the limits, and what cannot be changed", async () => {
     setup();
     show();
     await open();
-    expect((screen.getByTestId("launch-rate") as HTMLInputElement).value).toBe(
-      "0.10",
-    );
-    expect((screen.getByTestId("launch-pool") as HTMLInputElement).value).toBe(
-      "10,000,000",
-    );
-    expect(text("launch-rate-words")).toBe(
-      "For backers: the team can draw at most 0.10% of the project's money a day (1 dollar of every 1,000 it holds). It is a share of what is left, so it shrinks as money goes out, and backers can take their money out any day.",
-    );
-    expect(text("launch-pool-words")).toMatch(
-      /10,000,000 Team Shares are set aside .* only ever claim money above what backers put in, so they can never take a backer's money/,
+    const sheet = screen.getByTestId("launch-sheet");
+    expect(within(sheet).queryAllByRole("textbox")).toEqual([]);
+    expect(screen.queryByTestId("launch-rate")).toBeNull();
+    expect(screen.queryByTestId("launch-pool")).toBeNull();
+    expect(text("launch-terms")).toMatch(
+      /Lantern will be put on the network with a daily allowance of 0\.10% .* Team pool of 10,000,000 Team Shares\./,
     );
     const limits = text("launch-limits");
     expect(limits).toMatch(/takes 2% of the money people put in/);
@@ -208,9 +201,6 @@ describe("the launch sheet", () => {
     expect(later).toMatch(/lower the daily allowance at once/);
     // The settings fingerprint is under "Technical details", not in the main words.
     expect(text("launch-fingerprint")).toContain(HASH);
-    expect(text("launch-terms")).toMatch(
-      /Lantern will be put on the network with a daily allowance of 0\.10% .* Team pool of 10,000,000 Team Shares\./,
-    );
     expect(text("sheet-play-money")).toMatch(/play money/);
     expect(chain.sent).toEqual([]);
   });
@@ -242,54 +232,18 @@ describe("the launch sheet", () => {
     expect(key).toBe(chainKeyOf(FOUNDER_EVM, projectId));
   });
 
-  it("sends the numbers typed: 0.2 percent is 2,000 and 500,000 Team Shares is that many", async () => {
+  it("sends nothing, and says why, when the platform's limits are under the starting numbers", async () => {
     setup();
+    chain.answers = { ...chain.answers, MAX_RATE_PPM: [500n] } as never;
     show();
-    await open();
-    type("launch-rate", "0.2");
-    type("launch-pool", "500,000");
-    expect(text("launch-rate-words")).toMatch(/at most 0\.20% .*2 dollars of/);
-    expect(text("launch-terms")).toMatch(
-      /allowance of 0\.20% .* 500,000 Team Shares/,
-    );
-    fireEvent.click(screen.getByTestId("sheet-confirm"));
-    await waitFor(() => expect(chain.sent.length).toBe(1));
-    expect(decodeSent().args[3]).toEqual([2000n, 500_000n * S]);
-  });
-
-  it("allows an allowance of nothing and a Team pool of nothing, and says what each means", async () => {
-    setup();
-    show();
-    await open();
-    type("launch-rate", "0");
-    type("launch-pool", "0");
-    expect(text("launch-rate-words")).toMatch(/switched off/);
-    expect(text("launch-pool-words")).toMatch(/no Team Shares/);
-    fireEvent.click(screen.getByTestId("sheet-confirm"));
-    await waitFor(() => expect(chain.sent.length).toBe(1));
-    expect(decodeSent().args[3]).toEqual([0n, 0n]);
-  });
-
-  it.each([
-    ["launch-rate", "0.25", /The most it can be is 0\.20% a day/],
-    ["launch-rate", "lots", /Write a percent a day, like 0\.10\./],
-    ["launch-rate", "", /Write a percent a day/],
-    ["launch-pool", "100,000,001", /The most is 100,000,000 Team Shares/],
-    ["launch-pool", "1.5", /Write a whole number of Team Shares/],
-    ["launch-pool", "-3", /Write a whole number of Team Shares/],
-  ])("%s %j is refused in words and nothing can be sent", async (id, value, words) => {
-    setup();
-    show();
-    await open();
-    type(id, value);
-    const note = await within(screen.getByTestId("launch-sheet")).findByRole(
-      "alert",
-    );
-    expect(note.textContent).toMatch(words);
+    fireEvent.click(await screen.findByTestId("launch-open"));
+    expect(
+      (await screen.findByTestId("launch-over-ceiling")).textContent,
+    ).toMatch(/limits are under the starting numbers right now, so nothing/);
+    expect(screen.queryByTestId("launch-terms")).toBeNull();
     expect(
       (screen.getByTestId("sheet-confirm") as HTMLButtonElement).disabled,
     ).toBe(true);
-    expect(screen.queryByTestId("launch-terms")).toBeNull();
     expect(chain.sent).toEqual([]);
   });
 
@@ -372,7 +326,7 @@ describe("the launch sheet", () => {
     ).toBe(true);
     chain.answers = answers;
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-    await screen.findByTestId("launch-rate");
+    await screen.findByTestId("launch-terms");
   });
 
   it("Escape closes it and focus goes back to the button that opened it", async () => {
@@ -381,7 +335,7 @@ describe("the launch sheet", () => {
     const opener = await screen.findByTestId("launch-open");
     opener.focus();
     fireEvent.click(opener);
-    await screen.findByTestId("launch-rate");
+    await screen.findByTestId("launch-terms");
     fireEvent.keyDown(screen.getByTestId("launch-sheet"), { key: "Escape" });
     await waitFor(() =>
       expect(screen.queryByTestId("launch-sheet")).toBeNull(),
@@ -389,14 +343,10 @@ describe("the launch sheet", () => {
     await waitFor(() => expect(document.activeElement).toBe(opener));
   });
 
-  it("every box has a label, every button a name, and no serious accessibility violation", async () => {
+  it("the sheet is named, every button has a name, and there is no serious accessibility violation", async () => {
     setup();
     show();
     await open();
-    expect(
-      screen.getByLabelText("Daily allowance, percent a day"),
-    ).not.toBeNull();
-    expect(screen.getByLabelText("Team pool, Team Shares")).not.toBeNull();
     expect(
       screen.getByRole("dialog", { name: /Launch Lantern/ }),
     ).not.toBeNull();

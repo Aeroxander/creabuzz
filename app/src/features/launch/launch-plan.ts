@@ -1,5 +1,5 @@
 /**
- * The launch call made from what the launch sheet shows: the founder's two numbers (checked against the Launcher's
+ * The launch call made from what the launch sheet shows: the two starting numbers (checked against the Launcher's
  * ceilings), the project's name and id, and the settings hash the sheet read. The sheet and the chain loop both call this, so
  * what the loop launches is what a person's press launches. Pure.
  */
@@ -14,7 +14,7 @@ export function launchCallFor(input: {
   project: Pick<Project, "coordinate" | "name">;
   /** The wallet that signs: the project is stored under this account and the id. */
   founder: string;
-  terms: Extract<LaunchTerms, { ok: true }>;
+  terms: LaunchTerms;
   offer: Pick<LaunchOffer, "settingsHash">;
 }): PotCall {
   const { projectId } = launchIdentity(input.project, input.founder);
