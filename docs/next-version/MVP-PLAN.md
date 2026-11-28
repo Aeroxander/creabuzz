@@ -74,7 +74,7 @@ Sizes are lines under `app/src/features/*` counted by the corrector (CHECKED), s
 | C8 | D | Seat card (hand over, Pair, wind down): `features/seat`, `pot/PairWaiting*`, `team/PairCard`, e2e `pot-seat` | Founder-only, rare. Contracts keep wind-down | 0.9k src, 0.9k tests | `SeatSection` in `pot/ProjectMoney.tsx` |
 | C11 | D | Tasks, **team side only** (see D10): post, accept and pay, pay box, agent caps, `TasksTab`, `TaskCard`, task calls and records, e2e `pot-tasks`, `pot-plan`, world. **Keep** the holder side that a leaver needs: `tasks/chain/holder/*` (planned strip, note claim, take gate), `tasks/chain/{duration,state,types,words}.ts`, `use-tasks.ts` | `pot/pot-words.ts:6`, `pair-terms.ts:13-25`, `project/unit-words.ts:5`, `project-top-words.ts:7`, `feed/feed-words.ts:9` import the chain helpers; `ProjectMoney.tsx:13-16` imports holder pieces | up to 9.1k src, 10.6k tests if all of tasks goes; less with D10 (not measured) | Hide the Tasks tab. **Touches Take out and Back.** `pot-words.ts:16` holds a fixed sentence: never reworded |
 | C16 | D | Harness for the cut features: `app/tests/anvil` (6.6k lines: edit `pot-task*`, `pot-team`, `pot-settled`, `passkey-team`, `passkey-pause`, `pot-tasks-scene`), `app/tests/helpers/{chain-task-answers,chain-task-shape,notes-scene,plan-scene,take-scene}.ts`, `app/tests/e2e-pot-full` (7 specs, 5,036 lines: keep `pot-full`, `seed`, a smaller `world.ts`), `scripts/pot-full-loop.sh:15-99,280-300`, `.github/workflows/mvp-gate.yml` | `pot-app-loop.sh` runs the anvil tests, so these are edits on the money path, not deletions | about 8k lines (ASSUMED) | After this, "pot-full-loop green" is one world: say so |
-| C12 | D | Slop inside core: one money-copy module for the five overlapping ones (`money/pot-copy.ts`, `money-copy.ts`, `pot/pot-words.ts`, `pot-copy-step4.ts`, `team/team-copy.ts`); one `Line` and one `Row` helper; one `NO_RECORD`. Keep `legal-words.ts` | 33 copy files, 4.5k lines | about 2k | The merge must carry `NOT_A_RETURN` and the take-out sentence byte for byte |
+| C12 | D | Slop inside core: one money-copy module for the five overlapping ones (`money/pot-copy.ts`, `money-copy.ts`, `pot/pot-words.ts`, `pot-copy-step4.ts`, `team/team-copy.ts`); one `Line` and one `Row` helper; one `NO_RECORD`. Keep `legal-words.ts` | 33 copy files, 4.5k lines | about 2k | The merge must carry `NOT_A_RETURN` and the take-out sentence byte for byte. **Done (P1.8):** `money/copy.ts` (fixed lines, amounts, where a project stands) and `money/problems.ts` (every refusal and sender stop); `ui/row.tsx`; `NO_RECORD` in `money/runner.ts`; `money/legal-lines.test.tsx` compares the rendered banner and sentence with the literals |
 | C13 | later | Server and CLI, optional: relay `task_chain`, `task_takes`, `chain_agent_link`, `agent_label`, `room_write`, `wallet_binding`, `api/manager`, `llm_gateway`, `web_push`, `handlers/season_rules.rs`, `chain_reader/explore.rs`, `record_step4.rs`; CLI `launchpad_tasks/brain/manager/inbox/facts`. Keep `chain_reader` core, `launch_update_authority`, `sponsor`, join-policy routes in `api/invites.rs` | About 20k relay and 5k CLI lines serve only cut features | large | High risk: tests share files with the reader. Clippy, relay tests, Postgres tests, full loop |
 
 **Not cut, and why:** `buzz-deletion`, `buzz-conformance`, `community_id` columns (49 tables), the deployment-community
@@ -92,19 +92,39 @@ a sentence 20; an error one sentence. Money-design lines on sheets (unaudited, p
 agrees. When the project top shows what a Take out would give ("worth Y"), keep "This can go up or down. It is not a
 return." beside it (`JOIN-LEAVE-DESIGN.md`, five sentences, point 5).
 
-| Screen (file) | Now | Max | What goes |
-|---|---|---|---|
-| Launch card and sheet (`launch/LaunchSheet.tsx`, `launch-terms.ts`) | about 520 | 40 | Both fields as silent defaults (rate 0.10%, pool 10,000,000; see D10), the "same for every project" list, technical lists |
-| Money tab, founder (`pot/ProjectMoney.tsx`, `AllowanceSection.tsx`) | about 400 | 100 | Stage meanings, team line, allowance paragraph, announced-rate, Door, Pair line, check-in block. Keep Draw and (D10) one change-rate row |
-| Back sheet (`pot/BackSheet.tsx`) | about 140 | 40 | Fee lines, Details list, room checkbox |
-| Take out sheet (`pot/TakeOutSheet.tsx`) | about 100 | 25 | Portion picker: one press takes it all |
-| Project page (`project/ProjectPage.tsx`, `ProjectTop.tsx`) | about 130 | 60 | Details fold, facts list, brain row, chips |
-| Sign-up (`account/SignUpPage.tsx`) | about 82 | 30 | Two helper paragraphs |
-| Start (`start/StartPage.tsx`) | about 110 | 45 | Lead sentence, brain offer |
-| This week (`week/*`) | about 153 | 50 | Manager panel |
-| You (`YouPage`) | about 160 | 40 | Wallet choice, news |
-| Faucet (`pot/FaucetCard.tsx`) | about 85 | 20 | Used-already and explanatory text |
-| Recovery key sheet | about 55 | 0 now | Ask later from You (D6) |
+| Screen (file) | Now | Max | Now (counted after the pass) | What goes |
+|---|---|---|---|---|
+| Launch card and sheet (`launch/LaunchSheet.tsx`, `launch-terms.ts`) | about 520 | 40 | 39 (card 5, sheet 34) | Both fields as silent defaults (rate 0.10%, pool 10,000,000; see D10), the "same for every project" list, technical lists |
+| Money tab, founder (`pot/ProjectMoney.tsx`, `AllowanceSection.tsx`) | about 400 | 100 | 74 | Stage meanings, team line, allowance paragraph, announced-rate, Door, Pair line, check-in block. Keep Draw and (D10) one change-rate row |
+| Back sheet (`pot/BackSheet.tsx`) | about 140 | 40 | 40 | Fee lines, Details list, room checkbox |
+| Take out sheet (`pot/TakeOutSheet.tsx`) | about 100 | 25 | 17 | Portion picker: one press takes it all |
+| Project page (`project/ProjectPage.tsx`, `ProjectTop.tsx`) | about 130 | 60 | 32 visitor, 43 holder (top only; with the Lately feed 99 and 110) | Details fold, facts list, brain row, chips |
+| Sign-up (`account/SignUpPage.tsx`) | about 82 | 30 | 30 | Two helper paragraphs |
+| Start (`start/StartPage.tsx`) | about 110 | 45 | 40 | Lead sentence, brain offer |
+| This week (`week/*`) | about 153 | 50 | 45 | Manager panel |
+| You (`YouPage`) | about 160 | 40 | 25 | Wallet choice, news |
+| Faucet (`pot/FaucetCard.tsx`) | about 85 | 20 | 3 | Used-already and explanatory text |
+| Recovery key sheet | about 55 | 0 now | 0 | Ask later from You (D6) |
+
+**How the last column was counted (P1.8).** Each screen is rendered in the app's own test harness (jsdom, the example record, one
+account that is ready) and its visible words are counted: every text node and every placeholder, a closed fold counts its
+summary only, screen-reader-only text is not counted, and the legal text is taken out first (the banner, "This can go up or down.
+It is not a return.", "The contracts behind these screens are new and have not been audited.", the play-money line and the
+ownership line; the terms and the age box are not on these screens). The states are: Back sheet opened on 10 dollars; Take out
+sheet for a holder of 1,020 Shares; Money tab for the runner who holds nothing (a holder who is not the runner sees 22); Launch card
+and sheet for a founder, with a 2% fee; sign-up and Start empty; This week and You for a founder with one project. The same
+counter run on the tree before the pass (commit 2019bd2e5) gave: Back sheet 51, Take out sheet 58, Money tab for the runner 256
+(holder 104), project page 176 visitor and 187 holder with the feed (the feed is about 75 of them), sign-up 82, Start 57, This week 45,
+You 25, Launch card 24 and sheet 255, Faucet 3 (P1.6 had already cut it). The "Now" column above is the plan's own hand-trace.
+Two rows were already under their maximum when the pass began (This week 45, You 25): the manager panel and the news had gone with
+C5 and C6.
+
+**Not at the maximum, and why.** The project page is at 32 or 43 words for its top, which is what the row's files (ProjectPage and
+ProjectTop) draw. The "Lately" feed under it (`feed/ProjectFeed.tsx`, not in the row) is 64 more words: a title, three items,
+a rounding note, one line of counts with the net money in or out, and two presses ("Show earlier", "Show by the hour"). The
+page's first view as a person reads it is therefore 99 words, not 60. Cutting the feed to a title and its three items would leave
+it about 30 words and the first view about 65, and would remove the by-the-hour view, the net-money line, "Show earlier" and their
+tests: left for the owner to decide.
 
 ## 4. The phases
 
@@ -285,6 +305,12 @@ kept for tasks). Added: the Home, Profile and Post rewrite, the harness row (C16
 `MVP-V6-5.md` is replaced, the not-a-return sentence beside "worth Y", `TRY-IT.md` section 4.1 for the phone test, the
 growth ceiling, the invisible team spending, the AI-work gap, D10. The raise goal is dropped (the critic's reasons hold).
 The faucet fold-in is now "try a separate press first". The "no check-in" notice moved to "only if needed".
+
+P1.8 and C12 (after the copy pass): `team/team-copy.ts` no longer existed (C1 removed the team folder), and two modules the row did not
+name, `money/pot-copy-tasks.ts` and `money/pot-copy-step4.ts`, were part of the same overlap; the pause and earlier-grant refusals of
+step 4 and the old rounds refusals of `money-copy.ts` had no caller and went. Five modules became two, not one: the table of every
+contract refusal alone is about 330 lines and the app's file-size gate is 600. The "Line" and the "Row" helpers were the same
+component and are one `Row`. `YourSharesList.tsx` also has a function called `Row`; it is a project row, not this helper.
 
 Not changed, and why: C14 does not touch `docker-compose.yml` (the dev stack uses it; a safe edit was not verified).
 The tasks sizes under D10 are not measured. Contracts are untouched, as the instruction requires.
