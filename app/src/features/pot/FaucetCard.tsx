@@ -1,14 +1,15 @@
 /**
- * Get play dollars: the test network's faucet, once per account. It says what it gives and that it is play money, and an
- * account that already took its dollars is told so instead of being offered a press that would be refused.
+ * Get play dollars: the test network's faucet, once per account, in one press. It is drawn only while the account has not
+ * taken its dollars, so there is no press that would be refused.
  */
-import { smallDollarsText } from "./pot-words";
 import { faucetCall } from "@creaton/core/pot/pot-calls.ts";
-import { faucetAmount, faucetUsedBy } from "@creaton/core/pot/pot-state.ts";
-import { useQuery } from "@tanstack/react-query";
+import { faucetUsedBy } from "@creaton/core/pot/pot-state.ts";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "../../ui/button";
-import { PotSheet } from "./PotSheet";
+import { useToast } from "../../ui/toast";
+import { potProblem } from "../money/pot-copy";
+import { useMoneySend } from "../money/use-money";
 import type { MoneyTarget } from "./target";
 import type { Ready } from "./use-pot";
 
@@ -19,77 +20,57 @@ export function FaucetCard({
   target: MoneyTarget;
   ready: Ready;
 }) {
-  const [open, setOpen] = useState(false);
   const dollar = target.dollar;
-  const reading = useQuery({
+  const send = useMoneySend(`faucet:${target.chainId}:${dollar}`);
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const [problem, setProblem] = useState<string | null>(null);
+  const used = useQuery({
     queryKey: ["pot", "faucet", dollar, ready.address],
-    enabled: Boolean(dollar) && open,
+    enabled: Boolean(dollar) && target.playMoney,
     staleTime: 0,
-    gcTime: 0,
     retry: false,
     refetchOnWindowFocus: false,
-    queryFn: async () => ({
-      used: await faucetUsedBy(ready.read, dollar ?? "", ready.address),
-      amount: await faucetAmount(ready.read, dollar ?? ""),
-    }),
+    queryFn: () => faucetUsedBy(ready.read, dollar ?? "", ready.address),
   });
-  if (!dollar || !target.playMoney) return null;
-  const data = reading.data;
+  // Nothing is drawn until the chain says this account has not taken its dollars (a read that fails draws nothing).
+  if (!dollar || !target.playMoney || used.data !== false) return null;
   return (
-    <>
+    <div className="flex flex-col gap-2">
       <Button
         block
         data-testid="faucet-open"
-        onClick={() => setOpen(true)}
+        disabled={send.isPending}
+        onClick={() => {
+          setProblem(null);
+          send.send(
+            { chainId: target.chainId, build: () => [faucetCall(dollar)] },
+            {
+              onSuccess: () => {
+                toast("You have your play dollars.", "done");
+                void queryClient.invalidateQueries({ queryKey: ["pot"] });
+              },
+              onError: (error) => setProblem(potProblem(error, "faucet")),
+            },
+          );
+        }}
         variant="secondary"
       >
-        Get play dollars
+        {send.isPending
+          ? send.words.waiting
+          : send.waiting
+            ? "Look for your play dollars"
+            : "Get play dollars"}
       </Button>
-      <PotSheet
-        account={ready.address}
-        action={`faucet:${target.chainId}:${dollar}`}
-        blocked={!data || data.used}
-        calls={data && !data.used ? [faucetCall(dollar)] : null}
-        chainId={target.chainId}
-        confirmLabel={
-          data
-            ? `Get ${smallDollarsText(data.amount)} play dollars`
-            : "Get play dollars"
-        }
-        done="You have your play dollars."
-        lookLabel="Look for your play dollars"
-        onOpenChange={setOpen}
-        open={open}
-        playMoney
-        problemAction="faucet"
-        testId="faucet-sheet"
-        title="Get play dollars"
-      >
-        {reading.isPending ? (
-          <p className="text-sm text-muted">Looking…</p>
-        ) : reading.isError || !data ? (
-          <div className="flex flex-col gap-2" data-testid="faucet-read-failed">
-            <p className="text-sm">
-              The faucet could not be read, so nothing can be sent now. Try
-              again.
-            </p>
-            <Button onClick={() => void reading.refetch()} variant="secondary">
-              Try again
-            </Button>
-          </div>
-        ) : data.used ? (
-          <p className="text-sm" data-testid="faucet-used">
-            This account already took its play dollars. The faucet gives them
-            once to each account. Use another account to get more.
-          </p>
-        ) : (
-          <p className="text-sm" data-testid="faucet-words">
-            You get {smallDollarsText(data.amount)} play dollars, once for this
-            account. Play dollars are for trying the app: they have no value
-            outside it.
-          </p>
-        )}
-      </PotSheet>
-    </>
+      {problem ? (
+        <p
+          className="text-sm text-danger"
+          data-testid="faucet-problem"
+          role="alert"
+        >
+          {problem}
+        </p>
+      ) : null}
+    </div>
   );
 }

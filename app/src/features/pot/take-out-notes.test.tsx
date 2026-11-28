@@ -25,7 +25,7 @@ import {
 } from "../../../tests/helpers/plan-scene";
 import { ownNoteSerials, ownSteps } from "./own-history";
 import { targetOf } from "./target";
-import { YourShares } from "./YourShares";
+import { HoldingTop } from "./HoldingTop";
 
 vi.mock(
   "../../lib/relay",
@@ -60,7 +60,14 @@ function setup(note: bigint) {
 }
 
 async function takeOut() {
-  wrap(<YourShares projectName="Orbit" target={targetOf(numbers)} />);
+  wrap(
+    <HoldingTop
+      onOpenMoney={() => {}}
+      projectName="Orbit"
+      target={targetOf(numbers)}
+      tasks={null}
+    />,
+  );
   fireEvent.click(await screen.findByTestId("holding-take-out"));
   await screen.findByTestId("takeout-cash");
   fireEvent.click(screen.getByTestId("sheet-confirm"));

@@ -135,7 +135,6 @@ test("the play-money notice is on the Money tab, on every sheet that moves money
   await openMoney(page, w, project, { account: w.who.founder });
   await expect(page.getByTestId("play-money")).toContainText(NOTICE);
   const sheets: [string, string, string][] = [
-    ["faucet-open", "faucet-sheet", "faucet"],
     ["backing-review", "back-sheet", "back"],
     ["allowance-draw", "draw-sheet", "draw"],
     ["allowance-rate-open", "rate-sheet", "rate"],

@@ -85,7 +85,7 @@ test(`Take out: ${PLAN_V2_BUDGETS.takeMoneyBack.presses} presses from the page, 
   expect(
     await reads.balanceOf(read, project.shares, w.who.second),
   ).toBeGreaterThan(0n);
-  await expect(page.getByTestId("holding-none")).toBeVisible({
+  await expect(page.getByTestId("holding-take-out")).toBeHidden({
     timeout: 20_000,
   });
   console.log(
@@ -262,7 +262,7 @@ test("a person with no Shares is offered no Take out and told why", async ({
   const { wallet } = await openMoney(page, w, project, {
     account: w.who.stranger,
   });
-  await expect(page.getByTestId("holding-none")).toBeVisible();
+  await expect(page.getByTestId("holding-dollars")).toBeVisible();
   await expect(page.getByTestId("holding-take-out")).toHaveCount(0);
   expect(wallet.prompts).toBe(0);
 });

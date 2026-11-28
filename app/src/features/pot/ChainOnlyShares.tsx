@@ -8,6 +8,7 @@ import { readProjectParts } from "@creaton/core/pot/pot-state.ts";
 import { useQuery } from "@tanstack/react-query";
 import { potNetwork } from "../../lib/pot-network";
 import { Card } from "../../ui/card";
+import { HoldingTop } from "./HoldingTop";
 import { Holding } from "./YourShares";
 import type { MoneyTarget } from "./target";
 import { WalletGate, type Ready } from "./use-pot";
@@ -58,7 +59,15 @@ function Inner({
       </p>
     );
   return (
-    <Holding projectName={projectName} ready={ready} target={reading.data} />
+    <>
+      <HoldingTop
+        onOpenMoney={() => {}}
+        projectName={projectName}
+        target={reading.data}
+        tasks={null}
+      />
+      <Holding projectName={projectName} ready={ready} target={reading.data} />
+    </>
   );
 }
 

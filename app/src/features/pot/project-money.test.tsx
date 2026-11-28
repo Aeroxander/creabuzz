@@ -143,10 +143,9 @@ describe("the project's money", () => {
   it("a person with zero Shares sees none, no Take out, and the Back box", async () => {
     setup({ shares: 0n });
     show(numbers);
-    expect((await screen.findByTestId("holding-none")).textContent).toMatch(
-      /hold no Shares/,
-    );
+    await screen.findByTestId("holding-dollars");
     expect(screen.queryByTestId("holding-take-out")).toBeNull();
+    expect(screen.queryByTestId("top-holding")).toBeNull();
     expect(screen.getByTestId("backing-box")).not.toBeNull();
   });
 });
@@ -158,10 +157,14 @@ describe("the app's own knowledge of the network wins over a record", () => {
     expect((await screen.findByTestId("play-money")).textContent).toMatch(
       /play money, not real money/,
     );
+    // The faucet is one press: it sends the one call.
     fireEvent.click(await screen.findByTestId("faucet-open"));
-    expect((await screen.findByTestId("faucet-words")).textContent).toMatch(
-      /play dollars/,
-    );
+    await waitFor(() => expect(chain.sent).toHaveLength(1));
+    expect(chain.sent[0].to).toBe(numbers.contracts.dollar);
+    fireEvent.change(screen.getByLabelText("How many dollars?"), {
+      target: { value: "10" },
+    });
+    fireEvent.click(screen.getByTestId("backing-review"));
     expect((await screen.findByTestId("sheet-play-money")).textContent).toMatch(
       /play money/,
     );
@@ -182,9 +185,10 @@ describe("after a Back lands", () => {
       held = 1_000n * S;
     };
     show(numbers);
-    expect((await screen.findByTestId("holding-shares")).textContent).toBe(
-      "0 Shares",
+    expect((await screen.findByTestId("holding-dollars")).textContent).toBe(
+      "1,000",
     );
+    expect(screen.queryByTestId("holding-shares")).toBeNull();
     fireEvent.change(screen.getByLabelText("How many dollars?"), {
       target: { value: "10" },
     });

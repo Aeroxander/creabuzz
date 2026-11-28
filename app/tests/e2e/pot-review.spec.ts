@@ -86,16 +86,17 @@ test("a wallet that shares no account is offered to connect it, never told it ho
   await expect(page.getByTestId("pot-connect").first()).toBeVisible({
     timeout: 20_000,
   });
-  await expect(page.getByTestId("holding-none")).toHaveCount(0);
+  await expect(page.getByTestId("holding-dollars")).toHaveCount(0);
+  await expect(page.getByTestId("top-holding")).toHaveCount(0);
   await page
     .getByTestId("pot-connect")
     .first()
     .getByRole("button", { name: "Connect your wallet" })
     .click();
-  await expect(page.getByTestId("holding-none")).toContainText(
-    "You hold no Shares in this project yet.",
-    { timeout: 20_000 },
-  );
+  await expect(page.getByTestId("holding-dollars")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.getByTestId("holding-take-out")).toHaveCount(0);
   expect(wallet.connects).toBe(1);
 });
 

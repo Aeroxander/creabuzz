@@ -1,16 +1,16 @@
 import { expect, test } from "@playwright/test";
 import * as reads from "../../../packages/creaton-core/src/pot/pot-reads.ts";
 import { call } from "../anvil/rpc";
-import { PressCounter } from "../helpers/press-counter";
+import { PLAN_V2_BUDGETS, PressCounter } from "../helpers/press-counter";
 import { backFor, launchProject, NO_CHAIN_WHY } from "./helpers/live-chain";
 import { FOUNDER_NOSTR, liveWorld, openMoney } from "./helpers/live-browser";
 
 test.skip(NO_CHAIN_WHY !== null, NO_CHAIN_WHY ?? "");
 
 /**
- * A stranger opens a project page and reads what it says about money and what the two sheets (Back, and the play-dollar
- * faucet) show, without sending anything; then the whole first visit of someone with a wallet and no play dollars: get play
- * dollars, Back, Take out, counted in presses, typed boxes and wallet prompts. A real chain under a real browser.
+ * A stranger opens a project page and reads what it says about money and what the Back sheet shows, without sending
+ * anything; then the whole first visit of someone with a wallet and no play dollars: get play dollars (one press), Back, Take
+ * out, counted in presses, typed boxes and wallet prompts. A real chain under a real browser.
  */
 
 const world = liveWorld();
@@ -42,7 +42,7 @@ test("a stranger in a browser with no wallet reads the money, the risk and the l
   await expect(page.getByTestId("backing-amount")).toHaveCount(0);
 });
 
-test("a stranger with a wallet and no play dollars reads both sheets and sends nothing", async ({
+test("a stranger with a wallet and no play dollars reads the Back sheet and sends nothing", async ({
   page,
 }) => {
   const w = world.get();
@@ -51,15 +51,8 @@ test("a stranger with a wallet and no play dollars reads both sheets and sends n
   const { wallet } = await openMoney(page, w, project, {
     account: w.who.stranger,
   });
-  // The faucet sheet says what it gives and that it is play money.
-  await page.getByTestId("faucet-open").click();
-  await expect(page.getByTestId("faucet-words")).toContainText(
-    "You get 1,000 play dollars, once for this account",
-  );
-  await expect(
-    page.getByTestId("faucet-sheet").getByTestId("sheet-play-money"),
-  ).toContainText(NOTICE);
-  await page.keyboard.press("Escape");
+  // The faucet is one press on the page, and nothing is sent until it is pressed.
+  await expect(page.getByTestId("faucet-open")).toHaveText("Get play dollars");
   // The Back sheet says what you pay, the part that goes to the platform, the Shares and what taking out now would give.
   await page.getByTestId("backing-amount").fill("25");
   await page.getByTestId("backing-review").click();
@@ -92,8 +85,10 @@ test("the first visit of someone with a wallet and nothing else: play dollars, B
   const w = world.get();
   const project = await launchProject(w, "firstvisit", FOUNDER_NOSTR);
   await backFor(w, project, w.who.second, 100n);
+  // The page alone, with no Money tab: the Back box and, once they hold Shares, Take out are in its top.
   const { wallet } = await openMoney(page, w, project, {
     account: w.who.helper,
+    tab: null,
   });
   // Three parts, counted apart: the faucet (a test-network step, once), then the 30-second test of the design, Back and Take out.
   const faucet = new PressCounter();
@@ -103,12 +98,7 @@ test("the first visit of someone with a wallet and nothing else: play dollars, B
 
   // Play dollars from the faucet.
   await faucet.press(page.getByTestId("faucet-open"), "Get play dollars");
-  await faucet.read(page, "the faucet sheet");
-  await faucet.press(
-    page.getByTestId("sheet-confirm"),
-    "Get 1,000 play dollars",
-  );
-  await expect(page.getByTestId("faucet-sheet")).toBeHidden({
+  await expect(page.getByTestId("faucet-open")).toBeHidden({
     timeout: 30_000,
   });
   expect(await dollar(w.who.helper)).toBe(1_000_000_000n);
@@ -138,13 +128,13 @@ test("the first visit of someone with a wallet and nothing else: play dollars, B
     timeout: 30_000,
   });
   expect(await reads.balanceOf(read, project.shares, w.who.helper)).toBe(0n);
-  await expect(page.getByTestId("holding-none")).toBeVisible({
+  await expect(page.getByTestId("holding-take-out")).toBeHidden({
     timeout: 20_000,
   });
 
   // The wallet was asked exactly three times: the faucet, the Back, the Take out.
   expect(wallet.prompts).toBe(3);
-  expect(faucet.presses).toBe(2);
+  expect(faucet.presses).toBe(PLAN_V2_BUDGETS.faucet.presses);
   expect(path.presses).toBe(4);
   expect(path.fields).toBe(1);
   console.log(faucet.summary("faucet (wallet)"));

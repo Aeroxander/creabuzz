@@ -19,7 +19,7 @@ import {
 } from "../../../tests/helpers/pot-harness";
 import { sceneAnswers, sceneNumbers } from "../../../tests/helpers/plan-scene";
 import type { ProjectNumbers } from "../money/numbers";
-import { ProjectMoney } from "./ProjectMoney";
+import { PageMoney } from "../../../tests/helpers/page-money";
 
 vi.mock(
   "../../lib/relay",
@@ -52,7 +52,7 @@ function show(numbers: ProjectNumbers) {
     } as never,
   });
   return wrap(
-    <ProjectMoney
+    <PageMoney
       chainKey={numbers.key}
       error={undefined}
       loading={false}

@@ -106,6 +106,22 @@ export interface Ready {
 }
 
 /**
+ * `Ready` for a part of a page that says nothing until it is: no prompt to connect, to switch network or to open the page
+ * elsewhere (the Back box says those). Null while anything is missing.
+ */
+export function useQuietReady(chainId: number): Ready | null {
+  const pot = usePotWallet(chainId);
+  if (
+    buildFits(chainId) !== "yes" ||
+    !pot.wallet.isAvailable() ||
+    !pot.address ||
+    pot.onChain !== true
+  )
+    return null;
+  return { address: pot.address, read: pot.read, wallet: pot.wallet };
+}
+
+/**
  * Children when the sender is ready (a sender that can send, an account it shows, on the project's network); otherwise the
  * one thing missing and the press that fixes it.
  */

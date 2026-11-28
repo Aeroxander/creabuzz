@@ -22,6 +22,7 @@ import {
   PLAY_MONEY_WORDS,
   smallDollarsText,
 } from "../pot/pot-words";
+import { targetOf } from "../pot/target";
 import type { Project } from "./project-record";
 import {
   asOfLine,
@@ -35,6 +36,11 @@ import {
 // The Back box carries the money calls and their contract ABIs: it loads after the page's first paint, as the Money tab did.
 const BackSection = lazy(() =>
   import("./BackSection").then((m) => ({ default: m.BackSection })),
+);
+
+// What you hold and its Take out carry the same calls: they load with the Back box.
+const HoldingTop = lazy(() =>
+  import("../pot/HoldingTop").then((m) => ({ default: m.HoldingTop })),
 );
 
 // The share sheet loads when first opened and then stays mounted.
@@ -166,6 +172,7 @@ export function ProjectTop({
   now,
   investing,
   founderName,
+  onOpenMoney,
 }: {
   project: Project;
   /** The project's numbers; null while they are read, when there are none, or when investing is off. */
@@ -174,6 +181,8 @@ export function ProjectTop({
   /** Whether the server offers investing: everything below the header is drawn only then. */
   investing: boolean;
   founderName: string;
+  /** Goes to the Money tab. */
+  onOpenMoney: () => void;
 }) {
   const [shareOpen, setShareOpen] = useState(false);
   const [shareSeen, setShareSeen] = useState(false);
@@ -209,6 +218,21 @@ export function ProjectTop({
               now={now}
               numbers={numbers}
             />
+          ) : null}
+          {/* A holder's Shares and Take out come first (taking out does not wait for fresh numbers); Back is below. */}
+          {numbers ? (
+            <ChunkBoundary quiet>
+              <Suspense fallback={null}>
+                <HoldingTop
+                  onOpenMoney={onOpenMoney}
+                  projectName={project.name}
+                  target={targetOf(numbers)}
+                  tasks={
+                    typeof numbers.tasks === "object" ? numbers.tasks : null
+                  }
+                />
+              </Suspense>
+            </ChunkBoundary>
           ) : null}
           {/* Without a record the page still says it is play money. */}
           {numbers ? null : (

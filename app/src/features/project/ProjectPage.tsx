@@ -125,6 +125,7 @@ function ProjectView({
         investing={investing}
         now={now}
         numbers={numbers}
+        onOpenMoney={() => setTab("money")}
         project={project}
       />
 

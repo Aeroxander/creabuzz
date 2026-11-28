@@ -173,11 +173,7 @@ run(
       const faucet = new PressCounter();
       let before = await prompts();
       await faucet.press(page.getByTestId("faucet-open"), "Get play dollars");
-      await faucet.press(
-        page.getByTestId("sheet-confirm"),
-        "Get 1,000 play dollars",
-      );
-      await expect(page.getByTestId("faucet-sheet")).toBeHidden({
+      await expect(page.getByTestId("faucet-open")).toBeHidden({
         timeout: 90_000,
       });
       const faucetPrompts = (await prompts()) - before;

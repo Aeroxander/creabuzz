@@ -168,7 +168,7 @@ export function BackSheet({
           >
             You hold {smallDollarsText(good.dollars)} play dollars, which is
             less than the {exactDollarsText(amount)} this needs. Nothing was
-            taken. Get more play dollars on the project page, or enter less.
+            taken. Enter less, or get play dollars first.
           </p>
         ) : null}
         <details className="text-sm">

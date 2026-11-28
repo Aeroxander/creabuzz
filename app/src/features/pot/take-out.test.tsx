@@ -1,10 +1,9 @@
-// Your Shares and the Take out sheet: what is held and what taking out gives are read from the chain, the call carries the
-// number shown and a guard from the same quote, the press is open whatever state the door or the project is in, and a
-// person with zero Shares is told so instead of being offered a press.
+// What you hold, in the top of the page, and the Take out sheet: what is held and what taking out gives are read from the
+// chain, the call carries the number shown and a guard from the same quote, the press is open whatever state the door or the
+// project is in, and a person with zero Shares is offered no press.
 import { applyServerSettings } from "@creaton/core/client/server-settings.ts";
 import { decodeCall } from "@creaton/core/pot/abi-codec.ts";
 import { TREASURY_ABI } from "@creaton/core/pot/abis.generated.ts";
-import { faucetCall } from "@creaton/core/pot/pot-calls.ts";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -23,6 +22,7 @@ import {
 } from "../../../tests/helpers/pot-harness";
 import { ownSteps } from "./own-history";
 import { targetOf } from "./target";
+import { HoldingTop } from "./HoldingTop";
 import { YourShares } from "./YourShares";
 
 vi.mock(
@@ -50,7 +50,22 @@ function setup(
     answers: { ...backerAnswers(numbers, held), ...extra } as never,
   });
 }
-const show = () => wrap(<YourShares projectName="Lantern" target={target} />);
+const holdingTop = (t = target) => (
+  <HoldingTop
+    onOpenMoney={() => {}}
+    projectName="Lantern"
+    target={t}
+    tasks={null}
+  />
+);
+/** The top of the page (what you hold and Take out) with the Money tab's card below it. */
+const show = () =>
+  wrap(
+    <>
+      {holdingTop()}
+      <YourShares projectName="Lantern" target={target} />
+    </>,
+  );
 
 beforeEach(() => {
   applyServerSettings({ investing: true, self: SERVER });
@@ -64,15 +79,14 @@ afterEach(() => {
 });
 
 describe("Your Shares", () => {
-  it("with zero Shares says so, offers no Take out, and offers play dollars", async () => {
+  it("with zero Shares draws no Take out and no line about Shares", async () => {
     setup({ shares: 0n });
     show();
-    expect((await screen.findByTestId("holding-none")).textContent).toMatch(
-      /hold no Shares/,
+    expect((await screen.findByTestId("holding-dollars")).textContent).toBe(
+      "1,000",
     );
     expect(screen.queryByTestId("holding-take-out")).toBeNull();
-    expect(screen.getByTestId("faucet-open")).not.toBeNull();
-    expect(screen.getByTestId("holding-dollars").textContent).toBe("1,000");
+    expect(screen.queryByTestId("top-holding")).toBeNull();
   });
 
   it("shows what you hold and what taking out gives now, from the chain", async () => {
@@ -233,32 +247,6 @@ describe("Team Shares held", () => {
   });
 });
 
-describe("play dollars", () => {
-  it("the faucet says what it gives and sends one call", async () => {
-    setup({ shares: 0n });
-    show();
-    fireEvent.click(await screen.findByTestId("faucet-open"));
-    expect((await screen.findByTestId("faucet-words")).textContent).toMatch(
-      /You get 1,000 play dollars, once for this account/,
-    );
-    fireEvent.click(screen.getByTestId("sheet-confirm"));
-    await waitFor(() => expect(chain.sent.length).toBe(1));
-    expect(chain.sent[0].to).toBe(numbers.contracts.dollar);
-    expect(chain.sent[0].data).toBe(faucetCall(numbers.contracts.dollar).data);
-  });
-  it("an account that already took them is told so and is offered no press", async () => {
-    setup({ shares: 0n }, { faucetUsed: [true] });
-    show();
-    fireEvent.click(await screen.findByTestId("faucet-open"));
-    expect((await screen.findByTestId("faucet-used")).textContent).toMatch(
-      /already took its play dollars/,
-    );
-    expect(
-      (screen.getByTestId("sheet-confirm") as HTMLButtonElement).disabled,
-    ).toBe(true);
-  });
-});
-
 describe("leaving does not depend on a nicety", () => {
   it("Take out is still offered when only the play-dollar balance cannot be read", async () => {
     const { dollar, shares } = numbers.contracts;
@@ -323,7 +311,7 @@ describe("play money is said on a take-out whatever the record says", () => {
       account: BACKER_EVM,
       answers: backerAnswers(odd, { shares: 1_000n * S }) as never,
     });
-    wrap(<YourShares projectName="Lantern" target={targetOf(odd)} />);
+    wrap(holdingTop(targetOf(odd)));
     fireEvent.click(await screen.findByTestId("holding-take-out"));
     await screen.findByTestId("takeout-cash");
     expect(screen.getByTestId("sheet-play-money").textContent).toMatch(
@@ -338,11 +326,14 @@ describe("the history says what was quoted, not what landed", () => {
     show();
     fireEvent.click(await screen.findByTestId("holding-take-out"));
     await screen.findByTestId("takeout-cash");
+    const { dollar, shares } = numbers.contracts;
+    // The balances change when the call goes out, so the read that follows the landing sees them.
+    chain.onSend = () => {
+      chain.answers.balanceOf = (_args, to) =>
+        to === dollar ? [1_009_770_000n] : to === shares ? [0n] : [0n];
+    };
     fireEvent.click(screen.getByTestId("sheet-confirm"));
     await waitFor(() => expect(chain.sent.length).toBe(1));
-    const { dollar, shares } = numbers.contracts;
-    chain.answers.balanceOf = (_args, to) =>
-      to === dollar ? [1_009_770_000n] : to === shares ? [0n] : [0n];
     const step = await screen.findByTestId("history-step", undefined, {
       timeout: 3000,
     });

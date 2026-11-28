@@ -10,7 +10,6 @@ import { Banknote } from "lucide-react";
 import { nameOf, type ProfileMetadata } from "../../lib/profiles";
 import { investingOn } from "../../lib/server";
 import type { Project } from "../project/project-record";
-import { goToClaims } from "../tasks/chain/holder/claims-anchor";
 import { NotesCard } from "../tasks/chain/holder/NotesSection";
 import { PlannedSection } from "../tasks/chain/holder/PlannedSection";
 import { useTeamWallets } from "../team/use-wallets";
@@ -128,13 +127,8 @@ export function ProjectMoney({
     );
   const stale = freshnessOf(numbers, now).level === "stale";
   const target = targetOf(numbers);
-  // What the page already holds about tasks, handed to the Take out sheet as plain values: the sheet never reads it.
   const queue =
     typeof numbers.tasks === "object" && numbers.tasks ? numbers.tasks : null;
-  const taskInfo = {
-    dueSecs: queue?.limits.dueSecs ?? null,
-    ...(queue ? { onWhereToClaim: () => goToClaims() } : {}),
-  };
   return (
     <div className="flex flex-col gap-3" data-testid="project-money">
       {mustSayPlayMoney(numbers.playMoney) ? <PlayMoneyLine /> : null}
@@ -143,11 +137,7 @@ export function ProjectMoney({
       ) : (
         <MoneyFacts now={now} numbers={numbers} />
       )}
-      <YourShares
-        projectName={projectName}
-        target={target}
-        taskInfo={taskInfo}
-      />
+      <YourShares projectName={projectName} target={target} />
       <PlannedSection
         now={now}
         numbers={numbers}

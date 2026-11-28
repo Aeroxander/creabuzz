@@ -12,8 +12,11 @@ import { parseDollarAmount } from "../money/calls";
 import type { ProjectNumbers } from "../money/numbers";
 import { markBackAfterSignUp, takeBackAfterSignUp } from "./back-after-sign-up";
 import { BackSheet } from "./BackSheet";
+import { FaucetCard } from "./FaucetCard";
 import { doorShutWords, smallDollarsText } from "./pot-words";
+import { targetOf } from "./target";
 import { recordFitsBuild, type Ready, WalletGate } from "./use-pot";
+import { useHolding } from "./YourShares";
 
 function amountWords(
   reason: "empty" | "format" | "small",
@@ -41,11 +44,14 @@ function BackForm({
   numbers,
   projectName,
   ready,
+  holds = false,
   onSignUp,
 }: {
   numbers: ProjectNumbers;
   projectName: string;
   ready: Ready | null;
+  /** The account already holds Shares: Take out is the page's one primary press, so Back is the second. */
+  holds?: boolean;
   onSignUp?: (text: string) => void;
 }) {
   const [text, setText] = useState("");
@@ -94,7 +100,11 @@ function BackForm({
         </div>
         {/* Level with the box: the height of the label above it (one line and its gap). */}
         <div className="shrink-0 pt-[1.625rem]">
-          <Button data-testid="backing-review" type="submit">
+          <Button
+            data-testid="backing-review"
+            type="submit"
+            variant={holds ? "secondary" : "primary"}
+          >
             Back
           </Button>
         </div>
@@ -137,7 +147,32 @@ function SignedOutBack({
   );
 }
 
-/** The Back box on the Money tab. */
+/** The Back box for an account that is ready, with the faucet below it while the account has not taken its play dollars. */
+function ReadyBack({
+  numbers,
+  projectName,
+  ready,
+}: {
+  numbers: ProjectNumbers;
+  projectName: string;
+  ready: Ready;
+}) {
+  const target = targetOf(numbers);
+  const holds = (useHolding(ready, target).data?.shares ?? 0n) > 0n;
+  return (
+    <>
+      <BackForm
+        holds={holds}
+        numbers={numbers}
+        projectName={projectName}
+        ready={ready}
+      />
+      <FaucetCard ready={ready} target={target} />
+    </>
+  );
+}
+
+/** The Back box in the top of the page. */
 export function BackCard({
   numbers,
   projectName,
@@ -163,13 +198,13 @@ export function BackCard({
         <p className="text-sm" data-testid="back-wrong-contracts">
           This project's money is on contracts this version of the app does not
           know, so backing is off here. Nothing was sent. You can still take
-          your money out below.
+          your money out.
         </p>
       ) : shut ? (
         <div className="flex flex-col gap-2" data-testid="back-door-shut">
           <p className="text-sm">{shut}</p>
           <p className="text-sm text-muted">
-            You can still take your money out below, whatever the door says.
+            You can still take your money out, whatever the door says.
           </p>
         </div>
       ) : (
@@ -181,7 +216,7 @@ export function BackCard({
           what="back this project"
         >
           {(ready) => (
-            <BackForm
+            <ReadyBack
               numbers={numbers}
               projectName={projectName}
               ready={ready}

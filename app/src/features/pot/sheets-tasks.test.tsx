@@ -32,7 +32,7 @@ import type { Project } from "../project/project-record";
 import { BackCard } from "./BackCard";
 import { smallDollarsText } from "./pot-words";
 import { targetOf } from "./target";
-import { YourShares } from "./YourShares";
+import { HoldingTop } from "./HoldingTop";
 
 vi.mock(
   "../../lib/relay",
@@ -89,14 +89,20 @@ describe("the Take out sheet's line about a task", () => {
   ];
 
   async function open(info?: {
+    /** The record's limit; null is a page with no task queue to go to. */
     dueSecs: number | null;
-    onWhereToClaim?: () => void;
+    claims?: () => void;
   }) {
     wrap(
-      <YourShares
+      <HoldingTop
+        onOpenMoney={info?.claims ?? (() => {})}
         projectName="Orbit"
         target={targetOf(numbers)}
-        taskInfo={info}
+        tasks={
+          info && info.dueSecs !== null
+            ? { limits: { dueSecs: info.dueSecs } }
+            : null
+        }
       />,
     );
     fireEvent.click(await screen.findByTestId("holding-take-out"));
@@ -106,7 +112,7 @@ describe("the Take out sheet's line about a task", () => {
   it("says what you get now and what you could be owed later, for how long, from the chain's quote alone, with a way to the claims", async () => {
     setup({ quoteTakeOut: quote });
     const claims = vi.fn();
-    const line = await open({ dueSecs: 14 * 86_400, onWhereToClaim: claims });
+    const line = await open({ dueSecs: 14 * 86_400, claims });
     const cash = screen.getByTestId("takeout-cash").textContent;
     expect(cash).toBe("9.80 dollars");
     expect(line.textContent).toBe(
@@ -133,10 +139,11 @@ describe("the Take out sheet's line about a task", () => {
   it("says nothing about a task when the quote has no note", async () => {
     setup();
     wrap(
-      <YourShares
+      <HoldingTop
+        onOpenMoney={() => {}}
         projectName="Orbit"
         target={targetOf(numbers)}
-        taskInfo={{ dueSecs: 100 }}
+        tasks={{ limits: { dueSecs: 100 } }}
       />,
     );
     fireEvent.click(await screen.findByTestId("holding-take-out"));

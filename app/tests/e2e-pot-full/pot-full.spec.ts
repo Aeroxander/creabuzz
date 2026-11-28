@@ -313,14 +313,14 @@ test("a project from its start to a Take out: the page, the server and the contr
     await openMoney(stranger, link);
     const faucet = new PressCounter();
     await faucet.press(stranger.getByTestId("faucet-open"), "Get play dollars");
-    await expect(stranger.getByTestId("faucet-sheet")).toBeVisible();
-    await faucet.press(
-      stranger.getByTestId("sheet-confirm"),
-      "the faucet sheet's press",
-    );
-    await expect(stranger.getByTestId("faucet-sheet")).toBeHidden({
+    await expect(stranger.getByTestId("faucet-open")).toBeHidden({
       timeout: 30_000,
     });
+    same(
+      faucet.presses,
+      PLAN_V2_BUDGETS.faucet.presses,
+      "getting play dollars took one press",
+    );
     const faucetAmount = await reads.balanceOf(read, project.dollar, backer);
     same(
       faucetAmount,
@@ -597,10 +597,10 @@ test("a project from its start to a Take out: the page, the server and the contr
     console.log(
       `MEASURED ${takeOut.summary("Take out (real server, real chain)")}`,
     );
-    await expect(stranger.getByTestId("holding-none")).toBeVisible({
+    await expect(stranger.getByTestId("holding-take-out")).toBeHidden({
       timeout: 20_000,
     });
-    ok("the page says the backer holds no Shares in this project");
+    ok("the page no longer offers the backer a Take out: no Shares held");
 
     // ── the server's helper collects the platform's fee, with nobody pressing (once a week) ──────────────────────
     // The helper's first collection came when the first backer's fee was owed; the next is due a week later.

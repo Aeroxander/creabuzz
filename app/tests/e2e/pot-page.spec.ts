@@ -39,48 +39,66 @@ async function inView(page: Page, testId: string): Promise<boolean> {
   }, testId);
 }
 
-test("at 360 by 640 the name, the money, what taking out gives, the banner and Back are in the first screen", async ({
-  browser,
-}) => {
-  const w = world.get();
-  const project = await launchProject(w, "firstscreen", FOUNDER_NOSTR);
-  await backFor(w, project, w.who.backer, 100n);
-  const context = await browser.newContext({
-    viewport: PHONE,
-    deviceScaleFactor: 2,
-    isMobile: true,
-    hasTouch: true,
+// A visitor sees Back as the primary press in the first screen; a holder sees what they hold and Take out there instead (Back is
+// the next press down).
+for (const who of ["visitor", "holder"] as const)
+  test(`at 360 by 640 the name, the money, what taking out gives and the banner are in the first screen, and for a ${who} ${who === "holder" ? "what they hold and Take out" : "Back"}`, async ({
+    browser,
+  }) => {
+    const w = world.get();
+    const project = await launchProject(w, `firstscreen${who}`, FOUNDER_NOSTR);
+    await backFor(w, project, w.who.backer, 100n);
+    const context = await browser.newContext({
+      viewport: PHONE,
+      deviceScaleFactor: 2,
+      isMobile: true,
+      hasTouch: true,
+    });
+    const page = await context.newPage();
+    await openMoney(page, w, project, {
+      account: who === "holder" ? w.who.backer : w.who.stranger,
+      tab: null,
+    });
+    await expect(page.getByTestId("backing-review")).toBeVisible({
+      timeout: 20_000,
+    });
+    const first = [
+      "project-name",
+      "top-money-pot",
+      "top-take-out-now",
+      "top-banner",
+      who === "holder" ? "holding-take-out" : "backing-review",
+    ];
+    if (who === "holder")
+      await expect(page.getByTestId("top-holding")).toBeVisible();
+    else await expect(page.getByTestId("top-holding")).toHaveCount(0);
+    for (const id of first)
+      expect(await inView(page, id), `${id} is in the first screen`).toBe(true);
+    // The press that is primary is the one in the first screen: Take out for a holder, Back for a visitor.
+    await expect(
+      page.getByTestId(
+        who === "holder" ? "holding-take-out" : "backing-review",
+      ),
+    ).toHaveClass(/btn-primary/);
+    await expect(page.getByTestId("top-money")).toContainText(NOT_A_RETURN);
+    await expect(page.getByTestId("top-take-out-now")).toContainText(
+      "Taking out now would give",
+    );
+    await expect(page.getByTestId("top-take-out-now")).toContainText(
+      "for each Share.",
+    );
+    await expect(page.getByTestId("top-banner")).toHaveText(BANNER);
+    await expect(page.getByTestId("top-play-money")).toContainText(
+      "The dollars are play money",
+    );
+    await expectNoSidewaysScroll(page, "the project page at 360");
+    await expectAccessible(page, "the project page's top at 360");
+    // For a person to look at.
+    await page.screenshot({
+      path: `test-results/pot-screens/page-top-360-${who}.png`,
+    });
+    await context.close();
   });
-  const page = await context.newPage();
-  await openMoney(page, w, project, { account: w.who.backer, tab: null });
-  await expect(page.getByTestId("backing-review")).toBeVisible({
-    timeout: 20_000,
-  });
-  for (const id of [
-    "project-name",
-    "top-money-pot",
-    "top-take-out-now",
-    "top-banner",
-    "backing-review",
-  ])
-    expect(await inView(page, id), `${id} is in the first screen`).toBe(true);
-  await expect(page.getByTestId("top-money")).toContainText(NOT_A_RETURN);
-  await expect(page.getByTestId("top-take-out-now")).toContainText(
-    "Taking out now would give",
-  );
-  await expect(page.getByTestId("top-take-out-now")).toContainText(
-    "for each Share.",
-  );
-  await expect(page.getByTestId("top-banner")).toHaveText(BANNER);
-  await expect(page.getByTestId("top-play-money")).toContainText(
-    "The dollars are play money",
-  );
-  await expectNoSidewaysScroll(page, "the project page at 360");
-  await expectAccessible(page, "the project page's top at 360");
-  // For a person to look at.
-  await page.screenshot({ path: "test-results/pot-screens/page-top-360.png" });
-  await context.close();
-});
 
 test("the banner is on the page once, the Back box once, and Home has the shell's banner", async ({
   page,

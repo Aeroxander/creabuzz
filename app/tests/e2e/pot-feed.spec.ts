@@ -169,7 +169,7 @@ test("a stranger who holds nothing sees no weeks line", async ({ page }) => {
   const project = await launchProject(w, "noweeks", FOUNDER_NOSTR);
   await backFor(w, project, w.who.backer, 100n);
   await openMoney(page, w, project, { account: w.who.stranger });
-  await expect(page.getByTestId("holding-none")).toBeVisible({
+  await expect(page.getByTestId("holding-dollars")).toBeVisible({
     timeout: 20_000,
   });
   await expect(page.getByTestId("holding-held-since")).toHaveCount(0);

@@ -14,6 +14,7 @@ import {
   S,
 } from "../../../tests/helpers/pot-harness";
 import { targetOf } from "./target";
+import { HoldingTop } from "./HoldingTop";
 import { YourShares } from "./YourShares";
 
 vi.mock(
@@ -73,7 +74,18 @@ const receipt = (block: number, value: bigint) => ({
   data: word(value.toString(16)),
   blockNumber: `0x${block.toString(16)}`,
 });
-const show = () => wrap(<YourShares projectName="Lantern" target={target} />);
+const show = () =>
+  wrap(
+    <>
+      <HoldingTop
+        onOpenMoney={() => {}}
+        projectName="Lantern"
+        target={target}
+        tasks={null}
+      />
+      <YourShares projectName="Lantern" target={target} />
+    </>,
+  );
 
 beforeEach(() => {
   applyServerSettings({ investing: true, self: SERVER });
@@ -123,7 +135,7 @@ describe("how long you have held it", () => {
     cleanup();
     setup(0n, []);
     show();
-    await screen.findByTestId("holding-none");
+    await screen.findByTestId("holding-dollars");
     expect(screen.queryByTestId("holding-held-since")).toBeNull();
   });
 

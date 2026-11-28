@@ -13,7 +13,7 @@ test.skip(NO_CHAIN_WHY !== null, NO_CHAIN_WHY ?? "");
 
 /**
  * The money screens in a real browser with axe, colour contrast and all (the jsdom run of the same screens cannot judge
- * colour or layout): the Money tab, the Back sheet, the Take out sheet, the faucet and the runner's sheets. Then the keyboard:
+ * colour or layout): the Money tab, the Back sheet, the Take out sheet and the runner's sheets. Then the keyboard:
  * Tab stays inside an open sheet, Escape closes it, and focus goes back to the button that opened it.
  */
 
@@ -55,10 +55,6 @@ test("the Money tab, the Back sheet and the Take out sheet have no serious acces
   await expect(page.getByTestId("takeout-cash")).toBeVisible();
   await expectAccessible(page, "Take out sheet");
   await page.keyboard.press("Escape");
-
-  await page.getByTestId("faucet-open").click();
-  await expect(page.getByTestId("faucet-used")).toBeVisible();
-  await expectAccessible(page, "Faucet sheet");
 });
 
 test("the runner's money screens and the quiet-project and old-record states have no serious violation", async ({

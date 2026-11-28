@@ -36,8 +36,12 @@ export const ACCEPT_PATH_BUDGET = { presses: 1, fields: 0 } as const;
 
 /** The press and field budgets of the app's journeys, each held by a test. */
 export const PLAN_V2_BUDGETS = {
-  start: { presses: 3, fields: 3 },
+  /** The Start tab, the three boxes, and Start (measured: the plan's third press is not on the path). */
+  start: { presses: 2, fields: 3 },
+  /** From the page to backed: the amount, Back, and the sheet's press. */
   back: { presses: 2, fields: 1 },
+  /** Play dollars on a test network: one press on the page, no sheet in between. */
+  faucet: { presses: 1, fields: 0 },
   takeMoneyBack: { presses: 2, fields: 0 },
   weeklyUpdate: { presses: 2, fields: 1 },
   /** Measured in milestone 0: the hosted sign-up (age and terms boxes) included. */

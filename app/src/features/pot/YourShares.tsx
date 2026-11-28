@@ -1,7 +1,8 @@
 /**
- * Your Shares in a project: what you hold, what taking out would give now (read from the chain, not the server's record),
- * what you paid in from this browser, a Take out button while you hold any, and the history of your own Backs and
- * Take outs. Reachable whatever the door, the allowance or the project's state is: it stands on the chain alone.
+ * Your Shares in a project, on the Money tab: what you paid in from this browser, the play dollars and Team Shares you hold
+ * (read from the chain, not the server's record), how long you have held, Take out for Team Shares, and the history of your
+ * own Backs and Take outs. What you hold and its Take out are in the top of the page (`HoldingTop`). Reachable whatever the
+ * door, the allowance or the project's state is: it stands on the chain alone.
  */
 import { balanceOf, quoteTakeOut } from "@creaton/core/pot/pot-reads.ts";
 import { useQuery } from "@tanstack/react-query";
@@ -11,16 +12,10 @@ import { Card } from "../../ui/card";
 import { dayText } from "../money/numbers";
 import { potProblem } from "../money/pot-copy";
 import { rememberSendTargets } from "../money/send-targets";
-import { FaucetCard } from "./FaucetCard";
 import { heldLine } from "./held-since";
 import { ownSteps, paidInFromHere } from "./own-history";
-import {
-  exactDollarsText,
-  NOT_A_RETURN,
-  sharesWords,
-  smallDollarsText,
-} from "./pot-words";
-import { TakeOutSheet, type TakeOutTaskInfo } from "./TakeOutSheet";
+import { exactDollarsText, sharesWords, smallDollarsText } from "./pot-words";
+import { TakeOutSheet } from "./TakeOutSheet";
 import type { MoneyTarget } from "./target";
 import { useHeldSince } from "./use-held-since";
 import { type Ready, WalletGate } from "./use-pot";
@@ -54,16 +49,23 @@ export async function readHolding(ready: Ready, target: MoneyTarget) {
   return { shares, teamShares, dollars, quote };
 }
 
+/** What an account holds in a project, read from the chain: one query for the whole page, so every part of it shares one read. */
+export function useHolding(ready: Ready, target: MoneyTarget) {
+  return useQuery({
+    queryKey: ["pot", "holding", target.treasury, ready.address],
+    staleTime: 10_000,
+    retry: false,
+    queryFn: () => readHolding(ready, target),
+  });
+}
+
 /** Your Shares behind the sender's gate: connect, switch network, then the holding. */
 export function YourShares({
   target,
   projectName,
-  taskInfo,
 }: {
   target: MoneyTarget;
   projectName: string;
-  /** What the project page holds about tasks, for the Take out sheet's line (never read by the sheet). */
-  taskInfo?: TakeOutTaskInfo;
 }) {
   const titleId = useId();
   return (
@@ -78,37 +80,25 @@ export function YourShares({
       </h2>
       <WalletGate chainId={target.chainId} what="see your Shares">
         {(ready) => (
-          <Holding
-            projectName={projectName}
-            ready={ready}
-            target={target}
-            taskInfo={taskInfo}
-          />
+          <Holding projectName={projectName} ready={ready} target={target} />
         )}
       </WalletGate>
     </Card>
   );
 }
 
-/** The holding itself, for an account that is ready. */
+/** The rest of the holding, for an account that is ready (the Shares and their Take out are in the top of the page). */
 export function Holding({
   target,
   projectName,
   ready,
-  taskInfo,
 }: {
   target: MoneyTarget;
   projectName: string;
   ready: Ready;
-  taskInfo?: TakeOutTaskInfo;
 }) {
-  const [sheet, setSheet] = useState<"backer" | "team" | null>(null);
-  const reading = useQuery({
-    queryKey: ["pot", "holding", target.treasury, ready.address],
-    staleTime: 10_000,
-    retry: false,
-    queryFn: () => readHolding(ready, target),
-  });
+  const [teamOpen, setTeamOpen] = useState(false);
+  const reading = useHolding(ready, target);
   const held = useHeldSince(ready, target, reading.data?.shares ?? 0n);
   if (reading.isPending)
     return (
@@ -126,31 +116,12 @@ export function Holding({
         </Button>
       </div>
     );
-  const { shares, teamShares, dollars, quote } = reading.data;
+  const { shares, teamShares, dollars } = reading.data;
   const paidIn = paidInFromHere(ready.address, target.key);
   const steps = ownSteps(ready.address, target.key);
   return (
     <div className="flex flex-col gap-3">
       <dl className="divide-y divide-white/10">
-        <div className="flex items-baseline justify-between gap-3 py-1.5">
-          <dt className="text-sm text-muted">You hold</dt>
-          <dd
-            className="num text-right font-semibold"
-            data-testid="holding-shares"
-          >
-            {sharesWords(shares)} Shares
-          </dd>
-        </div>
-        {shares > 0n && quote ? (
-          <div className="flex items-baseline justify-between gap-3 py-1.5">
-            <dt className="text-sm text-muted">
-              What you would get if you took out now
-            </dt>
-            <dd className="num text-right" data-testid="holding-cash">
-              {smallDollarsText(quote.cashNow)} dollars
-            </dd>
-          </div>
-        ) : null}
         {paidIn > 0n ? (
           <div className="flex items-baseline justify-between gap-3 py-1.5">
             <dt className="text-sm text-muted">
@@ -184,22 +155,6 @@ export function Holding({
           {heldLine(held.data)}
         </p>
       ) : null}
-      {shares > 0n ? (
-        <>
-          <p className="text-sm text-muted">{NOT_A_RETURN}</p>
-          <Button
-            block
-            data-testid="holding-take-out"
-            onClick={() => setSheet("backer")}
-          >
-            Take out
-          </Button>
-        </>
-      ) : (
-        <p className="text-sm" data-testid="holding-none">
-          You hold no Shares in this project yet. Back it to get some.
-        </p>
-      )}
       {teamShares !== null && teamShares > 0n ? (
         <div className="flex flex-col gap-2" data-testid="holding-team-words">
           <p className="text-sm text-muted">
@@ -209,14 +164,13 @@ export function Holding({
           <Button
             block
             data-testid="holding-take-out-team"
-            onClick={() => setSheet("team")}
+            onClick={() => setTeamOpen(true)}
             variant="secondary"
           >
             Take out Team Shares
           </Button>
         </div>
       ) : null}
-      <FaucetCard ready={ready} target={target} />
       {steps.length > 0 ? (
         <section aria-label="Your Backs and Take outs" data-testid="history">
           <h3 className="text-sm font-semibold">Your Backs and Take outs</h3>
@@ -234,13 +188,12 @@ export function Holding({
         </section>
       ) : null}
       <TakeOutSheet
-        kind={sheet === "team" ? "team" : "backer"}
-        onClose={() => setSheet(null)}
-        open={sheet !== null}
+        kind="team"
+        onClose={() => setTeamOpen(false)}
+        open={teamOpen}
         projectName={projectName}
         ready={ready}
         target={target}
-        taskInfo={taskInfo}
       />
     </div>
   );

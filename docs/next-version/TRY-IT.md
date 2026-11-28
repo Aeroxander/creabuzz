@@ -91,14 +91,16 @@ Each account can use the faucet once, so a second Back by the same account uses 
    another network the Money tab says "Your wallet is on another network. Switch it to this project's test network to see your
    Shares." and has the press "Switch network"; a wallet that does not know the network is asked to add `Local test network` with the
    chain address and ETH, and you say yes in the wallet.
-3. Open the **Money** tab. **Working:** "Your Shares", "You hold 0 Shares", "Play dollars you hold", "Get play dollars". Press it,
-   then the sheet's "Get 1,000 play dollars". The wallet asks once; "You have your play dollars."
-4. Type 25 in "How many dollars?" and press "Back". **Working:** a sheet "Back Lantern" with "You pay", "Fee to the platform, part of
+3. Under "How many dollars?" is "Get play dollars" (until the account has used the faucet, once). Press it. **Working:** the wallet
+   asks once; "You have your play dollars." and the press goes away. The **Money** tab's "Your Shares" then shows "Play dollars you
+   hold".
+4. Type 25 in "How many dollars?" and press "Back" (the primary press for someone who holds nothing). **Working:** a sheet "Back Lantern" with "You pay", "Fee to the platform, part of
    that", "You get" and "Taking out right now would give you". There is no box to tick. Press "Back with 25 dollars". The wallet asks
-   once; "Backed. Your new Shares show on this page." "You hold" shows 2,450 Shares.
-5. Press "Take out", then the sheet's button ("Take out 2,450 Shares"). **Working:** "Take out of Lantern" with "All of it", "Half"
-   and "A quarter", one wallet question, then "Taken out. The money is in your wallet." and "You hold no Shares in this project yet.
-   Back it to get some."
+   once; "Backed. Your new Shares show on this page." The top of the page shows "You hold 2,450 Shares".
+5. At the top of the page, "You hold 2,450 Shares, worth" an amount, with "This can go up or down. It is not a return." and a press
+   "Take out" (Back is then the second press). Press "Take out", then the sheet's button ("Take out 2,450 Shares"). **Working:** "Take
+   out of Lantern" with "All of it", "Half" and "A quarter", one wallet question, then "Taken out. The money is in your wallet." and
+   the line about what you hold goes away.
 6. Read the demo's planned task, above the tabs and again on the Money tab under "Planned and running tasks". **Working:** "A planned
    task", "The team plans to pay up to 2 dollars to" an address "for a task, from" a date about two weeks away, "You can take your
    money out before then. 2 dollars is the most; it can be less if people take out first.", "2 dollars would be set aside today (a
@@ -135,7 +137,7 @@ The other profiles find Beacon on **Home** (or paste the address from Fay's addr
 1. **Abe, on the phone, signed out:** open Beacon's address, Money tab, connect account 3 (he already has play dollars from part 3: the
    faucet gives them once per account), Back 10. (Two presses are called "Back" on a project's page: the one with the arrow at the top left
    goes to the last page; the one you want sits under "How many dollars?".) **Working:** no box in the sheet; one wallet question.
-2. **Bea, profile 2:** sign up, open Beacon, connect account 6, "Get play dollars", Back 100. **Working:** one wallet question for the
+2. **Bea, profile 2:** sign up, open Beacon, connect account 6, press "Get play dollars" (one press), Back 100. **Working:** one wallet question for the
    Back and no second one: Back does not link the account to the wallet. The page then says "2 people back it."
 
 ### 4.3 This week, and the allowance (Fay)
