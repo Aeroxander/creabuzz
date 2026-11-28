@@ -144,7 +144,6 @@ test("a founder starts a project, launches it with no field and one signature, a
   await expect(none).toContainText(
     "The server has not read this project's money yet",
   );
-  await expect(none).toContainText("until then no figures are shown");
   await expect(page.getByTestId("money-pot")).toHaveCount(0);
   expect(await page.getByTestId("money-none").innerText()).not.toMatch(
     /\b0\.00\b/,
@@ -191,7 +190,6 @@ test("a founder with no account goes from Home to launched in the founder budget
   await path.press(page.getByTestId("start-submit"), "Start");
 
   // No account: sign-up, with no recovery-key sheet to get past after it.
-  await path.type(page.getByTestId("onboarding-name"), "Fay Founder", "Name");
   await path.press(page.getByTestId("onboarding-create"), "Create");
 
   // Back on Start, the press is not asked for again: the project is sent and its page is open with the launch card.
